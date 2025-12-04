@@ -1,0 +1,34 @@
+#!/bin/bash
+# Example: ./test original_file destination_file
+#Custom progressive PCP.
+usage()
+{
+   echo "cp with Progressbar."
+   echo "Usage: $0 original_file destination_file"
+      exit 1;
+      }
+
+test $# == 2 || usage
+orig_size=$(stat -c %s $1)
+
+>$2
+dest_size=0
+cp -f $1 $2 &
+
+while [ $orig_size -gt $dest_size ] ; do
+    dest_size=$(stat -c %s $2)
+    pct=$((( 69 * $dest_size ) / $orig_size ))
+
+    echo -en "\r["
+    for j in `seq 1 $pct`; do
+        echo -n "="
+    done
+    echo -n ">"
+    for j in `seq $pct 68`; do
+        echo -n "."
+    done
+    echo -n "] "
+    echo -n $((( 100 * $pct ) / 69 ))
+    echo -n "%"
+done
+echo

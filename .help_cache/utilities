@@ -1,0 +1,4 @@
+UTIL|alert.sh|Alert notification utility|source utils/alert.sh|utilities
+UTIL|clock.sh|Clock display utility|source utils/clock.sh|utilities
+UTIL|code.sh|Code editor utility|source utils/code.sh|editor
+UTIL|disp_msg.sh|Message display utility|source utils/disp_msg.sh|utilities

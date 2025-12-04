@@ -1,0 +1,40 @@
+CMD|ansi_color|Display ANSI color codes|ansi_color|colors
+CMD|battery|Display battery status|battery|system
+CMD|cdx|Change directory with spinner|cdx [dir]|navigation
+CMD|color_py|Python color utility|color_py|colors
+CMD|crop|Crop images| crop [file]|media
+CMD|cx|Execute C programs from command line|cx [file.c ...] [args]|development
+CMD|d|Docker utility with SCM Breeze style|d [command]|docker
+CMD|d.sh|Docker helper script|d.sh [command]|docker
+CMD|dc|Docker Compose helper|dc [command]|docker
+CMD|dd|Docker helper|dd [command]|docker
+CMD|emacs_stop|Stop Emacs server|emacs_stop|editor
+CMD|emacscl|Emacs client|emacscl|editor
+CMD|emacsw|Emacs wrapper|emacsw|editor
+CMD|git_tree|Git tree visualization|git_tree|git
+CMD|git-tree|Git tree alias|git-tree|git
+CMD|gits|Git status prompt utility|gits [prompt]|git
+CMD|img2ascii|Convert images to ASCII art|img2ascii [file]|media
+CMD|imgconvert|Image conversion utility|imgconvert [file]|media
+CMD|install_font|Install fonts|install_font [font]|system
+CMD|killport|Kill process on port|killport [port]|system
+CMD|lein|Leiningen wrapper|lein [command]|development
+CMD|lein-exec|Execute Clojure code|lein-exec [code]|development
+CMD|lock_me|Lock screen|lock_me|system
+CMD|mux_clock|Tmux clock display|mux_clock|tmux
+CMD|nullpass|Password generator|nullpass [options]|security
+CMD|open|Open files/URLs|open [target]|system
+CMD|open_brew_emacs|Open Emacs via Homebrew|open_brew_emacs|editor
+CMD|pcp|Portable copy utility|pcp [src] [dst]|system
+CMD|rand_images|Display random images|rand_images [dir]|media
+CMD|rand_numb|Generate random number|rand_numb [min] [max]|utilities
+CMD|resize|Resize images|resize [file] [size]|media
+CMD|ruby_current|Show current Ruby version|ruby_current|development
+CMD|serve|Simple HTTP server|serve [dir] [port]|development
+CMD|startup_scripts|Run startup scripts|startup_scripts|system
+CMD|term_color|Display terminal colors|term_color|colors
+CMD|tinyurl|Create tiny URL|tinyurl [url]|utilities
+CMD|tp|Text processing utility|tp [file]|utilities
+CMD|transcode|Transcode media files|transcode [file]|media
+CMD|truck|File transfer utility|truck [src] [dst]|system
+CMD|unicode_char|Unicode character utility|unicode_char [code]|utilities

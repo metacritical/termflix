@@ -1,0 +1,4 @@
+
+#!/usr/bin/bash
+
+echo $(date +%s%H%M%S%d%m%y%S)

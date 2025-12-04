@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+
+transcode() {
+  # Show help if no arguments are provided
+  if [ $# -eq 0 ]; then
+    echo "Usage: transcode [options]"
+    echo "Options:"
+    echo "  -i  Input file (required)"
+    echo "  -o  Output file (required)"
+    echo "  -c:v Video codec (default: libx264)"
+    echo "  -crf CRF quality (default: 23)"
+    echo "  -preset Encoding preset (default: medium)"
+    echo "  -b:v Video bitrate (optional)"
+    echo "  -c:a Audio codec (default: aac)"
+    echo "  -b:a Audio bitrate (default: 128k)"
+    return 1
+  fi
+
+  # Initialize variables with defaults
+  local input_file=""
+  local output_file=""
+  local vcodec="libx264"
+  local crf=23
+  local preset="medium"
+  local vbitrate=""
+  local acodec="aac"
+  local abitrate="128k"
+
+  # Parse arguments
+  while getopts ":i:o:c:v:crf:preset:b:v:c:a:b:a:" opt; do
+    case $opt in
+      i) input_file="$OPTARG";;
+      o) output_file="$OPTARG";;
+      c:v) vcodec="$OPTARG";;
+      crf) crf="$OPTARG";;
+      preset) preset="$OPTARG";;
+      b:v) vbitrate="$OPTARG";;
+      c:a) acodec="$OPTARG";;
+      b:a) abitrate="$OPTARG";;
+      \?) echo "Invalid option: -$OPTARG"; return 1;;
+      :) echo "Option -$OPTARG requires an argument"; return 1;;
+    esac
+  done
+
+  # Check if input and output files are provided
+  if [ -z "$input_file" ] || [ -z "$output_file" ]; then
+    echo "Error: Input and output files must be specified"
+    return 1
+  fi
+
+  # Check if input file exists
+  if [ ! -f "$input_file" ]; then
+    echo "Error: Input file '$input_file' not found"
+    return 1
+  fi
+
+  # Build ffmpeg command
+  local cmd=(ffmpeg -i "$input_file" -c:v "$vcodec" -crf "$crf" -preset "$preset")
+  
+  # Add video bitrate if specified
+  [ -n "$vbitrate" ] && cmd+=(-b:v "$vbitrate")
+  
+  # Add audio settings
+  cmd+=(-c:a "$acodec" -b:a "$abitrate")
+  
+  # Add output file
+  cmd+=("$output_file")
+
+  # Run the command
+  echo "Executing: ${cmd[@]}"
+  "${cmd[@]}"
+}
+
+transcode "$@"

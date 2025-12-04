@@ -1,0 +1,509 @@
+#!/bin/bash
+
+# Nullpass Bash Implementation
+# A stateless password manager in bash
+
+# Default values
+DEFAULT_LENGTH=16
+DEFAULT_COUNTER=1
+DEFAULT_PROFILES_FILE="$HOME/.config/nullpass/profiles.json"
+
+# Character sets
+LOWERCASE="abcdefghijklmnopqrstuvwxyz"
+UPPERCASE="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+DIGITS="0123456789"
+SYMBOLS=$'!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~'
+
+# Function to display help
+show_help() {
+    cat << EOF
+Nullpass Bash - A stateless password manager
+
+Usage: nullpass SITE [LOGIN] [MASTER_PASSWORD] [OPTIONS]
+
+Positional arguments:
+  site                  site used in the password generation (required)
+  login                 login used in the password generation. Default to ''.
+  master_password       master password used in password generation. Default to NULLPASS_MASTER_PASSWORD env variable or prompt.
+
+Optional arguments:
+  -h, --help            show this help message and exit
+  -v, --version         show program's version number and exit
+  -L [5-35], --length [5-35]
+                        password length (default: 16, min: 5, max: 35)
+  -C COUNTER, --counter COUNTER
+                        password counter (default: 1)
+  -p, --prompt          prompt for values interactively
+  -c, --copy            copy the password to clipboard
+  --exclude EXCLUDE     exclude char from generated password
+  --no-fingerprint      hide visual fingerprint of the master password when you type
+  --save [SAVE_PATH]    Save your password profiles. /!\ File not encrypted. Use carefully.
+  --load LOAD_PATH      Load your password profiles file
+  -l, --lowercase       add lowercase in password
+  --no-lowercase        remove lowercase from password
+  -u, --uppercase       add uppercase in password
+  --no-uppercase        remove uppercase from password
+  -d, --digits          add digits in password
+  --no-digits           remove digits from password
+  -s, --symbols         add symbols in password
+  --no-symbols          remove symbols from password
+
+Examples:
+  nullpass site login masterpassword --no-symbols
+  nullpass site login masterpassword -lud
+  nullpass site login masterpassword -d -L 8
+  NULLPASS_MASTER_PASSWORD="masterpassword" nullpass site login
+EOF
+}
+
+# Function to display version
+show_version() {
+    echo "nullpass version 1.0.0"
+}
+
+# Function to prompt for values interactively
+prompt_values() {
+    if [ -z "$site" ]; then
+        read -p "Site: " site
+    fi
+    
+    if [ -z "$login" ]; then
+        read -p "Login (default: ''): " login
+    fi
+    
+    if [ -z "$master_password" ]; then
+        if [ -n "$NULLPASS_MASTER_PASSWORD" ]; then
+            master_password="$NULLPASS_MASTER_PASSWORD"
+        else
+            if [ "$no_fingerprint" = true ]; then
+                read -s -p "Master Password: " master_password
+                echo
+            else
+                read -p "Master Password: " master_password
+            fi
+        fi
+    fi
+}
+
+# Function to generate password
+generate_password() {
+    local site="$1"
+    local login="$2"
+    local master_password="$3"
+    local length="$4"
+    local counter="$5"
+    local lowercase_enabled="$6"
+    local uppercase_enabled="$7"
+    local digits_enabled="$8"
+    local symbols_enabled="$9"
+    local exclude_chars="${10}"
+
+    local python_output
+    python_output=$(
+        NULLPASS_SITE="$site" \
+        NULLPASS_LOGIN="$login" \
+        NULLPASS_MASTER_PASSWORD="$master_password" \
+        NULLPASS_LENGTH="$length" \
+        NULLPASS_COUNTER="$counter" \
+        NULLPASS_LOWERCASE="$lowercase_enabled" \
+        NULLPASS_UPPERCASE="$uppercase_enabled" \
+        NULLPASS_DIGITS="$digits_enabled" \
+        NULLPASS_SYMBOLS="$symbols_enabled" \
+        NULLPASS_EXCLUDE="$exclude_chars" \
+        python3 - <<'PY'
+import os
+import sys
+import hashlib
+
+CHARACTER_SUBSETS = {
+    "lowercase": "abcdefghijklmnopqrstuvwxyz",
+    "uppercase": "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    "digits": "0123456789",
+    "symbols": "!\"#$%&'()*+,-./:;<=>?@[\\]^_\x60{|}~",
+}
+
+
+class ExcludeAllCharsAvailable(Exception):
+    """Raised when exclude removes every available character."""
+
+
+def calc_entropy(profile, master_password):
+    salt = profile["site"] + profile["login"] + format(profile["counter"], "x")
+    derived = hashlib.pbkdf2_hmac(
+        "sha256",
+        master_password.encode("utf-8"),
+        salt.encode("utf-8"),
+        100000,
+        32,
+    )
+    return int(derived.hex(), 16)
+
+
+def remove_excluded_chars(characters, exclude):
+    filtered = "".join(c for c in characters if c not in exclude)
+    if not filtered:
+        raise ExcludeAllCharsAvailable()
+    return filtered
+
+
+def get_set_of_characters(rules, exclude):
+    if rules:
+        pool = "".join(CHARACTER_SUBSETS[rule] for rule in rules)
+    else:
+        pool = (
+            CHARACTER_SUBSETS["lowercase"]
+            + CHARACTER_SUBSETS["uppercase"]
+            + CHARACTER_SUBSETS["digits"]
+            + CHARACTER_SUBSETS["symbols"]
+        )
+    return remove_excluded_chars(pool, exclude)
+
+
+def consume_entropy(generated_password, entropy, charset, max_length):
+    while len(generated_password) < max_length:
+        entropy, remainder = divmod(entropy, len(charset))
+        generated_password += charset[remainder]
+    return generated_password, entropy
+
+
+def insert_string_pseudo_randomly(password, entropy, extra_chars):
+    for letter in extra_chars:
+        if len(password) == 0:
+            quotient, remainder = entropy, 0
+        else:
+            quotient, remainder = divmod(entropy, len(password))
+        password = password[:remainder] + letter + password[remainder:]
+        entropy = quotient
+    return password
+
+
+def get_one_char_per_rule(entropy, rules, exclude):
+    characters = ""
+    for rule in rules:
+        available_chars = remove_excluded_chars(CHARACTER_SUBSETS[rule], exclude)
+        value, entropy = consume_entropy("", entropy, available_chars, 1)
+        characters += value
+    return characters, entropy
+
+
+def get_configured_rules(profile):
+    rules = ["lowercase", "uppercase", "digits", "symbols"]
+    if "numbers" in profile:
+        profile["digits"] = profile["numbers"]
+    return [rule for rule in rules if profile.get(rule)]
+
+
+def render_password(entropy, profile):
+    rules = get_configured_rules(profile)
+    exclude = profile.get("exclude", "")
+    charset = get_set_of_characters(rules, exclude)
+    base_length = profile["length"] - len(rules)
+    password, remaining_entropy = consume_entropy("", entropy, charset, base_length)
+    to_add, extra_entropy = get_one_char_per_rule(remaining_entropy, rules, exclude)
+    return insert_string_pseudo_randomly(password, extra_entropy, to_add)
+
+
+def env_bool(name, default="true"):
+    value = os.environ.get(name, default)
+    return value.lower() == "true"
+
+
+def main():
+    try:
+        profile = {
+            "site": os.environ.get("NULLPASS_SITE", ""),
+            "login": os.environ.get("NULLPASS_LOGIN", ""),
+            "counter": int(os.environ.get("NULLPASS_COUNTER", "1")),
+            "length": int(os.environ.get("NULLPASS_LENGTH", "16")),
+            "lowercase": env_bool("NULLPASS_LOWERCASE"),
+            "uppercase": env_bool("NULLPASS_UPPERCASE"),
+            "digits": env_bool("NULLPASS_DIGITS"),
+            "symbols": env_bool("NULLPASS_SYMBOLS"),
+        }
+        exclude = os.environ.get("NULLPASS_EXCLUDE", "")
+        if exclude:
+            profile["exclude"] = exclude
+        master_password = os.environ["NULLPASS_MASTER_PASSWORD"]
+    except KeyError as exc:
+        print(f"Missing environment variable: {exc}", file=sys.stderr)
+        sys.exit(2)
+
+    entropy = calc_entropy(profile, master_password)
+    try:
+        password = render_password(entropy, profile)
+    except ExcludeAllCharsAvailable:
+        print("Error: Excluded characters remove entire character set.", file=sys.stderr)
+        sys.exit(3)
+
+    sys.stdout.write(password)
+
+
+if __name__ == "__main__":
+    main()
+PY
+    )
+
+    local python_status=$?
+    if [ $python_status -ne 0 ]; then
+        exit $python_status
+    fi
+
+    echo "$python_output"
+}
+
+# Function to copy to clipboard
+copy_to_clipboard() {
+    local password="$1"
+    
+    if command -v pbcopy >/dev/null 2>&1; then
+        # macOS
+        echo -n "$password" | pbcopy
+        echo "Password copied to clipboard."
+    elif command -v xclip >/dev/null 2>&1; then
+        # Linux with xclip
+        echo -n "$password" | xclip -selection clipboard
+        echo "Password copied to clipboard."
+    elif command -v xsel >/dev/null 2>&1; then
+        # Linux with xsel
+        echo -n "$password" | xsel --clipboard --input
+        echo "Password copied to clipboard."
+    else
+        echo "Clipboard not available. Please install pbcopy (macOS) or xclip/xsel (Linux)."
+        echo "Password: $password"
+    fi
+}
+
+# Function to save profile
+save_profile() {
+    local site="$1"
+    local login="$2"
+    local length="$3"
+    local counter="$4"
+    local lowercase="$5"
+    local uppercase="$6"
+    local digits="$7"
+    local symbols="$8"
+    local save_path="$9"
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$(dirname "$save_path")"
+    
+    # Create JSON object for the profile
+    local profile="{\"site\":\"$site\",\"login\":\"$login\",\"length\":$length,\"counter\":$counter,\"lowercase\":$lowercase,\"uppercase\":$uppercase,\"digits\":$digits,\"symbols\":$symbols}"
+    
+    # Check if file exists
+    if [ -f "$save_path" ]; then
+        # Read existing profiles
+        local profiles=$(cat "$save_path")
+        
+        # Check if profile already exists
+        if echo "$profiles" | grep -q "\"site\":\"$site\""; then
+            # Update existing profile
+            profiles=$(echo "$profiles" | sed "s/{\"site\":\"$site\"[^}]*}/$profile/")
+        else
+            # Add new profile
+            profiles="${profiles%]}},${profile}]"
+        fi
+    else
+        # Create new file with this profile
+        profiles="[$profile]"
+    fi
+    
+    # Write profiles to file
+    echo "$profiles" > "$save_path"
+    echo "Profile saved to $save_path"
+}
+
+# Function to load profile
+load_profile() {
+    local site="$1"
+    local load_path="$2"
+    
+    if [ ! -f "$load_path" ]; then
+        echo "Profile file not found: $load_path"
+        return 1
+    fi
+    
+    # Extract profile for the site
+    local profile=$(cat "$load_path" | grep -o "{[^}]*\"site\":\"$site\"[^}]*}")
+    
+    if [ -z "$profile" ]; then
+        echo "Profile not found for site: $site"
+        return 1
+    fi
+    
+    # Extract values from profile
+    login=$(echo "$profile" | grep -o "\"login\":\"[^\"]*\"" | cut -d'"' -f4)
+    length=$(echo "$profile" | grep -o "\"length\":[0-9]*" | cut -d':' -f2)
+    counter=$(echo "$profile" | grep -o "\"counter\":[0-9]*" | cut -d':' -f2)
+    lowercase=$(echo "$profile" | grep -o "\"lowercase\":[^,}]*" | cut -d':' -f2)
+    uppercase=$(echo "$profile" | grep -o "\"uppercase\":[^,}]*" | cut -d':' -f2)
+    digits=$(echo "$profile" | grep -o "\"digits\":[^,}]*" | cut -d':' -f2)
+    symbols=$(echo "$profile" | grep -o "\"symbols\":[^,}]*" | cut -d':' -f2)
+    
+    echo "Profile loaded for site: $site"
+    return 0
+}
+
+# Initialize variables
+site=""
+login=""
+master_password=""
+length=$DEFAULT_LENGTH
+counter=$DEFAULT_COUNTER
+prompt=false
+copy=false
+exclude_chars=""
+no_fingerprint=false
+save_path=""
+load_path=""
+lowercase=true
+uppercase=true
+digits=true
+symbols=true
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -h|--help)
+            show_help
+            exit 0
+            ;;
+        -v|--version)
+            show_version
+            exit 0
+            ;;
+        -L|--length)
+            length="$2"
+            shift 2
+            ;;
+        -C|--counter)
+            counter="$2"
+            shift 2
+            ;;
+        -p|--prompt)
+            prompt=true
+            shift
+            ;;
+        -c|--copy)
+            copy=true
+            shift
+            ;;
+        --exclude)
+            exclude_chars="$2"
+            shift 2
+            ;;
+        --no-fingerprint)
+            no_fingerprint=true
+            shift
+            ;;
+        --save)
+            save_path="${2:-$DEFAULT_PROFILES_FILE}"
+            shift 2
+            ;;
+        --load)
+            load_path="$2"
+            shift 2
+            ;;
+        -l|--lowercase)
+            lowercase=true
+            shift
+            ;;
+        --no-lowercase)
+            lowercase=false
+            shift
+            ;;
+        -u|--uppercase)
+            uppercase=true
+            shift
+            ;;
+        --no-uppercase)
+            uppercase=false
+            shift
+            ;;
+        -d|--digits)
+            digits=true
+            shift
+            ;;
+        --no-digits)
+            digits=false
+            shift
+            ;;
+        -s|--symbols)
+            symbols=true
+            shift
+            ;;
+        --no-symbols)
+            symbols=false
+            shift
+            ;;
+        *)
+            if [ -z "$site" ]; then
+                site="$1"
+            elif [ -z "$login" ]; then
+                login="$1"
+            elif [ -z "$master_password" ]; then
+                master_password="$1"
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate length
+if [ "$length" -lt 5 ] || [ "$length" -gt 35 ]; then
+    echo "Error: Password length must be between 5 and 35."
+    exit 1
+fi
+
+# Prompt for values if requested
+if [ "$prompt" = true ]; then
+    prompt_values
+fi
+
+# Check if site is provided
+if [ -z "$site" ]; then
+    echo "Error: Site is required."
+    show_help
+    exit 1
+fi
+
+# Load profile if requested
+if [ -n "$load_path" ]; then
+    load_profile "$site" "$load_path"
+fi
+
+# Get master password from environment if not provided
+if [ -z "$master_password" ]; then
+    if [ -n "$NULLPASS_MASTER_PASSWORD" ]; then
+        master_password="$NULLPASS_MASTER_PASSWORD"
+    else
+        if [ "$no_fingerprint" = true ]; then
+            read -s -p "Master Password: " master_password
+            echo
+        else
+            read -p "Master Password: " master_password
+        fi
+    fi
+fi
+
+# Check if at least one character type is selected
+if [ "$lowercase" = false ] && [ "$uppercase" = false ] && [ "$digits" = false ] && [ "$symbols" = false ]; then
+    echo "Error: At least one character type must be selected."
+    exit 1
+fi
+
+# Generate password
+password=$(generate_password "$site" "$login" "$master_password" "$length" "$counter" "$lowercase" "$uppercase" "$digits" "$symbols" "$exclude_chars")
+
+# Save profile if requested
+if [ -n "$save_path" ]; then
+    save_profile "$site" "$login" "$length" "$counter" "$lowercase" "$uppercase" "$digits" "$symbols" "$save_path"
+fi
+
+# Output or copy password
+if [ "$copy" = true ]; then
+    copy_to_clipboard "$password"
+else
+    echo "$password"
+fi

@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Check if there are any uncommitted changes
+if ! git diff-index --quiet HEAD --; then
+  echo "Uncommitted changes found. Stashing them..."
+  git stash push -m "Temporary stash before creating a patch"
+fi
+
+# Create a patch from the first commit
+FIRST_COMMIT=$(git rev-list --max-parents=0 HEAD)
+PATCH_FILE="first_commit.patch"
+git format-patch -1 $FIRST_COMMIT -o .
+
+# Reset to a specified previous commit
+PREVIOUS_COMMIT=$1
+if [ -z "$PREVIOUS_COMMIT" ]; then
+  echo "Error: No previous commit hash specified."
+  exit 1
+fi
+git reset --soft $PREVIOUS_COMMIT
+
+# Pull from upstream
+git pull upstream main
+
+# Apply the patch
+git am $PATCH_FILE
+
+# Commit the changes
+git commit -am "Applied patch from the first commit after pulling from upstream"
+
+# Clean up the patch file
+rm $PATCH_FILE
+
+# Check if there was a stash and apply it back
+if git stash list | grep -q "Temporary stash before creating a patch"; then
+  echo "Applying stashed changes..."
+  git stash pop
+fi
+
+echo "Script completed successfully."Script completed successfully."

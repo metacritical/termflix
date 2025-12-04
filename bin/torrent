@@ -1,0 +1,1248 @@
+#!/usr/bin/env bash
+#
+# Torrent Streaming Tool - Stream torrents directly to mpv/vlc
+# Usage: torrent <magnet_link|torrent_file|search_query>
+#
+
+# Don't exit on error - we handle errors gracefully
+set +e
+
+# Cleanup function for poster images
+cleanup_on_exit() {
+    cleanup_posters
+}
+trap cleanup_on_exit EXIT INT TERM
+
+# Check for jq (needed for API parsing)
+check_jq() {
+    if ! command -v jq &> /dev/null; then
+        echo -e "${YELLOW}Warning:${RESET} jq not found. Some search features may be limited."
+        echo "Install with: ${CYAN}brew install jq${RESET}"
+        echo
+    fi
+}
+
+# Check for viu (optional, for displaying images on Mac)
+check_viu() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        if ! command -v viu &> /dev/null; then
+            echo -e "${YELLOW}Note:${RESET} viu not found. Movie posters will not be displayed."
+            echo "Install with: ${CYAN}brew install viu${RESET} or ${CYAN}cargo install viu${RESET}"
+            echo
+            return 1
+        fi
+        return 0
+    fi
+    return 1
+}
+
+# Download and display poster image
+display_poster() {
+    local poster_url="$1"
+    local width="${2:-20}"
+    local height="${3:-15}"
+    
+    if [ -z "$poster_url" ] || [ "$poster_url" = "N/A" ] || [ "$poster_url" = "" ]; then
+        return 1
+    fi
+    
+    # Check if viu is available
+    if ! check_viu >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    # Create temp directory for images
+    local temp_dir="${TMPDIR:-/tmp}/torrent_posters_$$"
+    mkdir -p "$temp_dir" 2>/dev/null || return 1
+    
+    # Download image
+    local image_file="${temp_dir}/poster_$(echo "$poster_url" | md5 2>/dev/null | cut -c1-8).jpg"
+    
+    if [ ! -f "$image_file" ]; then
+        curl -s --max-time 3 "$poster_url" -o "$image_file" 2>/dev/null || return 1
+    fi
+    
+    # Display with viu and capture output
+    if [ -f "$image_file" ]; then
+        viu -w "$width" -h "$height" "$image_file" 2>/dev/null
+        return 0
+    fi
+    
+    return 1
+}
+
+# Cleanup poster images
+cleanup_posters() {
+    local temp_dir="${TMPDIR:-/tmp}/torrent_posters_$$"
+    rm -rf "$temp_dir" 2>/dev/null
+}
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+# Get or set player preference
+get_player_preference() {
+    local config_dir="$HOME/.config"
+    local config_file="$config_dir/torrent_prefs"
+    
+    # Create config directory if it doesn't exist
+    mkdir -p "$config_dir" 2>/dev/null
+    
+    # Check if preference exists
+    if [ -f "$config_file" ]; then
+        local player=$(grep "^PLAYER=" "$config_file" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+        if [ -n "$player" ] && [[ "$player" =~ ^(mpv|vlc)$ ]]; then
+            echo "$player"
+            return 0
+        fi
+    fi
+    
+    # Ask user for preference (first time) - check if /dev/tty is available
+    # Don't check stdin (-t 0) as it may be consumed by previous reads
+    if [ -c /dev/tty ] 2>/dev/null && [ -r /dev/tty ] 2>/dev/null; then
+        # Use a timeout to prevent hanging - try to read with a timeout
+        echo
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${YELLOW}First time setup:${RESET} Which media player would you like to use?"
+        echo -e "  ${GREEN}1${RESET}) mpv (recommended)"
+        echo -e "  ${GREEN}2${RESET}) VLC"
+        echo -ne "${YELLOW}Enter choice (1 or 2, default: 1):${RESET} "
+        
+        # Try to read with timeout (10 seconds) - if it fails, default to mpv
+        # Use read -t which is built into bash and won't block forever
+        local choice=""
+        if ! read -t 10 -r choice < /dev/tty 2>/dev/null; then
+            # Timeout or error - default to mpv
+            choice="1"
+            echo ""  # New line after timeout
+        fi
+        
+        # Default to 1 if empty or invalid
+        [ -z "$choice" ] && choice="1"
+        
+        local selected_player="mpv"
+        case "$choice" in
+            2) selected_player="vlc" ;;
+            *) selected_player="mpv" ;;
+        esac
+        
+        # Verify player is installed
+        if ! command -v "$selected_player" &> /dev/null; then
+            echo -e "${RED}Error:${RESET} $selected_player is not installed."
+            echo "Please install it first: ${CYAN}brew install $selected_player${RESET}"
+            echo "Defaulting to mpv..."
+            selected_player="mpv"
+        fi
+        
+        # Save preference
+        echo "PLAYER=$selected_player" > "$config_file"
+        echo -e "${GREEN}✓ Preference saved to:${RESET} $config_file"
+        echo -e "${CYAN}Note:${RESET} Edit this file to change your preference later."
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo
+        
+        echo "$selected_player"
+        return 0
+    else
+        # Non-interactive mode or no TTY, default to mpv
+        echo "mpv"
+        return 0
+    fi
+}
+
+# Check dependencies
+check_deps() {
+    local missing=()
+    
+    # Check for peerflix (only tool we use now)
+    if ! command -v peerflix &> /dev/null; then
+        echo -e "${RED}Error:${RESET} peerflix not found."
+        echo
+        echo "Please install peerflix:"
+        echo "  ${GREEN}npm install -g peerflix${RESET}"
+        echo
+        echo "Or use: ${CYAN}brew install peerflix${RESET}"
+        exit 1
+    fi
+    
+    TORRENT_TOOL="peerflix"
+    
+    # Note: Player preference will be checked when streaming starts
+    # This avoids prompting during catalog browsing
+}
+
+# Show help
+show_help() {
+    cat << EOF
+${BOLD}${CYAN}Torrent Streaming Tool${RESET}
+
+Stream torrents directly to mpv or VLC player using peerflix.
+
+${BOLD}Usage:${RESET}
+  torrent <magnet_link>
+  torrent <torrent_file>
+  torrent search <query>
+  torrent latest [movies|shows|all]
+  torrent trending [movies|shows|all]
+  torrent popular [movies|shows|all]
+  torrent catalog [genre]
+
+${BOLD}Options:${RESET}
+  -h, --help          Show this help
+  -l, --list          List available files in torrent
+  -i, --index <num>   Select specific file by index
+  -q, --quality       Auto-select best quality
+  -s, --subtitles     Search for subtitles
+  -v, --verbose       Verbose output
+
+${BOLD}Examples:${RESET}
+  torrent "magnet:?xt=urn:btih:..."
+  torrent movie.torrent
+  torrent search "movie name"
+  torrent latest movies
+  torrent trending shows
+  torrent catalog action
+
+${BOLD}Catalog Features:${RESET}
+  - Browse latest movies and TV shows (like Stremio)
+  - View trending and popular content
+  - Browse by genre/category
+
+EOF
+}
+
+# Search using YTS API (movies) - same as Stremio YTS addon
+# Uses same approach as YTS-Streaming app
+search_yts() {
+    local query="$1"
+    
+    echo -e "${CYAN}[YTS]${RESET} Searching movies..." >&2
+    
+    # Build URL the same way as YTS-Streaming app
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?query_term=${query// /+}&limit=10"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                # Same structure as YTS-Streaming app
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -10
+            fi
+        fi
+    fi
+}
+
+# Search using 1337x API - same as Stremio 1337x addon
+search_1337x() {
+    local query="$1"
+    
+    echo -e "${CYAN}[1337x]${RESET} Searching..." >&2
+    
+    # Use 1337x unofficial API (similar to what Stremio uses)
+    local search_url="https://1337x.to/search/${query// /+/}/1/"
+    
+    if command -v curl &> /dev/null; then
+        # Try to parse 1337x HTML (they don't have official API)
+        local html=$(curl -s -L -H "User-Agent: Mozilla/5.0" "$search_url" 2>/dev/null)
+        
+        if [ -n "$html" ]; then
+            # Extract torrent links and names (BSD grep compatible)
+            echo "$html" | grep -o '<a href="/torrent/[^"]*">[^<]*</a>' | head -10 | while read -r line; do
+                local name=$(echo "$line" | sed -E 's/.*>([^<]*)<.*/\1/')
+                local id=$(echo "$line" | sed -E 's|.*/torrent/([^/]+)/.*|\1|')
+                if [ -n "$id" ] && [ -n "$name" ] && [ "$id" != "href" ]; then
+                    echo "1337x|$name|https://1337x.to/torrent/$id|N/A|N/A"
+                fi
+            done
+        fi
+    fi
+}
+
+# Search using ThePirateBay API - same as Stremio TPB addon
+search_tpb() {
+    local query="$1"
+    
+    echo -e "${CYAN}[ThePirateBay]${RESET} Searching..." >&2
+    
+    # TPB has an official API
+    local api_url="https://apibay.org/q.php?q=${query// /%20}&cat=0"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s "$api_url" 2>/dev/null)
+        
+        echo "$response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+    fi
+}
+
+# Search using EZTV API (TV shows) - same as Stremio EZTV addon
+search_eztv() {
+    local query="$1"
+    
+    echo -e "${CYAN}[EZTV]${RESET} Searching TV shows..." >&2
+    
+    local api_url="https://eztv.re/api/get-torrents?imdb_id=&limit=20&page=1&query_string=${query// /+}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s "$api_url" 2>/dev/null)
+        local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
+        
+        if [ "$count" -gt 0 ] 2>/dev/null; then
+            echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+        fi
+    fi
+}
+
+# Scrape movies from YTSRS (en.ytsrs.com)
+# Supports genre, quality, sort parameters
+get_ytsrs_movies() {
+    local genre="${1:-}"
+    local quality="${2:-1080p}"
+    local sort="${3:-seeds}"
+    local limit="${4:-20}"
+    local page="${5:-1}"  # Page not used for YTSRS but kept for compatibility
+    
+    echo -e "${CYAN}[YTSRS]${RESET} Fetching movies (genre=$genre, quality=$quality, sort=$sort)..." >&2
+    
+    # Build URL
+    local base_url="https://en.ytsrs.com/movies"
+    local params="quality=${quality}&sort=${sort}"
+    if [ -n "$genre" ] && [ "$genre" != "" ]; then
+        params="${params}&genre=${genre}"
+    fi
+    local api_url="${base_url}?${params}"
+    
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${YELLOW}Warning:${RESET} python3 required for YTSRS scraping" >&2
+        return 1
+    fi
+    
+    # Scrape the HTML page
+    local html=$(curl -s --max-time 10 -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" "$api_url" 2>/dev/null)
+    
+    if [ -z "$html" ]; then
+        return 1
+    fi
+    
+    # Use Python to parse HTML and extract movie data
+    # Save to temp file to avoid shell escaping issues
+    local temp_html=$(mktemp)
+    echo "$html" > "$temp_html"
+    
+    # Pass variables as environment variables
+    export YTSRS_LIMIT="$limit"
+    export YTSRS_QUALITY="$quality"
+    export YTSRS_TEMP_FILE="$temp_html"
+    
+    python3 << 'PYEOF'
+import sys, re, json, urllib.parse, urllib.request, os
+
+try:
+    temp_file = os.environ.get('YTSRS_TEMP_FILE', '/tmp/ytsrs_temp.html')
+    limit = int(os.environ.get('YTSRS_LIMIT', '20'))
+    default_quality = os.environ.get('YTSRS_QUALITY', '1080p')
+    
+    if not os.path.exists(temp_file):
+        sys.exit(1)
+    
+    with open(temp_file, "r", encoding="utf-8", errors="ignore") as f:
+        html = f.read()
+    
+    if not html or len(html) < 100:
+        sys.exit(1)
+    
+    # Find all movie cards with openModal onclick
+    movie_pattern = r'onclick=[\'"]openModal\((\d+),\s*["\']([^"\']+)["\'],\s*["\']([^"\']+)["\'],\s*["\'](\d+)["\']\)'
+    movies = re.findall(movie_pattern, html)
+    
+    if not movies:
+        sys.exit(1)
+    
+    count = 0
+    # Limit to fewer movies for speed (fetch details for top results only)
+    max_fetch = min(limit, 10)  # Only fetch details for first 10 to keep it fast
+    
+    for movie_id, imdb_id, title, year in movies:
+        if count >= max_fetch:
+            break
+        
+        # Extract quality from nearby HTML
+        card_start = html.find(f'openModal({movie_id},')
+        if card_start == -1:
+            continue
+        card_section = html[max(0, card_start-200):card_start+1000]
+        
+        quality_match = re.search(r'<span[^>]*class="[^"]*movie-quality[^"]*"[^>]*>([^<]+)</span>', card_section)
+        quality = quality_match.group(1).strip() if quality_match else default_quality
+        
+        # Get poster image
+        poster_match = re.search(r'<img[^>]*class="[^"]*movie-poster[^"]*"[^>]*src="([^"]+)"', card_section)
+        poster = poster_match.group(1) if poster_match else "N/A"
+        
+        # Fetch movie details to get hash (with shorter timeout for speed)
+        detail_url = f"https://en.ytsrs.com/?ajax=movie_details&movie_id={movie_id}&imdb_id={urllib.parse.quote(imdb_id)}&title={urllib.parse.quote(title)}&year={year}"
+        try:
+            req = urllib.request.Request(detail_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=2) as response:
+                detail_data = json.loads(response.read().decode())
+                torrents = detail_data.get('yts', {}).get('data', {}).get('movie', {}).get('torrents', [])
+                if torrents:
+                    # Use first torrent or find matching quality
+                    torrent = next((t for t in torrents if t.get('quality') == quality), torrents[0])
+                    hash_val = torrent.get('hash', '')
+                    size = torrent.get('size', 'N/A')
+                    seeds = torrent.get('seeds', 0)
+                    peers = torrent.get('peers', 0)
+                    
+                    if hash_val:
+                        magnet = f"magnet:?xt=urn:btih:{hash_val}&dn={urllib.parse.quote(title)}"
+                        print(f"YTSRS|{title} ({year})|{magnet}|{quality}|{size}|{seeds} seeds, {peers} peers|{poster}", flush=True)
+                        count += 1
+        except Exception as e:
+            # Skip on error - continue to next movie
+            pass
+except Exception as e:
+    # Fail silently
+    pass
+PYEOF
+    
+    rm -f "$temp_html" 2>/dev/null
+    unset YTSRS_LIMIT YTSRS_QUALITY YTSRS_TEMP_FILE
+}
+
+# Get latest movies from YTS (like Stremio catalog)
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_latest_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    # Try YTS first (same as YTS-Streaming app)
+    echo -e "${CYAN}[YTS]${RESET} Fetching latest movies..." >&2
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=date_added&order_by=desc&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        # Try with timeout - YTS API may be slow or down
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                # Get movies and their torrents - same structure as YTS-Streaming
+                # Include poster URL (medium_cover_image)
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.date_uploaded // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB if YTS fails (YTS API is often down)
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay..." >&2
+    # TPB doesn't have pagination in precompiled, so we fetch more and paginate client-side
+    local tpb_url="https://apibay.org/precompiled/data_top100_207.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available and let display_catalog handle pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Latest"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get trending movies from YTS
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_trending_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    echo -e "${CYAN}[YTS]${RESET} Fetching trending movies..." >&2
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=download_count&order_by=desc&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.download_count // 0)|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB trending
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay trending..." >&2
+    local tpb_url="https://apibay.org/precompiled/data_top100_201.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available for pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Trending"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get popular movies from YTS
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_popular_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    echo -e "${CYAN}[YTS]${RESET} Fetching popular movies..." >&2
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=rating&order_by=desc&minimum_rating=7&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year)) - ⭐\(.rating // "N/A")|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.rating // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB popular
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay popular..." >&2
+    local tpb_url="https://apibay.org/precompiled/data_top100_205.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available for pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Popular"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get latest TV shows from EZTV
+# Supports pagination via page parameter
+get_latest_shows() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    echo -e "${CYAN}[EZTV]${RESET} Fetching latest TV shows..." >&2
+    
+    local api_url="https://eztv.re/api/get-torrents?limit=$limit&page=$page"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 5 "$api_url" 2>/dev/null)
+        local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
+        
+        if [ "$count" -gt 0 ] 2>/dev/null; then
+            echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB|\(.date_released_unix // 0)"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get catalog by genre
+# Uses same approach as YTS-Streaming app
+get_catalog_by_genre() {
+    local genre="$1"
+    local limit="${2:-20}"
+    
+    echo -e "${CYAN}[YTS]${RESET} Fetching $genre movies..." >&2
+    
+    # Map common genre names to YTS genre IDs (same as YTS-Streaming)
+    local genre_id=""
+    case "$(echo "$genre" | tr '[:upper:]' '[:lower:]')" in
+        action) genre_id="Action" ;;
+        adventure) genre_id="Adventure" ;;
+        animation) genre_id="Animation" ;;
+        comedy) genre_id="Comedy" ;;
+        crime) genre_id="Crime" ;;
+        documentary) genre_id="Documentary" ;;
+        drama) genre_id="Drama" ;;
+        family) genre_id="Family" ;;
+        fantasy) genre_id="Fantasy" ;;
+        horror) genre_id="Horror" ;;
+        mystery) genre_id="Mystery" ;;
+        romance) genre_id="Romance" ;;
+        sci-fi|scifi|science-fiction) genre_id="Sci-Fi" ;;
+        thriller) genre_id="Thriller" ;;
+        war) genre_id="War" ;;
+        western) genre_id="Western" ;;
+        *) genre_id="$genre" ;;
+    esac
+    
+    # Build URL the same way as YTS-Streaming app
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?genre=${genre_id}&limit=${limit}&sort_by=date_added&order_by=desc"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        # Add User-Agent header like browsers do
+        local response=$(curl -s --max-time 10 --retry 1 --retry-delay 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.genres | join(", "))|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
+            fi
+        fi
+    fi
+}
+
+# Display catalog results in columns with pagination
+display_catalog() {
+    local title="$1"
+    local all_results=()
+    local page="${CATALOG_PAGE:-1}"
+    local per_page=20
+    shift
+    
+    # Store original arguments for pagination navigation
+    local original_args=("$@")
+    
+    echo -e "${BOLD}${YELLOW}$title${RESET}\n"
+    
+    # Collect results from all functions passed as arguments
+    local temp_file=$(mktemp 2>/dev/null || echo "/tmp/torrent_catalog_$$")
+    local args_copy=("$@")
+    local arg_idx=0
+    local ytsrs_pids=()
+    
+    while [ $arg_idx -lt ${#args_copy[@]} ]; do
+        local func="${args_copy[$arg_idx]}"
+        arg_idx=$((arg_idx + 1))
+        
+        # Call the function with remaining arguments
+        if [ $arg_idx -lt ${#args_copy[@]} ] && [[ "${args_copy[$arg_idx]}" =~ ^[0-9]+$ ]]; then
+            local limit="${args_copy[$arg_idx]}"
+            arg_idx=$((arg_idx + 1))
+            # Call function with page number for pagination
+            # For YTSRS, run in background since it's slower, but wait for it
+            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]]; then
+                ($func "$limit" "$page" >> "$temp_file" 2>&1) &
+                ytsrs_pids+=($!)
+            else
+                $func "$limit" "$page" >> "$temp_file" 2>&1
+            fi
+        else
+            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]]; then
+                ($func "$page" >> "$temp_file" 2>&1) &
+                ytsrs_pids+=($!)
+            else
+                $func "$page" >> "$temp_file" 2>&1
+            fi
+        fi
+    done
+    
+    # Wait for background YTSRS processes (with timeout)
+    if [ ${#ytsrs_pids[@]} -gt 0 ]; then
+        # Wait up to 25 seconds for YTSRS to complete
+        for pid in "${ytsrs_pids[@]}"; do
+            for i in {1..25}; do
+                if ! kill -0 "$pid" 2>/dev/null; then
+                    break  # Process finished
+                fi
+                sleep 1
+            done
+            # Kill if still running
+            kill "$pid" 2>/dev/null || true
+            wait "$pid" 2>/dev/null || true
+        done
+    fi
+    
+    # Read results from temp file
+    if [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                all_results+=("$line")
+            fi
+        done < "$temp_file"
+    fi
+    
+    rm -f "$temp_file" 2>/dev/null
+    
+    if [ ${#all_results[@]} -eq 0 ]; then
+        echo -e "${RED}No results found${RESET}"
+        echo -e "${YELLOW}Note:${RESET} This might be due to API timeouts or rate limiting."
+        echo "Try again in a moment or use: ${CYAN}torrent search \"query\"${RESET}"
+        return 1
+    fi
+    
+    # Calculate pagination
+    local total=${#all_results[@]}
+    local total_pages=$(( (total + per_page - 1) / per_page ))
+    local start_idx=$(( (page - 1) * per_page ))
+    local end_idx=$(( start_idx + per_page ))
+    
+    # Display pagination info
+    echo -e "${BOLD}${GREEN}Found ${total} results${RESET} (Page ${page}/${total_pages})"
+    
+    # Check if we have any YTS results with posters
+    local has_yts_with_posters=false
+    for result in "${all_results[@]}"; do
+        IFS='|' read -r result_source result_name result_magnet result_quality result_size result_extra result_poster <<< "$result"
+        if [[ "$result_source" == "YTS" ]] && [[ -n "$result_poster" ]] && [[ "$result_poster" != "N/A" ]]; then
+            has_yts_with_posters=true
+            break
+        fi
+    done
+    
+    # Show note about posters
+    if [ "$has_yts_with_posters" = false ] && check_viu >/dev/null 2>&1; then
+        echo -e "${YELLOW}Note:${RESET} Movie posters are only available for YTS results. Currently showing TPB results (no posters)."
+    elif [ "$has_yts_with_posters" = false ] && ! check_viu >/dev/null 2>&1; then
+        echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET}"
+    fi
+    echo
+    
+    # Display results in single column with detailed info
+    local index=$start_idx
+    local display_count=0
+    
+    while [ $index -lt $end_idx ] && [ $index -lt $total ]; do
+        local result="${all_results[$index]}"
+        
+        if [ -z "$result" ]; then
+            index=$((index + 1))
+            continue
+        fi
+        
+        # Parse result: SOURCE|NAME|MAGNET|QUALITY|SIZE|EXTRA|POSTER_URL
+        IFS='|' read -r source name magnet quality size extra poster_url <<< "$result"
+        
+        if [ -z "$name" ] || [ -z "$magnet" ]; then
+            index=$((index + 1))
+            continue
+        fi
+        
+        local item_num=$((index + 1))
+        local source_color="$CYAN"
+        case "$source" in
+            YTS) source_color="$GREEN" ;;
+            TPB) source_color="$YELLOW" ;;
+            EZTV) source_color="$BLUE" ;;
+            1337x) source_color="$MAGENTA" ;;
+        esac
+        
+        # Don't truncate - use full available width
+        local display_name="$name"
+        
+        # Check if we should show posters (only for YTS, and if viu is available)
+        local show_poster=false
+        if [[ "$source" == "YTS" ]] && [[ -n "$poster_url" ]] && [[ "$poster_url" != "N/A" ]] && check_viu >/dev/null 2>&1; then
+            show_poster=true
+        fi
+        
+        # Display with optional poster
+        if [ "$show_poster" = true ]; then
+            # Display with poster - show poster above movie name
+            echo
+            printf "${BOLD}[%3d]${RESET} ${source_color}[%s]${RESET} " "$item_num" "$source"
+            # Display poster (viu outputs directly to terminal)
+            display_poster "$poster_url" 20 15 2>/dev/null || true
+            printf "${BOLD}%s${RESET}\n" "$display_name"
+            echo
+        else
+            # Display without poster - show detailed info in single column
+            # Format: [num] [source] Title
+            #          Quality: seeds | Size: sizeMB
+            printf "${BOLD}[%3d]${RESET} ${source_color}[%s]${RESET} ${BOLD}%s${RESET}\n" \
+                "$item_num" "$source" "$display_name"
+            # Show quality/size info if available
+            if [ -n "$quality" ] && [ "$quality" != "N/A" ] && [ "$quality" != "" ]; then
+                printf "     ${CYAN}Quality:${RESET} $quality"
+                if [ -n "$size" ] && [ "$size" != "N/A" ] && [ "$size" != "" ]; then
+                    printf " | ${CYAN}Size:${RESET} $size"
+                fi
+                if [ -n "$extra" ] && [ "$extra" != "N/A" ] && [ "$extra" != "" ] && [ "$extra" != "0" ]; then
+                    printf " | $extra"
+                fi
+                printf "\n"
+            fi
+        fi
+        
+        display_count=$((display_count + 1))
+        index=$((index + 1))
+    done
+    
+    # Add spacing after results
+    echo
+    
+    echo
+    
+    # Interactive selection with pagination
+    if [ -t 0 ]; then
+        if [ $total_pages -gt 1 ]; then
+            echo -e "${CYAN}Navigation:${RESET}"
+            echo -e "  ${GREEN}n${RESET} or ${GREEN}next${RESET} - Next page"
+            echo -e "  ${GREEN}p${RESET} or ${GREEN}prev${RESET} - Previous page"
+            echo -e "  ${GREEN}1-${total}${RESET} - Select torrent"
+            echo
+        fi
+        echo -e "${YELLOW}Select a torrent (1-$total), 'n' for next, 'p' for prev, or press Enter to cancel:${RESET} "
+        read -r selection
+        
+        case "$selection" in
+            n|next)
+                if [ $page -lt $total_pages ]; then
+                    export CATALOG_PAGE=$((page + 1))
+                    # Re-fetch with new page (pass original arguments)
+                    display_catalog "$title" "${original_args[@]}"
+                else
+                    echo "Already on last page."
+                fi
+                return
+                ;;
+            p|prev|previous)
+                if [ $page -gt 1 ]; then
+                    export CATALOG_PAGE=$((page - 1))
+                    # Re-fetch with new page (pass original arguments)
+                    display_catalog "$title" "${original_args[@]}"
+                else
+                    echo "Already on first page."
+                fi
+                return
+                ;;
+            [0-9]*)
+                if [ -n "$selection" ] && [ "$selection" -ge 1 ] && [ "$selection" -le "$total" ] 2>/dev/null; then
+                    local selected_result="${all_results[$((selection - 1))]}"
+                    IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
+                    
+                    echo
+                    echo -e "${GREEN}Streaming:${RESET} $name"
+                    echo
+                    
+                    # Check dependencies before streaming
+                    if [ -z "$TORRENT_TOOL" ]; then
+                        check_deps
+                    fi
+                    
+                    # Stream the selected torrent
+                    stream_torrent "$magnet" "" false
+                else
+                    echo "Invalid selection."
+                fi
+                ;;
+            *)
+                echo "Cancelled."
+                ;;
+        esac
+    fi
+    
+    # Keep page variable for navigation, but reset when done
+    if [ -z "$selection" ] || [[ ! "$selection" =~ ^(n|next|p|prev|previous)$ ]]; then
+        unset CATALOG_PAGE
+        # Cleanup poster images
+        cleanup_posters
+    fi
+}
+
+# Unified search using Stremio-style APIs
+search_torrent() {
+    local query="$1"
+    local all_results=()
+    
+    echo -e "${BOLD}${YELLOW}Searching for:${RESET} ${BOLD}$query${RESET}"
+    echo
+    
+    # Search all sources (similar to how Stremio aggregates)
+    # Collect results into array using process substitution
+    {
+        search_yts "$query" 2>/dev/null
+        search_tpb "$query" 2>/dev/null
+        search_eztv "$query" 2>/dev/null
+        search_1337x "$query" 2>/dev/null
+    } | while IFS= read -r line || [ -n "$line" ]; do
+        if [ -n "$line" ] && [[ "$line" =~ \| ]]; then
+            all_results+=("$line")
+        fi
+    done
+    
+    # Note: Due to pipe creating subshell, we need to use a different approach
+    # Let's use a temp file instead
+    local temp_file=$(mktemp 2>/dev/null || echo "/tmp/torrent_$$")
+    {
+        search_yts "$query" 2>/dev/null
+        search_tpb "$query" 2>/dev/null
+        search_eztv "$query" 2>/dev/null
+        search_1337x "$query" 2>/dev/null
+    } > "$temp_file"
+    
+    # Read results from temp file
+    if [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
+        while IFS= read -r line || [ -n "$line" ]; do
+            if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                all_results+=("$line")
+            fi
+        done < "$temp_file"
+    fi
+    
+    rm -f "$temp_file" 2>/dev/null
+    
+    if [ ${#all_results[@]} -eq 0 ]; then
+        echo -e "${RED}No results found${RESET}"
+        echo
+        echo "Try:"
+        echo "  - Check your internet connection"
+        echo "  - Install jq: ${CYAN}brew install jq${RESET}"
+        echo "  - Try a different search query"
+        return 1
+    fi
+    
+    # Display results
+    echo -e "${BOLD}${GREEN}Found ${#all_results[@]} results:${RESET}\n"
+    
+    local index=0
+    for result in "${all_results[@]}"; do
+        if [ -z "$result" ]; then
+            continue
+        fi
+        
+        IFS='|' read -r source name magnet quality size <<< "$result"
+        
+        if [ -z "$name" ] || [ -z "$magnet" ]; then
+            continue
+        fi
+        
+        index=$((index + 1))
+        
+        local source_color="$CYAN"
+        case "$source" in
+            YTS) source_color="$GREEN" ;;
+            TPB) source_color="$YELLOW" ;;
+            EZTV) source_color="$BLUE" ;;
+            1337x) source_color="$MAGENTA" ;;
+        esac
+        
+        echo -e "${BOLD}[$index]${RESET} ${source_color}[$source]${RESET} ${BOLD}$name${RESET}"
+        if [ "$quality" != "N/A" ] && [ -n "$quality" ] && [ "$quality" != "" ]; then
+            echo -e "     Quality: $quality | Size: $size"
+        fi
+        echo -e "     ${CYAN}$magnet${RESET}"
+        echo
+    done
+    
+    # Interactive selection
+    if [ -t 0 ]; then
+        echo -e "${YELLOW}Select a torrent (1-$index) or press Enter to cancel:${RESET} "
+        read -r selection
+        
+        if [ -n "$selection" ] && [ "$selection" -ge 1 ] && [ "$selection" -le "$index" ] 2>/dev/null; then
+            local selected_result="${all_results[$((selection - 1))]}"
+            IFS='|' read -r source name magnet quality size <<< "$selected_result"
+            
+            echo
+            echo -e "${GREEN}Streaming:${RESET} $name"
+            echo
+            
+            # Ensure dependencies are checked before streaming
+            if [ -z "$TORRENT_TOOL" ]; then
+                check_deps
+            fi
+            
+            # Stream the selected torrent
+            stream_torrent "$magnet" "" false
+        else
+            echo "Cancelled."
+        fi
+    else
+        echo -e "${YELLOW}Non-interactive mode. Use:${RESET}"
+        echo "  torrent \"<magnet_link>\""
+    fi
+}
+
+# Stream with peerflix
+stream_peerflix() {
+    local source="$1"
+    local index="${2:-}"
+    
+    # Get player preference (will ask if first time, but with timeout to prevent hanging)
+    local player=$(get_player_preference)
+    
+    echo -e "${GREEN}Streaming with peerflix to $player...${RESET}"
+    
+    local args=("-p" "0")
+    
+    if [ -n "$index" ]; then
+        args+=("-i" "$index")
+    fi
+    
+    # Use auto-launch flags: -k for mpv, -v for vlc
+    if [ "$player" = "vlc" ]; then
+        args+=("-v")
+    else
+        args+=("-k")  # mpv
+    fi
+    
+    # Run peerflix with auto-launch
+    peerflix "$source" "${args[@]}"
+}
+
+
+# Main streaming function
+stream_torrent() {
+    local source="$1"
+    local index="${2:-}"
+    local list_only="${3:-false}"
+    
+    # Ensure TORRENT_TOOL is set (should always be peerflix now)
+    if [ -z "$TORRENT_TOOL" ]; then
+        check_deps
+    fi
+    
+    # Only use peerflix
+    if [ "$list_only" = true ]; then
+        peerflix "$source" --list
+    else
+        stream_peerflix "$source" "$index"
+    fi
+}
+
+# Auto-select best quality
+select_best_quality() {
+    local source="$1"
+    
+    echo -e "${YELLOW}Analyzing available files...${RESET}"
+    
+    # List files and find the largest video file
+    # Use peerflix to list files
+    local file_list=$(peerflix "$source" --list 2>/dev/null || echo "")
+    
+    if [ -z "$file_list" ]; then
+        echo -e "${YELLOW}Could not list files, playing default...${RESET}"
+        return 0
+    fi
+    
+    # Find video files and select the largest one
+    local best_file=$(echo "$file_list" | grep -iE '\.(mp4|mkv|avi|mov|webm|m4v)' | \
+        awk '{print $1, $2}' | sort -k2 -rn | head -1 | awk '{print $1}')
+    
+    if [ -n "$best_file" ]; then
+        echo -e "${GREEN}Selected best quality file (index $best_file)${RESET}"
+        echo "$best_file"
+    else
+        echo -e "${YELLOW}No video files found, using default...${RESET}"
+        echo "0"
+    fi
+}
+
+# Main function
+main() {
+    local source=""
+    local index=""
+    local list_only=false
+    local search_mode=false
+    local auto_quality=false
+    local args=("$@")
+    
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                show_help
+                exit 0
+                ;;
+            -l|--list)
+                list_only=true
+                shift
+                ;;
+            -i|--index)
+                index="$2"
+                shift 2
+                ;;
+            -q|--quality)
+                auto_quality=true
+                shift
+                ;;
+            -s|--subtitles)
+                echo -e "${YELLOW}Subtitle search not yet implemented${RESET}"
+                shift
+                ;;
+            -v|--verbose)
+                set -x
+                shift
+                ;;
+            search)
+                search_mode=true
+                shift
+                ;;
+            *)
+                if [ -z "$source" ]; then
+                    source="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
+    
+    # Wrapper functions for YTSRS (defined before use)
+    get_ytsrs_latest_wrapper() {
+        get_ytsrs_movies "" "1080p" "year" "$1" "$2"
+    }
+    get_ytsrs_trending_wrapper() {
+        get_ytsrs_movies "" "1080p" "seeds" "$1" "$2"
+    }
+    get_ytsrs_popular_wrapper() {
+        get_ytsrs_movies "" "1080p" "rating" "$1" "$2"
+    }
+    get_ytsrs_genre_wrapper() {
+        local genre="$1"
+        shift
+        get_ytsrs_movies "$genre" "1080p" "seeds" "$1" "$2"
+    }
+    
+    # Handle catalog modes FIRST (doesn't need streaming tool)
+    case "${args[0]}" in
+        latest)
+            check_jq
+            local type="${args[1]:-all}"
+            case "$type" in
+                movies)
+                    # Show results from both TPB and YTSRS
+                    display_catalog "🎬 Latest Movies" get_latest_movies 25 get_ytsrs_latest_wrapper 25
+                    ;;
+                shows)
+                    display_catalog "📺 Latest TV Shows" get_latest_shows 50
+                    ;;
+                all|*)
+                    display_catalog "🎬 Latest Movies & Shows" get_latest_movies 15 get_ytsrs_latest_wrapper 15 get_latest_shows 20
+                    ;;
+            esac
+            exit $?
+            ;;
+        trending)
+            check_jq
+            local type="${args[1]:-all}"
+            case "$type" in
+                movies)
+                    # Show results from both TPB and YTSRS
+                    display_catalog "🔥 Trending Movies" get_trending_movies 25 get_ytsrs_trending_wrapper 25
+                    ;;
+                shows)
+                    display_catalog "🔥 Trending TV Shows" get_latest_shows 50
+                    ;;
+                all|*)
+                    display_catalog "🔥 Trending Content" get_trending_movies 15 get_ytsrs_trending_wrapper 15 get_latest_shows 20
+                    ;;
+            esac
+            exit $?
+            ;;
+        popular)
+            check_jq
+            local type="${args[1]:-all}"
+            case "$type" in
+                movies)
+                    # Show results from both TPB and YTSRS
+                    display_catalog "⭐ Popular Movies" get_popular_movies 25 get_ytsrs_popular_wrapper 25
+                    ;;
+                shows)
+                    display_catalog "⭐ Popular TV Shows" get_latest_shows 50
+                    ;;
+                all|*)
+                    display_catalog "⭐ Popular Content" get_popular_movies 15 get_ytsrs_popular_wrapper 15 get_latest_shows 20
+                    ;;
+            esac
+            exit $?
+            ;;
+        catalog)
+            check_jq
+            local genre="${args[1]:-}"
+            if [ -z "$genre" ]; then
+                echo -e "${BOLD}Available Genres:${RESET}"
+                echo "  action, adventure, animation, comedy, crime, documentary,"
+                echo "  drama, family, fantasy, horror, mystery, romance,"
+                echo "  sci-fi, thriller, war, western"
+                echo
+                echo "Usage: torrent catalog <genre>"
+                exit 1
+            fi
+            # Show results from both YTS/TPB and YTSRS
+            # Create genre-specific wrapper
+            eval "get_ytsrs_${genre}_wrapper() {
+                get_ytsrs_movies \"$genre\" \"1080p\" \"seeds\" \"\$1\" \"\$2\"
+            }"
+            display_catalog "📚 $genre Movies" get_catalog_by_genre "$genre" 25 "get_ytsrs_${genre}_wrapper" 25
+            exit $?
+            ;;
+        search)
+            check_jq
+            local query="${args[1]:-}"
+            if [ -z "$query" ]; then
+                echo -e "${RED}Error:${RESET} Please provide a search query"
+                echo "Usage: torrent search <query>"
+                exit 1
+            fi
+            search_torrent "$query"
+            exit $?
+            ;;
+    esac
+    
+    # If we get here and no source, show help
+    if [ -z "$source" ] && [ "$list_only" = false ]; then
+        show_help
+        exit 0
+    fi
+    
+    # Check dependencies for streaming (only needed when actually streaming)
+    check_deps
+    check_jq
+    
+    # Get source from clipboard if not provided
+    if [ -z "$source" ]; then
+        if command -v pbpaste &> /dev/null; then
+            # BSD grep compatible (no -P flag)
+            source=$(pbpaste | grep -oE 'magnet:\?[^[:space:]]+' | head -1)
+            if [ -n "$source" ]; then
+                echo -e "${GREEN}Using magnet link from clipboard${RESET}"
+            fi
+        fi
+        
+        if [ -z "$source" ]; then
+            show_help
+            exit 1
+        fi
+    fi
+    
+    # Handle auto-quality selection
+    if [ "$auto_quality" = true ] && [ -z "$index" ]; then
+        index=$(select_best_quality "$source")
+    fi
+    
+    # Stream the torrent
+    stream_torrent "$source" "$index" "$list_only"
+}
+
+# Run main function
+main "$@"

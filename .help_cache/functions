@@ -1,0 +1,9 @@
+FUNC|src|Reload bash profile|src|system
+FUNC|unblock|Kill process on port|unblock [port]|system
+FUNC|timeloop|Loop command with timeout|timeloop [command]|utilities
+FUNC|code|Open in code editor|code [file]|editor
+FUNC|disp_msg|Display message utility|disp_msg [message]|utilities
+FUNC|alert|Notification for long commands|alert|utilities
+FUNC|trapper|Trap signals|trapper|system
+FUNC|command_not_found_handle|Handle command not found|command_not_found_handle|system
+FUNC|tmux_status_left|Tmux status bar left|tmux_status_left|tmux

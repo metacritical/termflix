@@ -1,0 +1,2 @@
+#!/bin/bash
+for img in *.$1; do sips -s format $2 "$img" --out "${img%.$1}.jpg"; done

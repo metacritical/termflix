@@ -1,0 +1,21 @@
+#!/bin/bash
+
+open(){
+		if [ -f $1 ] ; then
+				case $1 in
+						*.pdf)
+								evince $1 &;;
+
+						*.jpg|*.png|*.tiff|*.jpeg|*.bmp)
+								eog $1 &;;
+
+						*.mp4|*.mpg|*.mpeg|*.flv|*.avi|*.mkv)
+								vlc $1 &;;
+
+						*.rb|*.c|*.cpp|*.h|*.rl|*.sql|*.txt)
+								emacs $1 &;;
+				esac
+		else
+				echo "Dont Know What To do with $1"
+		fi
+}

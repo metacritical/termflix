@@ -1,0 +1,8 @@
+LIB|aliases.sh|Command aliases|source libs/aliases.sh|core
+LIB|bind_key.sh|Key bindings|source libs/bind_key.sh|core
+LIB|colors.sh|Color definitions|source libs/colors.sh|core
+LIB|prompt.sh|PS1 prompt configuration|source libs/prompt.sh|core
+LIB|command_not_found_handle.sh|Command not found handler|source libs/command_not_found_handle.sh|core
+LIB|tmux_status_left.sh|Tmux status configuration|source libs/tmux_status_left.sh|tmux
+LIB|trapper.sh|Signal trapping|source libs/trapper.sh|core
+LIB|tmux.conf|Tmux configuration|source libs/tmux.conf|tmux

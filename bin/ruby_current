@@ -1,0 +1,20 @@
+#!/usr/bin/env ruby
+# -*- coding: utf-8 -*-
+
+unless ENV["GEM_HOME"].nil?
+  if ENV["GEM_HOME"][/\@/]
+    gemset = ENV["GEM_HOME"].split(/\@/).last
+  else
+    gemset = "(default)"
+  end
+
+  if ARGV[0] == 'version'
+    puts ENV["RUBY_VERSION"].split(/\-/)[1] unless ENV["RUBY_VERSION"].nil?
+  elsif ARGV[0] == 'gemset'
+    puts gemset
+  elsif ARGV[0] == 'seperator'
+    puts "❖"
+  end
+else
+  puts ENV["rvm_ruby_string"] unless ENV["rvm_ruby_string"].nil?
+end

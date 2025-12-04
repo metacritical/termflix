@@ -1,0 +1,4 @@
+#!/usr/bin/ruby
+
+listing = Dir.glob(ENV['HOME']+"/Documents/wallpap/"+"*.png")
+print listing[rand(listing.length)]

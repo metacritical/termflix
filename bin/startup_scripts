@@ -1,0 +1,14 @@
+#!/bin/sh
+#Run Startup apps
+gnome-settings-daemon &
+gnome-sound-applet &
+guake &
+nm-applet &
+skype &
+dropbox start &
+hipchat &
+#synapse -s 0 &
+#shutter --min_at_startup &
+#nmcli con up id Blackduck
+#nitrogen --restore &
+#~/.dropbox-dist/dropboxd &
