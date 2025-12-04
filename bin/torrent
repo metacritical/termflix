@@ -198,8 +198,11 @@ ${BOLD}Options:${RESET}
   -l, --list          List available files in torrent
   -i, --index <num>   Select specific file by index
   -q, --quality       Auto-select best quality
-  -s, --subtitles     Search for subtitles
+  -s, --subtitles     Enable subtitle loading (auto-detected if available)
   -v, --verbose       Verbose output
+
+${BOLD}Commands:${RESET}
+  player <mpv|vlc>    Change default media player preference
 
 ${BOLD}Examples:${RESET}
   torrent "magnet:?xt=urn:btih:..."
@@ -849,8 +852,8 @@ display_catalog() {
                         check_deps
                     fi
                     
-                    # Stream the selected torrent
-                    stream_torrent "$magnet" "" false
+                    # Stream the selected torrent (subtitles auto-detected)
+                    stream_torrent "$magnet" "" false false
                 else
                     echo "Invalid selection."
                 fi
@@ -972,8 +975,8 @@ search_torrent() {
                 check_deps
             fi
             
-            # Stream the selected torrent
-            stream_torrent "$magnet" "" false
+            # Stream the selected torrent (subtitles auto-detected)
+            stream_torrent "$magnet" "" false false
         else
             echo "Cancelled."
         fi
@@ -983,10 +986,54 @@ search_torrent() {
     fi
 }
 
-# Stream with peerflix
+# Check if torrent has subtitle files and return info
+has_subtitles() {
+    local source="$1"
+    
+    # List files and check for subtitle extensions
+    local file_list=$(peerflix "$source" --list 2>/dev/null || echo "")
+    
+    if [ -z "$file_list" ]; then
+        return 1
+    fi
+    
+    # Check for common subtitle file extensions and extract subtitle file names
+    local subtitle_files=$(echo "$file_list" | grep -iE '\.(srt|vtt|ass|ssa|sub|idx)$' || echo "")
+    
+    if [ -n "$subtitle_files" ]; then
+        # Count and list subtitle files found
+        local sub_count=$(echo "$subtitle_files" | wc -l | tr -d ' ')
+        echo -e "${GREEN}Subtitle found!${RESET} ($sub_count file(s))" >&2
+        
+        # Print subtitle file names (limit to first 3 to avoid clutter)
+        echo "$subtitle_files" | head -3 | while IFS= read -r line; do
+            if [ -n "$line" ]; then
+                # Extract filename (usually the last part after spaces/tabs)
+                # peerflix list format: "index  size  filename"
+                local sub_file=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' 2>/dev/null || echo "$line")
+                if [ -n "$sub_file" ]; then
+                    echo -e "  ${CYAN}→${RESET} $sub_file" >&2
+                fi
+            fi
+        done
+        
+        local total_subs=$(echo "$subtitle_files" | wc -l | tr -d ' ')
+        if [ "$total_subs" -gt 3 ]; then
+            local remaining=$((total_subs - 3))
+            echo -e "  ${CYAN}... and $remaining more${RESET}" >&2
+        fi
+        
+        return 0
+    fi
+    
+    return 1
+}
+
+# Stream with peerflix - manually handle subtitles by finding .srt files in peerflix path
 stream_peerflix() {
     local source="$1"
     local index="${2:-}"
+    local enable_subtitles="${3:-false}"
     
     # Get player preference (will ask if first time, but with timeout to prevent hanging)
     local player=$(get_player_preference)
@@ -999,15 +1046,162 @@ stream_peerflix() {
         args+=("-i" "$index")
     fi
     
-    # Use auto-launch flags: -k for mpv, -v for vlc
-    if [ "$player" = "vlc" ]; then
-        args+=("-v")
-    else
-        args+=("-k")  # mpv
+    # Check for subtitles first
+    local has_subs=false
+    if [ "$enable_subtitles" = true ] || has_subtitles "$source" >/dev/null 2>&1; then
+        has_subs=true
     fi
     
-    # Run peerflix with auto-launch
-    peerflix "$source" "${args[@]}"
+    # Don't use peerflix auto-launch - we'll launch player manually to pass subtitle files
+    # Run peerflix in background with quiet mode, capture output to get the path
+    local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
+    local peerflix_pid
+    
+    # Add quiet flag to reduce verbose output
+    args+=("-q")
+    
+    # Start peerflix without auto-launch, capture output to file only (not stdout)
+    peerflix "$source" "${args[@]}" > "$temp_output" 2>&1 &
+    peerflix_pid=$!
+    
+    # Wait a bit for peerflix to start and show the path
+    sleep 2
+    
+    # Extract the path from peerflix output
+    local torrent_path=""
+    local max_wait=10
+    local waited=0
+    
+    while [ $waited -lt $max_wait ]; do
+        if [ -f "$temp_output" ]; then
+            torrent_path=$(grep "info path" "$temp_output" 2>/dev/null | head -1 | sed 's/.*info path //' | tr -d '\r\n')
+            if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+                break
+            fi
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    # Find subtitle files in the torrent path
+    local subtitle_files=()
+    if [ "$has_subs" = true ] && [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+        # Search for subtitle files recursively
+        while IFS= read -r sub_file; do
+            if [ -f "$sub_file" ]; then
+                subtitle_files+=("$sub_file")
+            fi
+        done < <(find "$torrent_path" -type f \( -iname "*.srt" -o -iname "*.vtt" -o -iname "*.ass" -o -iname "*.ssa" \) 2>/dev/null)
+        
+        if [ ${#subtitle_files[@]} -gt 0 ]; then
+            echo -e "${GREEN}Subtitle found!${RESET} (${#subtitle_files[@]} file(s))"
+            for sub_file in "${subtitle_files[@]}"; do
+                local sub_name=$(basename "$sub_file")
+                echo -e "  ${CYAN}→${RESET} $sub_name"
+            done
+        fi
+    fi
+    
+    # Get the streaming URL from peerflix output
+    local stream_url=""
+    waited=0
+    while [ $waited -lt $max_wait ]; do
+        if [ -f "$temp_output" ]; then
+            # Look for "open mpv and enter http://..." or similar patterns
+            stream_url=$(grep -iE "(open.*enter|http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+)" "$temp_output" 2>/dev/null | \
+                grep -oE "http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+" | head -1)
+            if [ -n "$stream_url" ]; then
+                break
+            fi
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    
+    # If we couldn't get URL from output, construct it from peerflix's default
+    if [ -z "$stream_url" ]; then
+        # Try to get local IP and port from peerflix
+        local local_ip=$(ipconfig getifaddr en0 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
+        if [ -z "$local_ip" ]; then
+            local_ip="127.0.0.1"
+        fi
+        # Try to get port from peerflix output or use default
+        local port=$(grep -iE "port|:[0-9]+" "$temp_output" 2>/dev/null | grep -oE ":[0-9]+" | head -1 | tr -d ':')
+        if [ -z "$port" ]; then
+            port="8888"  # peerflix default
+        fi
+        stream_url="http://${local_ip}:${port}"
+    fi
+    
+    # Launch player with subtitle files if found
+    if [ -n "$stream_url" ]; then
+        echo -e "${CYAN}Stream URL:${RESET} $stream_url"
+        local player_pid=""
+        
+        if [ "$player" = "vlc" ]; then
+            # For VLC, we can pass subtitle files
+            if [ ${#subtitle_files[@]} -gt 0 ]; then
+                echo -e "${GREEN}Launching VLC with subtitles...${RESET}"
+                vlc "$stream_url" --sub-file="${subtitle_files[0]}" >/dev/null 2>&1 &
+                player_pid=$!
+            else
+                echo -e "${GREEN}Launching VLC...${RESET}"
+                vlc "$stream_url" >/dev/null 2>&1 &
+                player_pid=$!
+            fi
+        else
+            # For mpv, pass all subtitle files
+            local mpv_args=("$stream_url")
+            if [ ${#subtitle_files[@]} -gt 0 ]; then
+                echo -e "${GREEN}Launching mpv with ${#subtitle_files[@]} subtitle file(s)...${RESET}"
+                for sub_file in "${subtitle_files[@]}"; do
+                    mpv_args+=("--sub-file=$sub_file")
+                done
+            else
+                echo -e "${GREEN}Launching mpv...${RESET}"
+            fi
+            mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+            player_pid=$!
+        fi
+        
+        # Monitor player process - when it exits, kill peerflix
+        if [ -n "$player_pid" ] && [ "$player_pid" -gt 0 ] 2>/dev/null; then
+            # Wait for player to exit (check every second)
+            while kill -0 "$player_pid" 2>/dev/null; do
+                sleep 1
+            done
+            # Player exited, kill peerflix
+            echo -e "${CYAN}Player closed. Stopping peerflix...${RESET}"
+            kill $peerflix_pid 2>/dev/null || true
+            # Wait a moment for graceful shutdown
+            sleep 1
+            # Force kill if still running
+            kill -9 $peerflix_pid 2>/dev/null || true
+            wait $peerflix_pid 2>/dev/null || true
+        else
+            # Fallback: wait for peerflix (shouldn't happen)
+            wait $peerflix_pid 2>/dev/null || true
+        fi
+    else
+        echo -e "${YELLOW}Warning:${RESET} Could not determine stream URL, using peerflix auto-launch"
+        # Kill the background peerflix
+        kill $peerflix_pid 2>/dev/null || true
+        # Fallback to peerflix auto-launch (remove quiet flag for fallback)
+        local fallback_args=("-p" "0")
+        if [ -n "$index" ]; then
+            fallback_args+=("-i" "$index")
+        fi
+        if [ "$player" = "vlc" ]; then
+            fallback_args+=("-v")
+        else
+            fallback_args+=("-k")
+        fi
+        peerflix "$source" "${fallback_args[@]}"
+        rm -f "$temp_output" 2>/dev/null
+        return
+    fi
+    
+    rm -f "$temp_output" 2>/dev/null
 }
 
 
@@ -1016,6 +1210,7 @@ stream_torrent() {
     local source="$1"
     local index="${2:-}"
     local list_only="${3:-false}"
+    local enable_subtitles="${4:-false}"
     
     # Ensure TORRENT_TOOL is set (should always be peerflix now)
     if [ -z "$TORRENT_TOOL" ]; then
@@ -1026,7 +1221,7 @@ stream_torrent() {
     if [ "$list_only" = true ]; then
         peerflix "$source" --list
     else
-        stream_peerflix "$source" "$index"
+        stream_peerflix "$source" "$index" "$enable_subtitles"
     fi
 }
 
@@ -1065,6 +1260,7 @@ main() {
     local list_only=false
     local search_mode=false
     local auto_quality=false
+    local enable_subtitles=false
     local args=("$@")
     
     # Parse arguments
@@ -1087,12 +1283,32 @@ main() {
                 shift
                 ;;
             -s|--subtitles)
-                echo -e "${YELLOW}Subtitle search not yet implemented${RESET}"
+                enable_subtitles=true
                 shift
                 ;;
             -v|--verbose)
                 set -x
                 shift
+                ;;
+            player)
+                # Change player preference
+                if [ -z "$2" ]; then
+                    echo -e "${RED}Error:${RESET} Please specify a player (mpv or vlc)"
+                    echo "Usage: torrent player <mpv|vlc>"
+                    exit 1
+                fi
+                local new_player="$2"
+                if [[ "$new_player" =~ ^(mpv|vlc)$ ]]; then
+                    local config_file="$HOME/.config/torrent_prefs"
+                    mkdir -p "$HOME/.config" 2>/dev/null
+                    echo "PLAYER=$new_player" > "$config_file"
+                    echo -e "${GREEN}Player preference changed to:${RESET} $new_player"
+                    echo -e "${CYAN}Config saved to:${RESET} $config_file"
+                    exit 0
+                else
+                    echo -e "${RED}Error:${RESET} Invalid player. Use 'mpv' or 'vlc'"
+                    exit 1
+                fi
                 ;;
             search)
                 search_mode=true
@@ -1241,7 +1457,7 @@ main() {
     fi
     
     # Stream the torrent
-    stream_torrent "$source" "$index" "$list_only"
+    stream_torrent "$source" "$index" "$list_only" "$enable_subtitles"
 }
 
 # Run main function
