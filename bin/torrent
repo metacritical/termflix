@@ -1029,7 +1029,7 @@ has_subtitles() {
     return 1
 }
 
-# Stream with peerflix - manually handle subtitles by finding .srt files in peerflix path
+# Stream with peerflix - use peerflix's --subtitles flag properly
 stream_peerflix() {
     local source="$1"
     local index="${2:-}"
@@ -1046,160 +1046,472 @@ stream_peerflix() {
         args+=("-i" "$index")
     fi
     
-    # Check for subtitles first
-    local has_subs=false
-    if [ "$enable_subtitles" = true ] || has_subtitles "$source" >/dev/null 2>&1; then
-        has_subs=true
-    fi
-    
-    # Don't use peerflix auto-launch - we'll launch player manually to pass subtitle files
-    # Run peerflix in background with quiet mode, capture output to get the path
-    local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
-    local peerflix_pid
-    
     # Add quiet flag to reduce verbose output
     args+=("-q")
     
-    # Start peerflix without auto-launch, capture output to file only (not stdout)
-    peerflix "$source" "${args[@]}" > "$temp_output" 2>&1 &
+    # Check for subtitles and find the subtitle file path
+    local subtitle_file=""
+    if [ "$enable_subtitles" = true ] || has_subtitles "$source" >/dev/null 2>&1; then
+        echo -e "${CYAN}Checking for subtitles in torrent...${RESET}"
+        
+        # We need to get the torrent path first to find subtitle files
+        # Run peerflix briefly to get the path, then restart with subtitles
+        local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
+        
+        # Start peerflix briefly to get the path (without auto-launch)
+        # This will start downloading the torrent files including subtitles
+        peerflix "$source" "${args[@]}" > "$temp_output" 2>&1 &
+        local temp_pid=$!
+        
+        # Wait for peerflix to start and show the path
+        echo -e "${YELLOW}Waiting for peerflix to initialize and start downloading...${RESET}"
+        sleep 3
+        
+        # Extract the path from peerflix output
+        local torrent_path=""
+        local max_wait=15
+        local waited=0
+        while [ $waited -lt $max_wait ]; do
+            if [ -f "$temp_output" ]; then
+                # Try multiple patterns to find the path
+                torrent_path=$(grep "info path" "$temp_output" 2>/dev/null | head -1 | sed 's/.*info path //' | tr -d '\r\n')
+                
+                # If not found, try looking for path patterns in the output
+                if [ -z "$torrent_path" ]; then
+                    torrent_path=$(grep -iE "(path|downloaded|stream)" "$temp_output" 2>/dev/null | grep -oE "/tmp/[^[:space:]]+" | head -1)
+                fi
+                
+                if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${GREEN}✓ TORRENT PATH FOUND:${RESET}"
+                    echo -e "${CYAN}$torrent_path${RESET}"
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo
+                    echo -e "${YELLOW}You can manually verify subtitle files with:${RESET}"
+                    echo -e "${CYAN}ls -la \"$torrent_path\"${RESET}"
+                    echo -e "${CYAN}find \"$torrent_path\" -name '*.srt'${RESET}"
+                    echo
+                    break
+                fi
+            fi
+            sleep 1
+            waited=$((waited + 1))
+        done
+        
+        # If still not found, show the raw output for debugging
+        if [ -z "$torrent_path" ] || [ ! -d "$torrent_path" ]; then
+            echo -e "${YELLOW}Warning:${RESET} Could not extract torrent path from peerflix output"
+            echo -e "${YELLOW}Peerflix output (last 20 lines):${RESET}"
+            tail -20 "$temp_output" 2>/dev/null | while IFS= read -r line; do
+                echo "  $line"
+            done
+        fi
+        
+        # Wait a bit more for files to actually download (especially subtitle files)
+        # Search recursively for subtitle files
+        if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+            echo -e "${YELLOW}Waiting for subtitle files to download...${RESET}"
+            echo -e "${CYAN}Searching recursively in:${RESET} $torrent_path"
+            echo
+            
+            local download_wait=0
+            local max_download_wait=15  # Increased wait time
+            
+            while [ $download_wait -lt $max_download_wait ]; do
+                # List all files in the directory for debugging (recursively)
+                if [ $download_wait -eq 0 ] || [ $((download_wait % 3)) -eq 0 ]; then
+                    echo -e "${YELLOW}Files in torrent (attempt $((download_wait + 1))):${RESET}"
+                    find "$torrent_path" -type f 2>/dev/null | head -10 | while IFS= read -r file; do
+                        if [ -n "$file" ]; then
+                            local fname=$(basename "$file")
+                            local fsize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                            local rel_path="${file#$torrent_path/}"
+                            echo -e "  ${CYAN}→${RESET} $fname (${fsize} bytes) [${rel_path}]"
+                        fi
+                    done
+                    echo
+                fi
+                
+                # Check if any subtitle files exist and have content (search recursively)
+                local found_sub=$(find "$torrent_path" -type f -iname "*.srt" 2>/dev/null | head -1)
+                if [ -z "$found_sub" ]; then
+                    found_sub=$(find "$torrent_path" -type f \( -iname "*.vtt" -o -iname "*.ass" -o -iname "*.ssa" \) 2>/dev/null | head -1)
+                fi
+                
+                if [ -n "$found_sub" ] && [ -f "$found_sub" ] && [ -s "$found_sub" ]; then
+                    # File exists and has content - it's downloaded
+                    subtitle_file=$(realpath "$found_sub" 2>/dev/null || echo "$found_sub")
+                    local file_size=$(stat -f%z "$subtitle_file" 2>/dev/null || stat -c%s "$subtitle_file" 2>/dev/null || echo "0")
+                    
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${GREEN}✓ SRT FOUND!${RESET}"
+                    echo -e "  ${CYAN}File:${RESET} $(basename "$subtitle_file")"
+                    echo -e "  ${CYAN}Location:${RESET} $subtitle_file"
+                    echo -e "  ${CYAN}Size:${RESET} ${file_size} bytes"
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    break
+                fi
+                
+                sleep 1
+                download_wait=$((download_wait + 1))
+            done
+            
+            if [ -z "$subtitle_file" ]; then
+                echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${YELLOW}⚠ NO SUBTITLE FILE FOUND${RESET}"
+                echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${YELLOW}Torrent path:${RESET} $torrent_path"
+                echo -e "${YELLOW}All files in torrent (recursive):${RESET}"
+                find "$torrent_path" -type f 2>/dev/null | while IFS= read -r file; do
+                    local rel_path="${file#$torrent_path/}"
+                    echo -e "  ${CYAN}→${RESET} $rel_path"
+                done
+                echo
+            fi
+        fi
+        
+        # Kill the temp peerflix process
+        echo -e "${YELLOW}Stopping temporary peerflix instance...${RESET}"
+        kill $temp_pid 2>/dev/null || true
+        wait $temp_pid 2>/dev/null || true
+        sleep 1  # Give it a moment to clean up
+        
+        rm -f "$temp_output" 2>/dev/null
+    fi
+    
+    # Don't use peerflix auto-launch - play file directly from local directory
+    # Start peerflix in background to download files
+    # Note: Remove -q temporarily to get path info, or check output more carefully
+    local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
+    local peerflix_pid
+    
+    echo -e "${YELLOW}Starting peerflix to download torrent files...${RESET}"
+    # Remove quiet flag temporarily to see path output (we need "info path" line)
+    local temp_args=()
+    for arg in "${args[@]}"; do
+        if [ "$arg" != "-q" ]; then
+            temp_args+=("$arg")
+        fi
+    done
+    peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
     
-    # Wait a bit for peerflix to start and show the path
-    sleep 2
+    # Wait for peerflix to start and show the path
+    sleep 4
     
-    # Extract the path from peerflix output
+    # Extract the torrent path from peerflix output
     local torrent_path=""
-    local max_wait=10
+    local max_wait=25
     local waited=0
     
+    echo -e "${YELLOW}Waiting for peerflix to show torrent path...${RESET}"
     while [ $waited -lt $max_wait ]; do
-        if [ -f "$temp_output" ]; then
-            torrent_path=$(grep "info path" "$temp_output" 2>/dev/null | head -1 | sed 's/.*info path //' | tr -d '\r\n')
+        if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
+            # Read the file content (handle potential buffering)
+            local output_content=$(cat "$temp_output" 2>/dev/null)
+            
+            # Try multiple patterns to find the path - "info path" followed by path
+            # Pattern: "info path /tmp/torrent-stream/..."
+            torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}' | tr -d '\r\n')
+            
+            # If not found, try extracting from "info path" line more carefully
+            if [ -z "$torrent_path" ]; then
+                torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' | awk '{print $1}')
+            fi
+            
+            # Try finding /tmp/torrent-stream/ pattern (more flexible regex)
+            if [ -z "$torrent_path" ]; then
+                torrent_path=$(echo "$output_content" | grep -oE "/tmp/torrent-stream/[a-zA-Z0-9]+" "$temp_output" 2>/dev/null | head -1)
+            fi
+            
+            # Try finding any /tmp path after "info path"
+            if [ -z "$torrent_path" ]; then
+                torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | grep -oE "/tmp/[^[:space:]]+" | head -1)
+            fi
+            
+            # Verify it's a directory
             if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${GREEN}✓ TORRENT PATH:${RESET}"
+                echo -e "${CYAN}$torrent_path${RESET}"
+                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
                 break
             fi
         fi
         sleep 1
         waited=$((waited + 1))
+        if [ $((waited % 3)) -eq 0 ]; then
+            echo -e "${YELLOW}Still waiting... (${waited}s)${RESET}"
+            # Show what we've found so far for debugging
+            if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
+                local found_line=$(grep "info path" "$temp_output" 2>/dev/null | head -1)
+                if [ -n "$found_line" ]; then
+                    echo -e "${CYAN}Found 'info path' line:${RESET} $found_line"
+                    # Try to extract path from this line
+                    local test_path=$(echo "$found_line" | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}')
+                    if [ -n "$test_path" ]; then
+                        echo -e "${CYAN}Extracted path:${RESET} $test_path"
+                        if [ -d "$test_path" ]; then
+                            echo -e "${GREEN}Path exists and is a directory!${RESET}"
+                            torrent_path="$test_path"
+                            break
+                        else
+                            echo -e "${YELLOW}Path does not exist yet or is not a directory${RESET}"
+                        fi
+                    fi
+                fi
+            fi
+        fi
     done
     
-    # Find subtitle files in the torrent path
-    local subtitle_files=()
-    if [ "$has_subs" = true ] && [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
-        # Search for subtitle files recursively
-        while IFS= read -r sub_file; do
-            if [ -f "$sub_file" ]; then
-                subtitle_files+=("$sub_file")
-            fi
-        done < <(find "$torrent_path" -type f \( -iname "*.srt" -o -iname "*.vtt" -o -iname "*.ass" -o -iname "*.ssa" \) 2>/dev/null)
-        
-        if [ ${#subtitle_files[@]} -gt 0 ]; then
-            echo -e "${GREEN}Subtitle found!${RESET} (${#subtitle_files[@]} file(s))"
-            for sub_file in "${subtitle_files[@]}"; do
-                local sub_name=$(basename "$sub_file")
-                echo -e "  ${CYAN}→${RESET} $sub_name"
-            done
-        fi
-    fi
-    
-    # Get the streaming URL from peerflix output
-    local stream_url=""
-    waited=0
-    while [ $waited -lt $max_wait ]; do
+    # If still not found, show debug output
+    if [ -z "$torrent_path" ] || [ ! -d "$torrent_path" ]; then
+        echo -e "${RED}Error:${RESET} Could not determine torrent path"
+        echo -e "${YELLOW}Peerflix output for debugging:${RESET}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
         if [ -f "$temp_output" ]; then
-            # Look for "open mpv and enter http://..." or similar patterns
-            stream_url=$(grep -iE "(open.*enter|http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+)" "$temp_output" 2>/dev/null | \
-                grep -oE "http://[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+" | head -1)
-            if [ -n "$stream_url" ]; then
+            cat "$temp_output" 2>/dev/null | tail -30
+        else
+            echo "  (no output file found)"
+        fi
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        kill $peerflix_pid 2>/dev/null || true
+        rm -f "$temp_output" 2>/dev/null
+        return 1
+    fi
+    
+    # Wait for video file to be available (search recursively)
+    echo -e "${YELLOW}Waiting for video file to download...${RESET}"
+    local video_file=""
+    local video_wait=0
+    local max_video_wait=20
+    
+    while [ $video_wait -lt $max_video_wait ]; do
+        # Find the largest video file recursively (usually the main movie file)
+        # Use find to get all video files, then sort by size
+        video_file=$(find "$torrent_path" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.m4v" \) 2>/dev/null | \
+            while IFS= read -r file; do
+                if [ -f "$file" ] && [ -s "$file" ]; then
+                    local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                    echo "$size|$file"
+                fi
+            done | sort -t'|' -k1 -rn | head -1 | cut -d'|' -f2)
+        
+        if [ -n "$video_file" ] && [ -f "$video_file" ] && [ -s "$video_file" ]; then
+            # Check if file is large enough (at least 1MB) to be a real video
+            local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo "0")
+            if [ "$file_size" -gt 1048576 ]; then  # 1MB
                 break
             fi
         fi
+        
+        # Show progress
+        if [ $((video_wait % 3)) -eq 0 ] && [ $video_wait -gt 0 ]; then
+            echo -e "${YELLOW}Still waiting for video file... (${video_wait}s)${RESET}"
+            # Show what files we found
+            local found_files=$(find "$torrent_path" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" \) 2>/dev/null | head -3)
+            if [ -n "$found_files" ]; then
+                echo -e "${CYAN}Found video files:${RESET}"
+                echo "$found_files" | while IFS= read -r file; do
+                    if [ -n "$file" ]; then
+                        echo -e "  ${CYAN}→${RESET} $(basename "$file")"
+                    fi
+                done
+            fi
+        fi
+        
         sleep 1
-        waited=$((waited + 1))
+        video_wait=$((video_wait + 1))
     done
     
-    # If we couldn't get URL from output, construct it from peerflix's default
-    if [ -z "$stream_url" ]; then
-        # Try to get local IP and port from peerflix
-        local local_ip=$(ipconfig getifaddr en0 2>/dev/null || ifconfig | grep "inet " | grep -v 127.0.0.1 | awk '{print $2}' | head -1)
-        if [ -z "$local_ip" ]; then
-            local_ip="127.0.0.1"
-        fi
-        # Try to get port from peerflix output or use default
-        local port=$(grep -iE "port|:[0-9]+" "$temp_output" 2>/dev/null | grep -oE ":[0-9]+" | head -1 | tr -d ':')
-        if [ -z "$port" ]; then
-            port="8888"  # peerflix default
-        fi
-        stream_url="http://${local_ip}:${port}"
+    if [ -z "$video_file" ] || [ ! -f "$video_file" ]; then
+        echo -e "${RED}Error:${RESET} Could not find video file in torrent"
+        echo -e "${YELLOW}Torrent path:${RESET} $torrent_path"
+        echo -e "${YELLOW}All files found (recursive):${RESET}"
+        find "$torrent_path" -type f 2>/dev/null | while IFS= read -r file; do
+            local rel_path="${file#$torrent_path/}"
+            echo -e "  ${CYAN}→${RESET} $rel_path"
+        done
+        kill $peerflix_pid 2>/dev/null || true
+        rm -f "$temp_output" 2>/dev/null
+        return 1
     fi
     
-    # Launch player with subtitle files if found
-    if [ -n "$stream_url" ]; then
-        echo -e "${CYAN}Stream URL:${RESET} $stream_url"
-        local player_pid=""
+    local video_path=$(realpath "$video_file" 2>/dev/null || echo "$video_file")
+    local video_dir=$(dirname "$video_path")
+    local video_name=$(basename "$video_path")
+    
+    echo -e "${GREEN}Video file found:${RESET} $video_name"
+    echo -e "${CYAN}Video directory:${RESET} $video_dir"
+    echo -e "${CYAN}Full path:${RESET} $video_path"
+    echo
+    
+    # Prepare subtitle file path (relative to video file directory)
+    local subtitle_arg=""
+    if [ -n "$subtitle_file" ] && [ -f "$subtitle_file" ]; then
+        local sub_abs=$(realpath "$subtitle_file" 2>/dev/null || echo "$subtitle_file")
+        local sub_name=$(basename "$sub_abs")
+        local sub_dir=$(dirname "$sub_abs")
         
-        if [ "$player" = "vlc" ]; then
-            # For VLC, we can pass subtitle files
-            if [ ${#subtitle_files[@]} -gt 0 ]; then
-                echo -e "${GREEN}Launching VLC with subtitles...${RESET}"
-                vlc "$stream_url" --sub-file="${subtitle_files[0]}" >/dev/null 2>&1 &
-                player_pid=$!
-            else
-                echo -e "${GREEN}Launching VLC...${RESET}"
-                vlc "$stream_url" >/dev/null 2>&1 &
-                player_pid=$!
-            fi
+        echo -e "${GREEN}Subtitle file found:${RESET} $sub_name"
+        echo -e "${CYAN}Subtitle directory:${RESET} $sub_dir"
+        echo -e "${CYAN}Full path:${RESET} $sub_abs"
+        
+        # Check if subtitle is in the same directory as video
+        if [ "$sub_dir" = "$video_dir" ]; then
+            # Same directory - use relative path (just filename)
+            subtitle_arg="$sub_name"
+            echo -e "${GREEN}Using relative path:${RESET} $sub_name"
         else
-            # For mpv, pass all subtitle files
-            local mpv_args=("$stream_url")
-            if [ ${#subtitle_files[@]} -gt 0 ]; then
-                echo -e "${GREEN}Launching mpv with ${#subtitle_files[@]} subtitle file(s)...${RESET}"
-                for sub_file in "${subtitle_files[@]}"; do
-                    mpv_args+=("--sub-file=$sub_file")
-                done
-            else
-                echo -e "${GREEN}Launching mpv...${RESET}"
-            fi
-            mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+            # Different directory - use absolute path
+            subtitle_arg="$sub_abs"
+            echo -e "${GREEN}Using absolute path:${RESET} $sub_abs"
+        fi
+        echo
+    fi
+    
+    echo -e "${GREEN}Launching $player from local directory...${RESET}"
+    echo -e "  ${CYAN}Directory:${RESET} $video_dir"
+    echo -e "  ${CYAN}Video:${RESET} $video_name"
+    if [ -n "$subtitle_arg" ]; then
+        echo -e "  ${CYAN}Subtitle:${RESET} $subtitle_arg"
+    fi
+    echo
+    
+    # Launch player from the video directory
+    local player_pid=""
+    cd "$video_dir" || {
+        echo -e "${RED}Error:${RESET} Could not change to video directory"
+        kill $peerflix_pid 2>/dev/null || true
+        rm -f "$temp_output" 2>/dev/null
+        return 1
+    }
+    
+    if [ "$player" = "vlc" ]; then
+        if [ -n "$subtitle_arg" ]; then
+            echo -e "${YELLOW}Command:${RESET} vlc \"$video_name\" --sub-file=\"$subtitle_arg\""
+            vlc "$video_name" --sub-file="$subtitle_arg" >/dev/null 2>&1 &
+            player_pid=$!
+        else
+            vlc "$video_name" >/dev/null 2>&1 &
             player_pid=$!
         fi
-        
-        # Monitor player process - when it exits, kill peerflix
-        if [ -n "$player_pid" ] && [ "$player_pid" -gt 0 ] 2>/dev/null; then
-            # Wait for player to exit (check every second)
-            while kill -0 "$player_pid" 2>/dev/null; do
-                sleep 1
-            done
-            # Player exited, kill peerflix
-            echo -e "${CYAN}Player closed. Stopping peerflix...${RESET}"
-            kill $peerflix_pid 2>/dev/null || true
-            # Wait a moment for graceful shutdown
-            sleep 1
-            # Force kill if still running
-            kill -9 $peerflix_pid 2>/dev/null || true
-            wait $peerflix_pid 2>/dev/null || true
-        else
-            # Fallback: wait for peerflix (shouldn't happen)
-            wait $peerflix_pid 2>/dev/null || true
-        fi
     else
-        echo -e "${YELLOW}Warning:${RESET} Could not determine stream URL, using peerflix auto-launch"
-        # Kill the background peerflix
-        kill $peerflix_pid 2>/dev/null || true
-        # Fallback to peerflix auto-launch (remove quiet flag for fallback)
-        local fallback_args=("-p" "0")
-        if [ -n "$index" ]; then
-            fallback_args+=("-i" "$index")
+        # mpv
+        local mpv_args=("$video_name")
+        if [ -n "$subtitle_arg" ]; then
+            echo -e "${YELLOW}Command:${RESET} mpv \"$video_name\" --sub-file=\"$subtitle_arg\" --sid=1 --sub-visibility=yes"
+            mpv_args+=("--sub-file=$subtitle_arg")
+            mpv_args+=("--sid=1")
+            mpv_args+=("--sub-visibility=yes")
         fi
-        if [ "$player" = "vlc" ]; then
-            fallback_args+=("-v")
-        else
-            fallback_args+=("-k")
-        fi
-        peerflix "$source" "${fallback_args[@]}"
-        rm -f "$temp_output" 2>/dev/null
-        return
+        mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+        player_pid=$!
     fi
+    
+    if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
+        echo -e "${RED}Error:${RESET} Failed to launch player"
+        kill $peerflix_pid 2>/dev/null || true
+        rm -f "$temp_output" 2>/dev/null
+        return 1
+    fi
+    
+    echo -e "${CYAN}Player started (PID: $player_pid). Peerflix running (PID: $peerflix_pid)${RESET}"
+    echo -e "${YELLOW}Press Ctrl+C to stop both processes${RESET}"
+    echo
+    
+    # Monitor player process - VLC/mpv may fork, so we need to check by process name
+    # Use a trap to handle Ctrl+C gracefully
+    cleanup_and_exit() {
+        echo -e "\n${YELLOW}Interrupted. Stopping peerflix...${RESET}"
+        kill $peerflix_pid 2>/dev/null || true
+        sleep 1
+        kill -9 $peerflix_pid 2>/dev/null || true
+        wait $peerflix_pid 2>/dev/null || true
+        rm -f "$temp_output" 2>/dev/null
+        exit 0
+    }
+    trap cleanup_and_exit INT TERM
+    
+    # Wait a moment for the process to potentially fork (especially VLC)
+    sleep 2
+    
+    # Monitor player by checking if any player process is running
+    # Escape the video name for use in pgrep
+    local escaped_video_name=$(echo "$video_name" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    local player_running=true
+    local check_count=0
+    
+    while [ "$player_running" = true ]; do
+        # Check if any player process is running (by name, not just PID)
+        # This handles cases where VLC/mpv fork and the original PID exits
+        local player_processes=""
+        if [ "$player" = "vlc" ]; then
+            # Check for VLC processes - VLC on macOS might be "VLC" or "vlc" or in an app bundle
+            # Try multiple methods: pgrep, ps, and check if video file is open
+            player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
+            if [ -z "$player_processes" ]; then
+                # Try ps to find VLC (might be case-sensitive)
+                player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
+            fi
+            # Also check if video file is open (lsof on macOS)
+            if [ -z "$player_processes" ] && command -v lsof &> /dev/null; then
+                local open_by=$(lsof "$video_path" 2>/dev/null | grep -i vlc | head -1 || echo "")
+                if [ -n "$open_by" ]; then
+                    player_processes="open"  # Mark as running
+                fi
+            fi
+        else
+            # Check for mpv processes
+            player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
+            if [ -z "$player_processes" ] && command -v lsof &> /dev/null; then
+                local open_by=$(lsof "$video_path" 2>/dev/null | grep -i mpv | head -1 || echo "")
+                if [ -n "$open_by" ]; then
+                    player_processes="open"  # Mark as running
+                fi
+            fi
+        fi
+        
+        # If no player processes found, player has exited
+        if [ -z "$player_processes" ]; then
+            # Double-check: wait a moment and check again (in case of brief process switch)
+            sleep 1
+            if [ "$player" = "vlc" ]; then
+                player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
+                if [ -z "$player_processes" ]; then
+                    player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
+                fi
+            else
+                player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
+            fi
+            
+            if [ -z "$player_processes" ]; then
+                player_running=false
+                break
+            fi
+        fi
+        
+        # Player still running, continue monitoring
+        sleep 1
+        check_count=$((check_count + 1))
+        
+        # Safety: if we've been checking for too long (10 minutes), break
+        if [ $check_count -gt 600 ]; then
+            echo -e "${YELLOW}Warning:${RESET} Monitoring timeout, stopping peerflix anyway"
+            player_running=false
+            break
+        fi
+    done
+    
+    # Clear the trap
+    trap - INT TERM
+    
+    # Player exited, kill peerflix
+    echo -e "${CYAN}Player closed. Stopping peerflix...${RESET}"
+    kill $peerflix_pid 2>/dev/null || true
+    sleep 1
+    kill -9 $peerflix_pid 2>/dev/null || true
+    wait $peerflix_pid 2>/dev/null || true
     
     rm -f "$temp_output" 2>/dev/null
 }
