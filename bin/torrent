@@ -1194,6 +1194,249 @@ get_catalog_by_genre() {
     fi
 }
 
+# Helper function to redraw a specific page from cached results
+# This function displays a page without re-fetching data
+redraw_catalog_page() {
+    local title="$1"
+    local cached_results_ref="$2"  # Name of array variable containing cached results
+    local page="$3"
+    local per_page="$4"
+    local total="$5"
+    
+    # Get the cached results array
+    eval "local all_results=(\"\${${cached_results_ref}[@]}\")"
+    
+    # Calculate pagination
+    local total_pages=$(( (total + per_page - 1) / per_page ))
+    local start_idx=$(( (page - 1) * per_page ))
+    local end_idx=$(( start_idx + per_page ))
+    
+    # Clear screen and redraw
+    clear
+    echo -e "${BOLD}${YELLOW}$title${RESET}\n"
+    
+    # Display pagination info
+    echo -e "${BOLD}${GREEN}Found ${total} results${RESET} (Page ${page}/${total_pages})"
+    
+    # Check if we have any results with posters
+    local has_posters=false
+    for result in "${all_results[@]}"; do
+        IFS='|' read -r result_source result_name result_magnet result_quality result_size result_extra result_poster <<< "$result"
+        if [[ -n "$result_poster" ]] && [[ "$result_poster" != "N/A" ]]; then
+            has_posters=true
+            break
+        fi
+    done
+    
+    # Show note about posters
+    if [ "$has_posters" = false ] && check_viu >/dev/null 2>&1; then
+        echo -e "${YELLOW}Note:${RESET} Movie posters are not available for these results."
+    elif [ "$has_posters" = true ] && ! check_viu >/dev/null 2>&1; then
+        echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET}"
+    fi
+    echo
+    
+    # Display results in grid layout (same logic as before)
+    local term_cols=$(tput cols)
+    local num_cols=$((term_cols / 40))
+    if [ "$num_cols" -lt 1 ]; then num_cols=1; fi
+    if [ "$num_cols" -gt 5 ]; then num_cols=5; fi
+    
+    local index=$start_idx
+    local current_start_row=5
+    local term_lines=$(tput lines)
+    local term_cols=$(tput cols)
+    local row_height=20
+    
+    local row_items=()
+    local row_count=0
+    
+    tput cup "$current_start_row" 0
+    echo
+    
+    while [ $index -lt $end_idx ] && [ $index -lt $total ]; do
+        local result="${all_results[$index]}"
+        
+        if [ -z "$result" ]; then
+            index=$((index + 1))
+            continue
+        fi
+        
+        row_items+=("$result")
+        row_count=$((row_count + 1))
+        
+        if [ $row_count -eq $num_cols ] || [ $index -eq $((end_idx - 1)) ] || [ $index -eq $((total - 1)) ]; then
+            # Parallel Fetching of Posters (same as before)
+            local pids=()
+            local temp_files=()
+            local fetch_indices=()
+            local fetching=false
+            
+            for i in "${!row_items[@]}"; do
+                local item="${row_items[$i]}"
+                IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
+                
+                local title_year=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/([0-9]{4}).*/\1/')
+                local title=$(echo "$title_year" | sed -E 's/ [0-9]{4}//')
+                local year=$(echo "$title_year" | grep -oE '[0-9]{4}' | head -1)
+                local clean_title=$(echo "$title" | sed -E 's/ \([0-9]{4}\).*//' | sed 's/\[.*\]//g' | xargs)
+                
+                if [[ -z "$poster_url" ]] || [[ "$poster_url" == "N/A" ]]; then
+                    if [ -n "$clean_title" ]; then
+                        fetching=true
+                        local temp_file=$(mktemp)
+                        temp_files[$i]="$temp_file"
+                        fetch_indices+=($i)
+                        (
+                            local new_poster=$(fetch_omdb_poster "$clean_title" "$year")
+                            echo "$new_poster" > "$temp_file"
+                        ) &
+                        pids+=($!)
+                    fi
+                else
+                    local cache_dir="$HOME/.cache/torrent/omdb"
+                    local cache_key=$(echo "${clean_title}_${year}" | tr -cd '[:alnum:]')
+                    local cache_file="$cache_dir/${cache_key}.json"
+                    
+                    if [ ! -f "$cache_file" ] && [ -n "$clean_title" ]; then
+                        (
+                            fetch_omdb_poster "$clean_title" "$year" > /dev/null 2>&1
+                        ) &
+                        pids+=($!)
+                    fi
+                fi
+            done
+            
+            if [ "$fetching" = true ]; then
+                tput sc
+                echo -ne "${YELLOW}Fetching posters...${RESET}"
+                for pid in "${pids[@]}"; do
+                    wait "$pid" 2>/dev/null
+                done
+                tput rc
+                tput el
+                
+                for i in "${fetch_indices[@]}"; do
+                    local temp_file="${temp_files[$i]}"
+                    if [ -f "$temp_file" ]; then
+                        local new_poster=$(cat "$temp_file")
+                        rm -f "$temp_file"
+                        if [ -n "$new_poster" ] && [ "$new_poster" != "N/A" ]; then
+                            local item="${row_items[$i]}"
+                            IFS='|' read -r source name magnet quality size extra old_poster <<< "$item"
+                            row_items[$i]="$source|$name|$magnet|$quality|$size|$extra|$new_poster"
+                        fi
+                    fi
+                done
+            fi
+            
+            if [ "$current_start_row" -lt 1 ]; then
+                current_start_row=1
+            fi
+            if [ "$current_start_row" -ge "$term_lines" ]; then
+                local scroll_needed=$((current_start_row - term_lines + row_height + 5))
+                if [ "$scroll_needed" -lt 3 ]; then
+                    scroll_needed=3
+                fi
+                for ((scroll=0; scroll<scroll_needed; scroll++)); do
+                    echo
+                done
+                current_start_row=$((current_start_row - scroll_needed))
+                if [ "$current_start_row" -lt 1 ]; then
+                    current_start_row=1
+                fi
+            fi
+            tput cup "$current_start_row" 0
+            
+            local item_start_index=$((index - row_count + 1))
+            if [ "$item_start_index" -lt 0 ]; then
+                item_start_index=0
+            fi
+            
+            local temp_return=$(mktemp)
+            draw_grid_row "$current_start_row" "$item_start_index" "$num_cols" "${row_items[@]}" 2>"$temp_return"
+            local next_row
+            next_row=$(tail -1 "$temp_return" 2>/dev/null | grep -E '^[0-9]+$' | tail -1)
+            rm -f "$temp_return"
+            
+            if ! [[ "$next_row" =~ ^[0-9]+$ ]] || [ -z "$next_row" ]; then
+                next_row=$((current_start_row + row_height))
+            fi
+            
+            # Check if this is the first or last row
+            local is_first_row=false
+            if [ "$item_start_index" -eq 0 ]; then
+                is_first_row=true
+            fi
+            
+            local is_last_row=false
+            if [ $index -eq $((end_idx - 1)) ] || [ $index -eq $((total - 1)) ]; then
+                is_last_row=true
+            fi
+            
+            if [ "$row_count" -eq "$num_cols" ]; then
+                # Skip spacing for first or last row
+                if [ "$is_first_row" = true ] || [ "$is_last_row" = true ]; then
+                    # Minimal spacing for first/last row
+                    echo
+                    next_row=$((next_row + 1))
+                else
+                    # Standard spacing (3 echo statements) + additional spacing (4 echo statements) for middle rows
+                    echo
+                    echo
+                    echo
+                    next_row=$((next_row + 3))
+                    echo
+                    echo
+                    echo
+                    echo
+                    next_row=$((next_row + 4))
+                fi
+                current_start_row=$next_row
+            else
+                current_start_row=$next_row
+                if [ "$current_start_row" -lt "$term_lines" ]; then
+                    tput cup "$current_start_row" 0
+                fi
+            fi
+            
+            if [ "$row_count" -eq "$num_cols" ]; then
+                local available_lines=$((term_lines - current_start_row))
+                if [ "$current_start_row" -ge "$term_lines" ] || [ "$available_lines" -lt "$row_height" ]; then
+                    local lines_to_scroll=$((row_height - available_lines + 3))
+                    if [ "$lines_to_scroll" -lt 3 ]; then
+                        lines_to_scroll=3
+                    fi
+                    for ((scroll=0; scroll<lines_to_scroll; scroll++)); do
+                        echo
+                    done
+                    current_start_row=$((term_lines - row_height - 5))
+                    if [ "$current_start_row" -lt 1 ]; then
+                        current_start_row=1
+                    fi
+                    if [ "$current_start_row" -lt "$term_lines" ]; then
+                        tput cup "$current_start_row" 0
+                    fi
+                fi
+            fi
+            
+            row_items=()
+            row_count=0
+        fi
+        index=$((index + 1))
+    done
+    
+    # Navigation will be displayed by the calling function
+    # Just ensure we're at a reasonable position
+    local term_lines=$(tput lines)
+    local final_cursor_row=$((term_lines - 8))
+    if [ "$final_cursor_row" -lt 1 ]; then
+        final_cursor_row=1
+    fi
+    tput cup "$final_cursor_row" 0
+    echo
+}
+
 # Display catalog results in columns with pagination
 display_catalog() {
     local title="$1"
@@ -1232,7 +1475,13 @@ display_catalog() {
         fi
     }
     
-    echo -e "${CYAN}Fetching data from sources...${RESET}"
+    echo -e "${CYAN}Fetching data from sources (all pages)...${RESET}"
+    
+    # CRITICAL: Fetch ALL pages at once and cache in memory
+    # Fetch pages 1-10 in parallel to get all results
+    local max_pages=10
+    local page_pids=()
+    local page_files=()
     
     while [ $arg_idx -lt ${#args_copy[@]} ]; do
         local func="${args_copy[$arg_idx]}"
@@ -1243,118 +1492,43 @@ display_catalog() {
         if [ $arg_idx -lt ${#args_copy[@]} ] && [[ "${args_copy[$arg_idx]}" =~ ^[0-9]+$ ]]; then
             local limit="${args_copy[$arg_idx]}"
             arg_idx=$((arg_idx + 1))
-            # Call function with page number for pagination
-            # For YTSRS, run in background since it's slower, but wait for it
-            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
-                ($func "$limit" "$page" >> "$temp_file" 2>&1) &
-                local pid=$!
-                ytsrs_pids+=($pid)
-                all_pids+=($pid)
-                # Ensure source_name is YTSRS for ytsrs functions
-                func_names+=("YTSRS")
-            else
-                printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
-                ($func "$limit" "$page" >> "$temp_file" 2>&1) &
-                local pid=$!
-                all_pids+=($pid)
-                func_names+=("$source_name")
-                # Show spinner while waiting
-                local spin_idx=0
-                while kill -0 "$pid" 2>/dev/null; do
-                    case $((spin_idx % 4)) in
-                        0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
-                        1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
-                        2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
-                        3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
-                    esac
-                    sleep 0.2
-                    spin_idx=$((spin_idx + 1))
-                done
-                wait "$pid" 2>/dev/null || true
-                printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
-            fi
+            
+            # Fetch all pages (1-10) in parallel for this function
+            printf "\r${CYAN}Fetching all pages from ${source_name}...${RESET}"
+            for p in $(seq 1 $max_pages); do
+                local page_file="${temp_file}.page${p}"
+                page_files+=("$page_file")
+                ($func "$limit" "$p" >> "$page_file" 2>&1) &
+                page_pids+=($!)
+            done
         else
-            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
-                ($func "$page" >> "$temp_file" 2>&1) &
-                local pid=$!
-                ytsrs_pids+=($pid)
-                all_pids+=($pid)
-                # Ensure source_name is YTSRS for ytsrs functions
-                func_names+=("YTSRS")
-            else
-                printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
-                ($func "$page" >> "$temp_file" 2>&1) &
-                local pid=$!
-                all_pids+=($pid)
-                func_names+=("$source_name")
-                # Show spinner while waiting
-                local spin_idx=0
-                while kill -0 "$pid" 2>/dev/null; do
-                    case $((spin_idx % 4)) in
-                        0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
-                        1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
-                        2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
-                        3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
-                    esac
-                    sleep 0.2
-                    spin_idx=$((spin_idx + 1))
-                done
-                wait "$pid" 2>/dev/null || true
-                printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
-            fi
+            # Fetch all pages (1-10) in parallel for this function
+            printf "\r${CYAN}Fetching all pages from ${source_name}...${RESET}"
+            for p in $(seq 1 $max_pages); do
+                local page_file="${temp_file}.page${p}"
+                page_files+=("$page_file")
+                ($func "$p" >> "$page_file" 2>&1) &
+                page_pids+=($!)
+            done
         fi
     done
     
-    # Wait for background YTSRS processes (with timeout and progress)
-    if [ ${#ytsrs_pids[@]} -gt 0 ]; then
-        # Wait up to 25 seconds for YTSRS to complete
-        for pid_idx in "${!ytsrs_pids[@]}"; do
-            local pid="${ytsrs_pids[$pid_idx]}"
-            local source_name="${func_names[$pid_idx]}"
-            
-            # Verify source name is correct (should be YTSRS for ytsrs functions)
-            if [[ "$source_name" != "YTSRS" ]] && [[ "$source_name" != "API" ]]; then
-                # Try to get correct source name from the function
-                local func_at_idx=$((pid_idx * 2))  # Approximate - this might need adjustment
-                # For now, if it's in ytsrs_pids, it should be YTSRS
-                source_name="YTSRS"
-            fi
-            
-            local spin_idx=0
-            local waited=0
-            local max_wait=25
-            
-            printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
-            while [ $waited -lt $max_wait ] && kill -0 "$pid" 2>/dev/null; do
-                case $((spin_idx % 4)) in
-                    0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
-                    1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
-                    2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
-                    3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
-                esac
-                sleep 0.2
-                spin_idx=$((spin_idx + 1))
-                waited=$((waited + 1))
-            done
-            
-            # Check if process completed or timed out
-            if kill -0 "$pid" 2>/dev/null; then
-                # Still running - timeout
-                kill "$pid" 2>/dev/null || true
-                wait "$pid" 2>/dev/null || true
-                printf "\r${YELLOW}⚠ Timeout fetching from ${source_name} (${max_wait}s)${RESET}        \n"
-            else
-                # Process completed
-                wait "$pid" 2>/dev/null || true
-                local exit_code=$?
-                if [ $exit_code -eq 0 ]; then
-                    printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
-                else
-                    printf "\r${YELLOW}⚠ Error fetching from ${source_name} (exit code: $exit_code)${RESET}        \n"
-                fi
-            fi
-        done
-    fi
+    # Wait for all page fetches to complete
+    printf "\r${CYAN}Waiting for all pages to load...${RESET}"
+    for pid in "${page_pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+    
+    # Combine all page files into one temp file
+    for page_file in "${page_files[@]}"; do
+        if [ -f "$page_file" ]; then
+            cat "$page_file" >> "$temp_file" 2>/dev/null || true
+            rm -f "$page_file" 2>/dev/null || true
+        fi
+    done
+    
+    printf "\r${GREEN}✓ Fetched all pages${RESET}                    \n"
+    
     
     echo -e "${CYAN}Parsing results...${RESET}"
     
@@ -1389,366 +1563,153 @@ display_catalog() {
     # Calculate pagination
     local total=${#all_results[@]}
     local total_pages=$(( (total + per_page - 1) / per_page ))
-    local start_idx=$(( (page - 1) * per_page ))
-    local end_idx=$(( start_idx + per_page ))
     
-    # Display pagination info
-    echo -e "${BOLD}${GREEN}Found ${total} results${RESET} (Page ${page}/${total_pages})"
-    
-    # Check if we have any results with posters
-    local has_posters=false
+    # Store cached results in a variable name for redraw function
+    local cached_results_var="cached_results_$$"
+    eval "declare -a ${cached_results_var}=()"
     for result in "${all_results[@]}"; do
-        IFS='|' read -r result_source result_name result_magnet result_quality result_size result_extra result_poster <<< "$result"
-        if [[ -n "$result_poster" ]] && [[ "$result_poster" != "N/A" ]]; then
-            has_posters=true
-            break
-        fi
+        eval "${cached_results_var}+=(\"\$result\")"
     done
     
-    # Show note about posters
-    if [ "$has_posters" = false ] && check_viu >/dev/null 2>&1; then
-        echo -e "${YELLOW}Note:${RESET} Movie posters are not available for these results."
-    elif [ "$has_posters" = true ] && ! check_viu >/dev/null 2>&1; then
-        echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET}"
-    fi
-    echo
+    # Display initial page using redraw function
+    redraw_catalog_page "$title" "$cached_results_var" "$page" "$per_page" "$total"
     
-    # Display results in grid layout
-    # Calculate columns based on terminal width - use more columns for wider terminals
-    local term_cols=$(tput cols)
-    # Each column needs about 40-45 characters (20 for image + 20 for text + spacing)
-    # But we can be more flexible - use more columns if terminal is wide
-    local num_cols=$((term_cols / 40))
-    if [ "$num_cols" -lt 1 ]; then num_cols=1; fi
-    # Allow up to 5 columns for very wide terminals, but cap at reasonable number
-    if [ "$num_cols" -gt 5 ]; then num_cols=5; fi
-    
-    local index=$start_idx
-    local current_start_row=0  # Track the starting row for the current row being drawn
-    
-    # Get terminal dimensions
-    local term_lines=$(tput lines)
-    local term_cols=$(tput cols)
-    local row_height=20  # Height of each grid row (image + text)
-    
-    local row_items=()
-    local row_count=0
-    
-    # Get initial cursor position (only once at start)
-    # Use a simple method that's less likely to leak
-    # Suppress terminal echo to prevent response leak
-    local initial_row
-    local old_stty
-    old_stty=$(stty -g 2>/dev/null) || true
-    stty -echo -icanon 2>/dev/null || true
-    echo -en "\033[6n" > /dev/tty
-    if IFS=';' read -rsdR CURPOS < /dev/tty 2>/dev/null; then
-        CURPOS=${CURPOS#*[}
-        initial_row=${CURPOS%%;*}
-        if ! [[ "$initial_row" =~ ^[0-9]+$ ]]; then
-            initial_row=5
-        fi
-    else
-        initial_row=5
-    fi
-    # Restore stty settings
-    [ -n "$old_stty" ] && stty "$old_stty" 2>/dev/null || true
-    
-    # CRITICAL: Ensure initial_row is valid and visible
-    if [ "$initial_row" -lt 1 ] || [ "$initial_row" -ge "$term_lines" ]; then
-        initial_row=5
-    fi
-    
-    # CRITICAL: Ensure we have enough space below for the first row
-    local min_required_rows=18
-    if [ $((initial_row + min_required_rows)) -gt "$term_lines" ]; then
-        initial_row=$((term_lines - min_required_rows - 2))
-        if [ "$initial_row" -lt 1 ]; then
-            initial_row=1
-        fi
-    fi
-    
-    current_start_row=$initial_row
-    
-    # CRITICAL: Position cursor at the starting row before drawing
-    # Ensure we're at a visible position
-    if [ "$current_start_row" -ge 1 ] && [ "$current_start_row" -lt "$term_lines" ]; then
-        tput cup "$current_start_row" 0
-    else
-        # Fallback: use a safe position
-        current_start_row=5
-        if [ "$current_start_row" -lt "$term_lines" ]; then
-            tput cup "$current_start_row" 0
-        fi
-    fi
-    
-    # CRITICAL: Add a blank line after pagination info to ensure proper spacing
-    echo
-    
-    while [ $index -lt $end_idx ] && [ $index -lt $total ]; do
-        local result="${all_results[$index]}"
+    # Interactive selection with pagination using keypress detection
+    if [ -t 0 ]; then
         
-        if [ -z "$result" ]; then
-            index=$((index + 1))
-            continue
-        fi
+        # Navigation loop with keypress detection
+        local current_page=$page
+        local selection=""
+        local number_input=""
         
-        row_items+=("$result")
-        row_count=$((row_count + 1))
-        
-        # If we have num_cols items or it's the last item, draw the row
-        if [ $row_count -eq $num_cols ] || [ $index -eq $((end_idx - 1)) ] || [ $index -eq $((total - 1)) ]; then
-            
-            # Parallel Fetching of Posters
-            local pids=()
-            local temp_files=()
-            local fetch_indices=()
-            local fetching=false
-            
-            # Check if any item needs a poster or rating fetched
-            for i in "${!row_items[@]}"; do
-                local item="${row_items[$i]}"
-                IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
-                
-                # Extract title and year for OMDB queries
-                local title_year=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/([0-9]{4}).*/\1/')
-                local title=$(echo "$title_year" | sed -E 's/ [0-9]{4}//')
-                local year=$(echo "$title_year" | grep -oE '[0-9]{4}' | head -1)
-                local clean_title=$(echo "$title" | sed -E 's/ \([0-9]{4}\).*//' | sed 's/\[.*\]//g' | xargs)
-                
-                # If poster is missing or N/A, try to fetch from OMDB
-                if [[ -z "$poster_url" ]] || [[ "$poster_url" == "N/A" ]]; then
-                    if [ -n "$clean_title" ]; then
-                        fetching=true
-                        local temp_file=$(mktemp)
-                        temp_files[$i]="$temp_file"
-                        fetch_indices+=($i)
-                        
-                        # Fetch in background (this will also cache the full OMDB response for ratings)
-                        (
-                            local new_poster=$(fetch_omdb_poster "$clean_title" "$year")
-                            echo "$new_poster" > "$temp_file"
-                        ) &
-                        pids+=($!)
-                    fi
-                else
-                    # Even if poster exists, ensure OMDB data is cached for ratings
-                    # Check if cache exists
-                    local cache_dir="$HOME/.cache/torrent/omdb"
-                    local cache_key=$(echo "${clean_title}_${year}" | tr -cd '[:alnum:]')
-                    local cache_file="$cache_dir/${cache_key}.json"
-                    
-                    if [ ! -f "$cache_file" ] && [ -n "$clean_title" ]; then
-                        # Fetch OMDB data in background to cache it (for ratings)
-                        (
-                            fetch_omdb_poster "$clean_title" "$year" > /dev/null 2>&1
-                        ) &
-                        pids+=($!)
-                    fi
-                fi
-            done
-            
-            # If fetching, show status
-            if [ "$fetching" = true ]; then
-                tput sc
-                echo -ne "${YELLOW}Fetching posters...${RESET}"
-                
-                # Wait for all background jobs
-                for pid in "${pids[@]}"; do
-                    wait "$pid" 2>/dev/null
-                done
-                
-                # Clear status
-                tput rc
-                tput el
-                
-                # Update row items with fetched posters
-                for i in "${fetch_indices[@]}"; do
-                    local temp_file="${temp_files[$i]}"
-                    if [ -f "$temp_file" ]; then
-                        local new_poster=$(cat "$temp_file")
-                        rm -f "$temp_file"
-                        
-                        if [ -n "$new_poster" ] && [ "$new_poster" != "N/A" ]; then
-                            # Reconstruct item with new poster
-                            local item="${row_items[$i]}"
-                            IFS='|' read -r source name magnet quality size extra old_poster <<< "$item"
-                            row_items[$i]="$source|$name|$magnet|$quality|$size|$extra|$new_poster"
-                        fi
-                    fi
-                done
+        while true; do
+            # Display navigation instructions at bottom of screen
+            local term_lines=$(tput lines)
+            local nav_row=$((term_lines - 8))
+            if [ "$nav_row" -lt 1 ]; then
+                nav_row=1
             fi
+            tput cup "$nav_row" 0
+            echo
+            echo
             
-            # Ensure cursor is at a known position before drawing
-            # CRITICAL: Validate current_start_row is within terminal bounds
-            if [ "$current_start_row" -lt 1 ]; then
-                current_start_row=1
-            fi
-            if [ "$current_start_row" -ge "$term_lines" ]; then
-                # If beyond terminal, scroll first
-                local scroll_needed=$((current_start_row - term_lines + row_height + 5))
-                if [ "$scroll_needed" -lt 3 ]; then
-                    scroll_needed=3
-                fi
-                for ((scroll=0; scroll<scroll_needed; scroll++)); do
-                    echo
-                done
-                current_start_row=$((current_start_row - scroll_needed))
-                if [ "$current_start_row" -lt 1 ]; then
-                    current_start_row=1
-                fi
-            fi
-            tput cup "$current_start_row" 0
-            
-            # Calculate correct start_index for item numbering
-            # index points to the last item we just added, so first item in row is index - row_count + 1
-            local item_start_index=$((index - row_count + 1))
-            # Ensure it's not negative
-            if [ "$item_start_index" -lt 0 ]; then
-                item_start_index=0
-            fi
-            
-            # Draw the row (returns the next row position via stderr)
-            # Use a temp file to capture the return value
-            local temp_return=$(mktemp)
-            # Redirect stderr to temp file, but keep stdout for display
-            # The function writes the return value as the LAST line to stderr
-            draw_grid_row "$current_start_row" "$item_start_index" "$num_cols" "${row_items[@]}" 2>"$temp_return"
-            local next_row
-            # Get the last non-empty line from stderr (should be the return value)
-            next_row=$(tail -1 "$temp_return" 2>/dev/null | grep -E '^[0-9]+$' | tail -1)
-            rm -f "$temp_return"
-            
-            # Validate next_row is a number, fallback if not
-            if ! [[ "$next_row" =~ ^[0-9]+$ ]] || [ -z "$next_row" ]; then
-                # Fallback: calculate manually based on row_height (20 lines per row)
-                # This is safe because we know the exact row height
-                next_row=$((current_start_row + row_height))
-            fi
-            
-            # Add 3 newlines after each row is completed (including first row)
-            # This happens when we've drawn a complete row (row_count == num_cols)
-            if [ "$row_count" -eq "$num_cols" ]; then
+            if [ $total_pages -gt 1 ]; then
+                echo -e "${CYAN}Navigation:${RESET}"
+                echo -e "  ${GREEN}n${RESET} - Next page (press key, no Enter needed)"
+                echo -e "  ${GREEN}p${RESET} - Previous page (press key, no Enter needed)"
+                echo -e "  ${GREEN}1-${total}${RESET} - Select torrent (type number, press Enter)"
+                echo -e "  ${GREEN}q${RESET} or ${GREEN}Esc${RESET} - Cancel/Quit"
                 echo
+            else
+                echo -e "${CYAN}Navigation:${RESET}"
+                echo -e "  ${GREEN}1-${total}${RESET} - Select torrent (type number, press Enter)"
+                echo -e "  ${GREEN}q${RESET} or ${GREEN}Esc${RESET} - Cancel/Quit"
                 echo
-                echo
-                # Update next_row to account for the 3 newlines
-                next_row=$((next_row + 3))
-                # After adding newlines with echo, cursor is already at next_row
-                # Don't use tput cup here - it would move cursor back up incorrectly
-                current_start_row=$next_row
-                
-                # CRITICAL: For the first row, add 7 more newlines to ensure proper spacing
-                # This fixes the issue where first row text appears inside image areas
-                # Total: 3 (base) + 7 (extra) = 10 newlines after first row
-                if [ "$item_start_index" -eq 0 ]; then
-                    echo
-                    echo
-                    echo
-                    echo
-                    echo
-                    echo
-                    echo
-                    # Update next_row again for the first row (7 extra newlines = 10 total)
-                    next_row=$((next_row + 7))
-                    current_start_row=$next_row
+            fi
+            
+            # Setup terminal for keypress detection
+            local old_stty
+            old_stty=$(stty -g 2>/dev/null) || true
+            stty -icanon -echo 2>/dev/null || true
+            
+            # Read a single keypress
+            local key
+            if IFS= read -rsn1 key 2>/dev/null; then
+                # Handle escape sequences (arrow keys, etc.)
+                if [ "$key" = $'\033' ]; then
+                    read -rsn1 -t 0.1 key 2>/dev/null || true
+                    if [ "$key" = "[" ]; then
+                        read -rsn1 -t 0.1 key 2>/dev/null || true
+                        # Arrow keys - ignore for now, could add later
+                    else
+                        # ESC key - cancel
+                        key="q"
+                    fi
                 fi
             else
-                # Not a complete row yet, use the next_row from draw_grid_row
-                current_start_row=$next_row
-                # Position cursor for incomplete row
-                if [ "$current_start_row" -lt "$term_lines" ]; then
-                    tput cup "$current_start_row" 0
-                fi
+                # No input or error
+                key=""
             fi
             
-            # Check if next row would exceed terminal height or be too close to bottom
-            # Only check if we need to scroll (when we have a complete row)
-            if [ "$row_count" -eq "$num_cols" ]; then
-                local available_lines=$((term_lines - current_start_row))
-                if [ "$current_start_row" -ge "$term_lines" ] || [ "$available_lines" -lt "$row_height" ]; then
-                    # Need to scroll: output newlines to push content up
-                    # Calculate how many lines to scroll (enough to fit next row)
-                    local lines_to_scroll=$((row_height - available_lines + 3))
-                    if [ "$lines_to_scroll" -lt 3 ]; then
-                        lines_to_scroll=3
+            # Restore terminal settings
+            [ -n "$old_stty" ] && stty "$old_stty" 2>/dev/null || true
+            
+            # Handle keypress
+            case "$key" in
+                n|N)
+                    if [ $current_page -lt $total_pages ]; then
+                        current_page=$((current_page + 1))
+                        # Redraw page from cache (no re-fetch)
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        continue
+                    else
+                        echo -e "${YELLOW}Already on last page.${RESET}"
+                        sleep 0.5
+                        # Redraw to clear message
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
                     fi
-                    
-                    # Scroll by outputting newlines (this pushes terminal content up)
-                    for ((scroll=0; scroll<lines_to_scroll; scroll++)); do
-                        echo
+                    ;;
+                p|P)
+                    if [ $current_page -gt 1 ]; then
+                        current_page=$((current_page - 1))
+                        # Redraw page from cache (no re-fetch)
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        continue
+                    else
+                        echo -e "${YELLOW}Already on first page.${RESET}"
+                        sleep 0.5
+                        # Redraw to clear message
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                    fi
+                    ;;
+                q|Q|$'\033')
+                    echo "Cancelled."
+                    unset CATALOG_PAGE
+                    cleanup_posters
+                    return
+                    ;;
+                [0-9])
+                    # Start collecting number input
+                    number_input="$key"
+                    # Read remaining digits (if any) with normal input mode
+                    local old_stty2
+                    old_stty2=$(stty -g 2>/dev/null) || true
+                    stty icanon echo 2>/dev/null || true
+                    echo -ne "${YELLOW}Enter selection: ${number_input}${RESET}"
+                    while IFS= read -rsn1 -t 1 key2 2>/dev/null; do
+                        if [[ "$key2" =~ [0-9] ]]; then
+                            number_input="${number_input}${key2}"
+                            echo -ne "$key2"
+                        elif [ "$key2" = "" ] || [ "$key2" = $'\n' ] || [ "$key2" = $'\r' ]; then
+                            # Enter pressed
+                            break
+                        elif [ "$key2" = $'\177' ] || [ "$key2" = $'\b' ]; then
+                            # Backspace
+                            if [ ${#number_input} -gt 1 ]; then
+                                number_input="${number_input%?}"
+                                echo -ne "\b \b"
+                            fi
+                        else
+                            break
+                        fi
                     done
+                    [ -n "$old_stty2" ] && stty "$old_stty2" 2>/dev/null || true
+                    echo
                     
-                    # After scrolling, calculate new position
-                    # We've scrolled, so adjust current_start_row
-                    current_start_row=$((term_lines - row_height - 5))
-                    if [ "$current_start_row" -lt 1 ]; then
-                        current_start_row=1
-                    fi
-                    
-                    # Position cursor after scrolling
-                    if [ "$current_start_row" -lt "$term_lines" ]; then
-                        tput cup "$current_start_row" 0
-                    fi
-                fi
-            fi
+                    selection="$number_input"
+                    number_input=""
+                    ;;
+                *)
+                    # Ignore other keys
+                    continue
+                    ;;
+            esac
             
-            # Reset for next row
-            row_items=()
-            row_count=0
-            # Note: start_idx is used for pagination calculation, not item numbering
-            # item_start_index is calculated per row for correct numbering
-        fi
-        index=$((index + 1))
-    done
-    
-    # CRITICAL: After all rows are drawn, ensure cursor is at the bottom
-    # Position cursor well below the last row to prevent any overwrites
-    # Calculate final position: current_start_row is already the next row after last drawn row
-    # Add a few lines of spacing before navigation text
-    local final_cursor_row=$((current_start_row + 2))
-    tput cup "$final_cursor_row" 0
-    
-    # Add spacing after results
-    echo
-    echo
-    
-    # Interactive selection with pagination
-    if [ -t 0 ]; then
-        if [ $total_pages -gt 1 ]; then
-            echo -e "${CYAN}Navigation:${RESET}"
-            echo -e "  ${GREEN}n${RESET} or ${GREEN}next${RESET} - Next page"
-            echo -e "  ${GREEN}p${RESET} or ${GREEN}prev${RESET} - Previous page"
-            echo -e "  ${GREEN}1-${total}${RESET} - Select torrent"
-            echo
-        fi
-        echo -e "${YELLOW}Select a torrent (1-$total), 'n' for next, 'p' for prev, or press Enter to cancel:${RESET} "
-        read -r selection
-        
-        case "$selection" in
-            n|next)
-                if [ $page -lt $total_pages ]; then
-                    export CATALOG_PAGE=$((page + 1))
-                    # Re-fetch with new page (pass original arguments)
-                    display_catalog "$title" "${original_args[@]}"
-                else
-                    echo "Already on last page."
-                fi
-                return
-                ;;
-            p|prev|previous)
-                if [ $page -gt 1 ]; then
-                    export CATALOG_PAGE=$((page - 1))
-                    # Re-fetch with new page (pass original arguments)
-                    display_catalog "$title" "${original_args[@]}"
-                else
-                    echo "Already on first page."
-                fi
-                return
-                ;;
-            [0-9]*)
-                if [ -n "$selection" ] && [ "$selection" -ge 1 ] && [ "$selection" -le "$total" ] 2>/dev/null; then
-                    local selected_result="${all_results[$((selection - 1))]}"
+            # Handle numeric selection
+            if [ -n "$selection" ] && [[ "$selection" =~ ^[0-9]+$ ]]; then
+                if [ "$selection" -ge 1 ] && [ "$selection" -le "$total" ] 2>/dev/null; then
+                    local selected_result
+                    eval "selected_result=\"\${${cached_results_var}[$((selection - 1))]}\""
                     IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
                     
                     # Validate magnet link
@@ -1759,6 +1720,9 @@ display_catalog() {
                         echo "  Source: $source"
                         echo "  Name: $name"
                         echo "  Magnet: '$magnet'"
+                        sleep 2
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        selection=""
                         continue
                     fi
                     
@@ -1807,20 +1771,21 @@ display_catalog() {
                             search_torrent "$search_query"
                         fi
                     fi
+                    
+                    # Exit navigation loop after selection
+                    break
                 else
-                    echo "Invalid selection."
+                    echo -e "${YELLOW}Invalid selection. Please enter a number between 1 and $total.${RESET}"
+                    sleep 1
+                    redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                    selection=""
                 fi
-                ;;
-            *)
-                echo "Cancelled."
-                ;;
-        esac
-    fi
-    
-    # Keep page variable for navigation, but reset when done
-    if [ -z "$selection" ] || [[ ! "$selection" =~ ^(n|next|p|prev|previous)$ ]]; then
+            fi
+        done
+        
+        # Cleanup
         unset CATALOG_PAGE
-        # Cleanup poster images
+        eval "unset ${cached_results_var}"
         cleanup_posters
     fi
 }
