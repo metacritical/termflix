@@ -80,18 +80,19 @@ check_jq() {
     fi
 }
 
-# Check for viu (optional, for displaying images on Mac)
+# Check for viu (optional, for displaying images - cross-platform)
 check_viu() {
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        if ! command -v viu &> /dev/null; then
-            echo -e "${YELLOW}Note:${RESET} viu not found. Movie posters will not be displayed."
+    if ! command -v viu &> /dev/null; then
+        echo -e "${YELLOW}Note:${RESET} viu not found. Movie posters will not be displayed."
+        if [[ "$OSTYPE" == "darwin"* ]]; then
             echo "Install with: ${CYAN}brew install viu${RESET} or ${CYAN}cargo install viu${RESET}"
-            echo
-            return 1
+        else
+            echo "Install with: ${CYAN}cargo install viu${RESET} or ${CYAN}sudo apt-get install viu${RESET} (if available in repos)"
         fi
-        return 0
+        echo
+        return 1
     fi
-    return 1
+    return 0
 }
 
 # Download and display poster image
@@ -1613,7 +1614,11 @@ redraw_catalog_page() {
     if [ "$has_posters" = false ] && check_viu >/dev/null 2>&1; then
         echo -e "${YELLOW}Note:${RESET} Movie posters are not available for these results."
     elif [ "$has_posters" = true ] && ! check_viu >/dev/null 2>&1; then
-        echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET} or ${CYAN}cargo install viu${RESET}"
+        else
+            echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}cargo install viu${RESET}"
+        fi
     fi
     echo
     
