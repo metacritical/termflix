@@ -919,6 +919,49 @@ check_deps() {
         exit 1
     fi
     
+    # Check for transmission-cli (fallback for problematic magnet links)
+    if ! command -v transmission-cli &> /dev/null; then
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${YELLOW}Warning:${RESET} transmission-cli not found"
+        echo ""
+        echo "transmission-cli is used as a fallback when peerflix fails to handle"
+        echo "certain magnet links. It's recommended to install it for better compatibility."
+        echo ""
+        echo -e "${CYAN}Would you like to install transmission-cli now? (y/n)${RESET} "
+        read -r install_transmission
+        
+        if [[ "$install_transmission" =~ ^[Yy]$ ]]; then
+            echo ""
+            echo -e "${CYAN}Installing transmission-cli...${RESET}"
+            
+            # Try brew first (macOS)
+            if command -v brew &> /dev/null; then
+                echo -e "${GREEN}Using Homebrew...${RESET}"
+                if brew install transmission-cli; then
+                    echo -e "${GREEN}✓ transmission-cli installed successfully${RESET}"
+                    echo ""
+                else
+                    echo -e "${RED}✗ Installation failed. Please install manually:${RESET}"
+                    echo "  ${GREEN}brew install transmission-cli${RESET}"
+                    echo ""
+                    echo -e "${YELLOW}You can continue without it, but some magnet links may not work.${RESET}"
+                fi
+            else
+                echo -e "${YELLOW}Homebrew not found. Please install transmission-cli manually:${RESET}"
+                echo ""
+                echo "  ${GREEN}macOS:${RESET} brew install transmission-cli"
+                echo "  ${GREEN}Linux:${RESET} sudo apt-get install transmission-cli  (Debian/Ubuntu)"
+                echo "  ${GREEN}Linux:${RESET} sudo yum install transmission-cli    (RHEL/CentOS)"
+                echo ""
+                echo -e "${YELLOW}You can continue without it, but some magnet links may not work.${RESET}"
+            fi
+        else
+            echo -e "${YELLOW}Skipping transmission-cli installation.${RESET}"
+            echo -e "${YELLOW}Note:${RESET} Some magnet links may not work without transmission-cli."
+            echo ""
+        fi
+    fi
+    
     # Note: Player preference will be checked when streaming starts
     # This avoids prompting during catalog browsing
 }
