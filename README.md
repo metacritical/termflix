@@ -2,7 +2,7 @@
 
 A powerful terminal-based torrent streaming tool that lets you browse and stream movies and TV shows directly from your terminal.
 
-![Termflix Catalog View](img/06-catalog-with-posters.png)
+![Termflix Initial Catalog View](img/01-catalog-initial-view.png)
 
 ## Features
 
@@ -93,8 +93,6 @@ TMDB_READ_TOKEN=your_read_token_here
 ## Usage
 
 ### Browse Latest Content
-
-![Initial Catalog View](img/01-catalog-initial-view.png)
 
 Browse the latest movies and TV shows with movie posters displayed in your terminal.
 ```bash
