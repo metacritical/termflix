@@ -159,8 +159,19 @@ draw_grid_row() {
     local row_height=20  # Total height for one row (image + text)
     
     # Calculate column positions based on terminal width
+    # Ensure proper spacing: each column needs at least img_width + padding
     local term_cols=$(tput cols)
-    local spacing=$((term_cols / num_cols))
+    # Calculate spacing to evenly distribute columns with proper padding
+    # Each column needs ~40 chars (20 for image + 20 for text), but we'll use dynamic spacing
+    local total_cols_needed=$((num_cols * 40))
+    local spacing
+    if [ "$total_cols_needed" -le "$term_cols" ]; then
+        # We have enough space, use even distribution
+        spacing=$((term_cols / num_cols))
+    else
+        # Not enough space, use minimum spacing
+        spacing=40
+    fi
     local col_positions=()
     for ((c=0; c<num_cols; c++)); do
         col_positions+=($((c * spacing)))
@@ -252,16 +263,17 @@ draw_grid_row() {
                         local image_line
                         image_line=$(sed -n "$((row + 1))p" "$rendered_file" 2>/dev/null)
                         if [[ -n "$image_line" ]]; then
-                            # Remove trailing newline if present and output
-                            printf "%s" "${image_line%$'\n'}"
-                            # Explicitly position cursor at end of this line to prevent overwrite
-                            # Calculate approximate end position (x_pos + img_width, but don't exceed terminal width)
-                            local term_cols=$(tput cols)
+                            # Remove trailing newline
+                            local clean_line="${image_line%$'\n'}"
+                            # Output the line - viu should already respect width
+                            printf "%s" "$clean_line"
+                            # Position cursor at end of image area (x_pos + img_width) to prevent overwrite
+                            # This ensures next column starts at correct position
                             local end_x=$((x_pos + img_width))
+                            local term_cols=$(tput cols)
                             if [ "$end_x" -gt "$term_cols" ]; then
                                 end_x=$term_cols
                             fi
-                            # Position cursor at end of image line to ensure clean state
                             tput cup "$current_y" "$end_x"
                         fi
                     fi
@@ -292,16 +304,16 @@ draw_grid_row() {
         done
     done
     
-    # Ensure cursor is in a known state after all images are drawn
-    # Move to a safe position before drawing text
-    local text_start_row=$((start_row + img_height + 2))
-    tput cup "$text_start_row" 0
-    
     # Pass 4: Draw all text below images
-    # Draw text row by row to ensure proper cursor positioning
-    local text_row=$((start_row + img_height + 2))
+    # Calculate text starting row (below images with 1 line spacing for compact layout)
+    # Images are drawn from start_row+1 to start_row+img_height (15 lines)
+    # Add 1 line spacing, so text starts at start_row + 16
+    # CRITICAL: text_row must always be relative to start_row, not adjusted by scrolling
+    local text_row=$((start_row + img_height + 1))
+    local term_cols=$(tput cols)
     
-    # Row 1: [num] [source] for all columns
+    # Draw text for each item completely before moving to next
+    # This prevents overwrites from cursor positioning
     for i in "${!items[@]}"; do
         local item="${items[$i]}"
         local x_pos="${col_positions[$i]}"
@@ -316,47 +328,65 @@ draw_grid_row() {
             1337x) source_color="$MAGENTA" ;;
         esac
         
-        tput cup "$text_row" "$x_pos"
-        printf "${BOLD}[%d]${RESET} ${source_color}[%s]${RESET}" "$item_num" "$source"
-        # Clear to end of line to prevent overwrite from next column
-        tput el
-    done
-    
-    # Row 2: Display name for all columns
-    for i in "${!items[@]}"; do
-        local item="${items[$i]}"
-        local x_pos="${col_positions[$i]}"
-        IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
-        
         local display_name="${name:0:38}"
         if [ "${#name}" -gt 38 ]; then
             display_name="${display_name}..."
         fi
         
-        tput cup $((text_row + 1)) "$x_pos"
-        printf "${BOLD}%s${RESET}" "$display_name"
-        # Clear to end of line to prevent overwrite
-        tput el
-    done
-    
-    # Row 3: Quality and size for all columns
-    for i in "${!items[@]}"; do
-        local item="${items[$i]}"
-        local x_pos="${col_positions[$i]}"
-        IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
+        # Write all three lines of text for this item at once
+        # Row 1: [num] [source]
+        tput cup "$text_row" "$x_pos"
+        printf "${BOLD}[%d]${RESET} ${source_color}[%s]${RESET}" "$item_num" "$source"
         
+        # Row 2: Movie name (truncate to fit column width)
+        tput cup $((text_row + 1)) "$x_pos"
+        # Calculate available width for this column
+        local next_x
+        if [ "$i" -lt $((${#items[@]} - 1)) ]; then
+            next_x="${col_positions[$((i + 1))]}"
+        else
+            next_x=$term_cols
+        fi
+        local col_width=$((next_x - x_pos - 1))  # Leave 1 char margin
+        if [ "$col_width" -gt 35 ]; then col_width=35; fi
+        if [ "$col_width" -lt 20 ]; then col_width=20; fi
+        local truncated_name="${display_name:0:$col_width}"
+        if [ "${#display_name}" -gt "$col_width" ]; then
+            truncated_name="${truncated_name}..."
+        fi
+        printf "${BOLD}%s${RESET}" "$truncated_name"
+        
+        # Row 3: Quality and size (truncate to fit)
         tput cup $((text_row + 2)) "$x_pos"
+        local quality_size_text=""
         if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
-             printf "${CYAN}%s${RESET}" "$quality"
+             quality_size_text="${CYAN}${quality}${RESET}"
         fi
         if [ -n "$size" ] && [ "$size" != "N/A" ]; then
-             if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
-                 printf " | "
+             if [ -n "$quality_size_text" ]; then
+                 quality_size_text="${quality_size_text} | "
              fi
-             printf "${CYAN}%s${RESET}" "$size"
+             quality_size_text="${quality_size_text}${CYAN}${size}${RESET}"
         fi
-        # Clear to end of line to prevent overwrite
-        tput el
+        # Truncate if too long (remove ANSI codes for length calculation)
+        local clean_text=$(echo -n "$quality_size_text" | sed 's/\x1b\[[0-9;]*m//g')
+        if [ "${#clean_text}" -gt "$col_width" ]; then
+            # Truncate the clean text, then reconstruct with colors (simplified)
+            local truncated_clean="${clean_text:0:$col_width}"
+            quality_size_text="${CYAN}${truncated_clean}${RESET}"
+        fi
+        printf "%s" "$quality_size_text"
+        
+        # After writing all text for this item, move cursor to end of its column area
+        # This prevents overwrites when we write the next column
+        local next_x
+        if [ "$i" -lt $((${#items[@]} - 1)) ]; then
+            next_x="${col_positions[$((i + 1))]}"
+        else
+            next_x=$term_cols
+        fi
+        # Position cursor at the end of this column's area (just before next column or end of line)
+        tput cup $((text_row + 2)) $((next_x - 1))
     done
     
     # Cleanup rendered files
@@ -365,8 +395,8 @@ draw_grid_row() {
     done
     
     # Calculate the next row position
-    # Layout: start_row + img_height (15) + spacing (2) + text_lines (3) = start_row + 20
-    # This matches row_height which is 20
+    # Layout: start_row + img_height (15) + spacing (1) + text_lines (3) = start_row + 19
+    # But we use row_height=20 for consistency with scrolling logic
     local next_row=$((start_row + row_height))
     
     # Ensure cursor is positioned at the next row before returning
@@ -1255,11 +1285,14 @@ display_catalog() {
     echo
     
     # Display results in grid layout
-    # Calculate columns based on terminal width
+    # Calculate columns based on terminal width - use more columns for wider terminals
     local term_cols=$(tput cols)
-    local num_cols=$((term_cols / 45))
+    # Each column needs about 40-45 characters (20 for image + 20 for text + spacing)
+    # But we can be more flexible - use more columns if terminal is wide
+    local num_cols=$((term_cols / 40))
     if [ "$num_cols" -lt 1 ]; then num_cols=1; fi
-    if [ "$num_cols" -gt 3 ]; then num_cols=3; fi  # Cap at 3 for now to match design
+    # Allow up to 5 columns for very wide terminals, but cap at reasonable number
+    if [ "$num_cols" -gt 5 ]; then num_cols=5; fi
     
     local index=$start_idx
     local current_start_row=0  # Track the starting row for the current row being drawn
