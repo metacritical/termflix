@@ -2778,11 +2778,52 @@ stream_peerflix() {
                     # Use --download-dir explicitly to ensure it's used (transmission-cli may have config file defaults)
                     # Note: transmission-cli may create subdirectories within the download directory
                     # We'll search recursively to find the actual video files
-                    # Also check for transmission config that might override download directory
+                    # Check for transmission config and temporarily override download directory if needed
                     local transmission_config="$HOME/.config/transmission/settings.json"
+                    local config_backup=""
+                    local original_download_dir=""
+                    
                     if [ -f "$transmission_config" ]; then
-                        echo -e "${YELLOW}Note:${RESET} Transmission config file found. Using --download-dir to override."
+                        # Backup the config file
+                        config_backup=$(mktemp 2>/dev/null || echo "/tmp/transmission_config_backup_$$.json")
+                        cp "$transmission_config" "$config_backup" 2>/dev/null
+                        
+                        # Read current download-dir setting
+                        if command -v jq &> /dev/null; then
+                            original_download_dir=$(jq -r '.["download-dir"] // empty' "$transmission_config" 2>/dev/null)
+                            
+                            # Temporarily set download-dir to our hash-based directory
+                            jq --arg dir "$download_dir" '.["download-dir"] = $dir' "$transmission_config" > "${transmission_config}.tmp" 2>/dev/null && \
+                                mv "${transmission_config}.tmp" "$transmission_config" 2>/dev/null
+                        elif command -v python3 &> /dev/null; then
+                            # Fallback to Python if jq is not available
+                            python3 << EOF 2>/dev/null
+import json
+import sys
+try:
+    with open("$transmission_config", 'r') as f:
+        config = json.load(f)
+    original_download_dir = config.get('download-dir', '')
+    config['download-dir'] = '$download_dir'
+    with open("$transmission_config", 'w') as f:
+        json.dump(config, f, indent=4)
+    print(original_download_dir)
+except:
+    pass
+EOF
+                            original_download_dir=$(python3 -c "import json; f=open('$transmission_config'); d=json.load(f); print(d.get('download-dir', ''))" 2>/dev/null || echo "")
+                        else
+                            # Fallback: use sed to modify JSON (less reliable but works for simple cases)
+                            original_download_dir=$(grep -oE '"download-dir"[[:space:]]*:[[:space:]]*"[^"]*"' "$transmission_config" 2>/dev/null | cut -d'"' -f4 || echo "")
+                            # Escape the directory path for sed
+                            local escaped_dir=$(echo "$download_dir" | sed 's/[[\.*^$()+?{|]/\\&/g')
+                            sed -i.bak "s|\"download-dir\"[[:space:]]*:[[:space:]]*\"[^\"]*\"|\"download-dir\": \"$escaped_dir\"|g" "$transmission_config" 2>/dev/null
+                            rm -f "${transmission_config}.bak" 2>/dev/null
+                        fi
+                        
+                        echo -e "${CYAN}Note:${RESET} Temporarily overriding transmission config download directory"
                     fi
+                    
                     transmission-cli --download-dir "$download_dir" "$source" > "$transmission_output" 2>&1 &
                     local transmission_pid=$!
                     
@@ -2796,6 +2837,11 @@ stream_peerflix() {
                         mkdir -p "$download_dir" 2>/dev/null || {
                             echo -e "${RED}Error:${RESET} Cannot create download directory"
                             kill $transmission_pid 2>/dev/null || true
+                            # Restore original transmission config if we modified it
+                            if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                                cp "$config_backup" "$transmission_config" 2>/dev/null
+                                rm -f "$config_backup" 2>/dev/null
+                            fi
                             rm -f "$transmission_output" 2>/dev/null
                             rm -f "$temp_output" 2>/dev/null
                             return 1
@@ -2808,6 +2854,11 @@ stream_peerflix() {
                         if [ -f "$transmission_output" ]; then
                             echo -e "${YELLOW}Transmission output:${RESET}"
                             cat "$transmission_output" | head -20
+                        fi
+                        # Restore original transmission config if we modified it
+                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                            cp "$config_backup" "$transmission_config" 2>/dev/null
+                            rm -f "$config_backup" 2>/dev/null
                         fi
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
@@ -2883,19 +2934,24 @@ stream_peerflix() {
                         printf "\r${CYAN}Waiting for video file...${RESET} [%c] (%ds)" "$spin_char" "$elapsed_secs"
                         
                         # Check if transmission process is still running
-                        if ! kill -0 "$transmission_pid" 2>/dev/null; then
-                            echo ""
-                            echo -e "${RED}Error:${RESET} transmission-cli process died unexpectedly"
-                            if [ -f "$transmission_output" ]; then
-                                echo -e "${YELLOW}Last transmission output:${RESET}"
-                                tail -30 "$transmission_output" | while IFS= read -r line; do
-                                    echo "  $line"
-                                done
+                            if ! kill -0 "$transmission_pid" 2>/dev/null; then
+                                echo ""
+                                echo -e "${RED}Error:${RESET} transmission-cli process died unexpectedly"
+                                if [ -f "$transmission_output" ]; then
+                                    echo -e "${YELLOW}Last transmission output:${RESET}"
+                                    tail -30 "$transmission_output" | while IFS= read -r line; do
+                                        echo "  $line"
+                                    done
+                                fi
+                                # Restore original transmission config if we modified it
+                                if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                                    cp "$config_backup" "$transmission_config" 2>/dev/null
+                                    rm -f "$config_backup" 2>/dev/null
+                                fi
+                                rm -f "$transmission_output" 2>/dev/null
+                                rm -f "$temp_output" 2>/dev/null
+                                return 1
                             fi
-                            rm -f "$transmission_output" 2>/dev/null
-                            rm -f "$temp_output" 2>/dev/null
-                            return 1
-                        fi
                         
                         sleep 0.5
                         video_wait=$((video_wait + 1))
@@ -2941,6 +2997,11 @@ stream_peerflix() {
                         fi
                         
                         kill $transmission_pid 2>/dev/null || true
+                        # Restore original transmission config if we modified it
+                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                            cp "$config_backup" "$transmission_config" 2>/dev/null
+                            rm -f "$config_backup" 2>/dev/null
+                        fi
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
                         return 1
@@ -3120,6 +3181,11 @@ stream_peerflix() {
                     cd "$video_dir" || {
                         echo -e "${RED}Error:${RESET} Could not change to video directory"
                         kill $transmission_pid 2>/dev/null || true
+                        # Restore original transmission config if we modified it
+                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                            cp "$config_backup" "$transmission_config" 2>/dev/null
+                            rm -f "$config_backup" 2>/dev/null
+                        fi
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
                         return 1
@@ -3147,6 +3213,11 @@ stream_peerflix() {
                     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
                         echo -e "${RED}Error:${RESET} Failed to launch player"
                         kill $transmission_pid 2>/dev/null || true
+                        # Restore original transmission config if we modified it
+                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                            cp "$config_backup" "$transmission_config" 2>/dev/null
+                            rm -f "$config_backup" 2>/dev/null
+                        fi
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
                         return 1
@@ -3159,7 +3230,7 @@ stream_peerflix() {
                     local player_running=true
                     local check_count=0
                     
-                    trap 'echo -e "\n${YELLOW}Interrupted. Stopping transmission...${RESET}"; kill $transmission_pid 2>/dev/null || true; kill $player_pid 2>/dev/null || true; rm -f "$transmission_output" 2>/dev/null; return 2' INT TERM
+                    trap 'echo -e "\n${YELLOW}Interrupted. Stopping transmission...${RESET}"; kill $transmission_pid 2>/dev/null || true; kill $player_pid 2>/dev/null || true; if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then cp "$config_backup" "$transmission_config" 2>/dev/null; rm -f "$config_backup" 2>/dev/null; fi; rm -f "$transmission_output" 2>/dev/null; return 2' INT TERM
                     
                     while [ "$player_running" = true ]; do
                         local player_processes=""
@@ -3204,6 +3275,13 @@ stream_peerflix() {
                     sleep 1
                     kill -9 $transmission_pid 2>/dev/null || true
                     wait $transmission_pid 2>/dev/null &>/dev/null || true
+                    
+                    # Restore original transmission config if we modified it
+                    if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                        cp "$config_backup" "$transmission_config" 2>/dev/null
+                        rm -f "$config_backup" 2>/dev/null
+                        echo -e "${CYAN}Restored transmission config${RESET}"
+                    fi
                     
                     rm -f "$transmission_output" 2>/dev/null
                     rm -f "$temp_output" 2>/dev/null
