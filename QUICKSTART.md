@@ -40,6 +40,8 @@ That's it! Termflix will:
 - Show you the latest movies and TV shows
 - Let you browse, search, and stream!
 
+![Termflix Catalog View](img/01-catalog-initial-view.png)
+
 ## First Time Setup
 
 ### Set Player Preference
@@ -77,6 +79,15 @@ termflix search "movie"    # Search for movies/shows
 termflix latest movies      # Latest movies only
 termflix trending all       # Trending content
 ```
+
+![Full Catalog with Movie Posters](img/06-catalog-with-posters.png)
+
+When you select a movie, termflix will:
+1. Set up streaming with peerflix or transmission-cli
+2. Show buffering progress with download speed and peer count
+3. Launch your media player automatically
+
+![Streaming and Buffering](img/05-buffering-progress.png)
 
 ## Troubleshooting
 

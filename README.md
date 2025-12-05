@@ -2,6 +2,8 @@
 
 A powerful terminal-based torrent streaming tool that lets you browse and stream movies and TV shows directly from your terminal.
 
+![Termflix Catalog View](img/06-catalog-with-posters.png)
+
 ## Features
 
 - 🎥 **Browse Latest Movies & Shows** - Browse trending and popular content
@@ -91,6 +93,10 @@ TMDB_READ_TOKEN=your_read_token_here
 ## Usage
 
 ### Browse Latest Content
+
+![Initial Catalog View](img/01-catalog-initial-view.png)
+
+Browse the latest movies and TV shows with movie posters displayed in your terminal.
 ```bash
 termflix                    # Shows latest movies and shows
 termflix latest movies      # Latest movies only
@@ -126,20 +132,35 @@ termflix player mpv        # Set default player to mpv
 
 ## Navigation
 
+![Catalog Navigation](img/02-catalog-navigation.png)
+
 When browsing the catalog:
 - **n** - Next page (press key, no Enter needed)
 - **p** - Previous page (press key, no Enter needed)
 - **1-1100** - Select torrent (type number, press Enter)
 - **q** or **Esc** - Cancel/Quit
 
+![Movie Selection](img/03-movie-selection.png)
+
 ## How It Works
 
 1. **Catalog Browsing**: Fetches latest/trending content from multiple sources
+
+   ![Full Catalog View](img/08-full-catalog-view.png)
+
 2. **Caching**: Results are cached for 8 hours to reduce API calls
 3. **Streaming**: Uses `peerflix` for streaming, falls back to `transmission-cli` if needed
+
+   ![Streaming Setup](img/04-streaming-setup.png)
+
 4. **Posters**: Downloads and caches movie posters from TMDB
 5. **Player Integration**: Launches mpv/vlc with video and subtitle files
+
+   ![Buffering Progress](img/05-buffering-progress.png)
+
 6. **Return to Catalog**: After playback, returns to the catalog view
+
+   ![Player Running](img/07-player-running.png)
 
 ## Troubleshooting
 
