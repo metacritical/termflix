@@ -35,6 +35,7 @@ CMD|startup_scripts|Run startup scripts|startup_scripts|system
 CMD|term_color|Display terminal colors|term_color|colors
 CMD|tinyurl|Create tiny URL|tinyurl [url]|utilities
 CMD|tp|Text processing utility|tp [file]|utilities
+CMD|torrent|Stream torrents to mpv|torrent [magnet|file|search query]|media
 CMD|transcode|Transcode media files|transcode [file]|media
 CMD|truck|File transfer utility|truck [src] [dst]|system
 CMD|unicode_char|Unicode character utility|unicode_char [code]|utilities
