@@ -249,12 +249,20 @@ draw_grid_row() {
                         # Move cursor to exact position for this row and column
                         tput cup "$current_y" "$x_pos"
                         # Read and output the specific line (row+1 because sed line numbers start at 1)
-                        # Use sed to get the line, then printf to output without adding newline
                         local image_line
                         image_line=$(sed -n "$((row + 1))p" "$rendered_file" 2>/dev/null)
                         if [[ -n "$image_line" ]]; then
                             # Remove trailing newline if present and output
                             printf "%s" "${image_line%$'\n'}"
+                            # Explicitly position cursor at end of this line to prevent overwrite
+                            # Calculate approximate end position (x_pos + img_width, but don't exceed terminal width)
+                            local term_cols=$(tput cols)
+                            local end_x=$((x_pos + img_width))
+                            if [ "$end_x" -gt "$term_cols" ]; then
+                                end_x=$term_cols
+                            fi
+                            # Position cursor at end of image line to ensure clean state
+                            tput cup "$current_y" "$end_x"
                         fi
                     fi
                 fi
@@ -277,17 +285,26 @@ draw_grid_row() {
                     else
                         echo -ne "${CYAN}│                  │${RESET}"
                     fi
+                    # Ensure cursor is positioned after placeholder
+                    tput cup "$current_y" $((x_pos + 20))
                 fi
             fi
         done
     done
     
+    # Ensure cursor is in a known state after all images are drawn
+    # Move to a safe position before drawing text
+    local text_start_row=$((start_row + img_height + 2))
+    tput cup "$text_start_row" 0
+    
     # Pass 4: Draw all text below images
+    # Draw text row by row to ensure proper cursor positioning
+    local text_row=$((start_row + img_height + 2))
+    
+    # Row 1: [num] [source] for all columns
     for i in "${!items[@]}"; do
         local item="${items[$i]}"
         local x_pos="${col_positions[$i]}"
-        
-        # Parse item
         IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
         
         local item_num=$((start_index + i + 1))
@@ -299,28 +316,47 @@ draw_grid_row() {
             1337x) source_color="$MAGENTA" ;;
         esac
         
-        # Truncate name if too long
+        tput cup "$text_row" "$x_pos"
+        printf "${BOLD}[%d]${RESET} ${source_color}[%s]${RESET}" "$item_num" "$source"
+        # Clear to end of line to prevent overwrite from next column
+        tput el
+    done
+    
+    # Row 2: Display name for all columns
+    for i in "${!items[@]}"; do
+        local item="${items[$i]}"
+        local x_pos="${col_positions[$i]}"
+        IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
+        
         local display_name="${name:0:38}"
         if [ "${#name}" -gt 38 ]; then
             display_name="${display_name}..."
         fi
         
-        # Display Info below image
-        local text_row=$((start_row + img_height + 2))
-        
-        tput cup "$text_row" "$x_pos"
-        printf "${BOLD}[%d]${RESET} ${source_color}[%s]${RESET}" "$item_num" "$source"
-        
         tput cup $((text_row + 1)) "$x_pos"
         printf "${BOLD}%s${RESET}" "$display_name"
+        # Clear to end of line to prevent overwrite
+        tput el
+    done
+    
+    # Row 3: Quality and size for all columns
+    for i in "${!items[@]}"; do
+        local item="${items[$i]}"
+        local x_pos="${col_positions[$i]}"
+        IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
         
         tput cup $((text_row + 2)) "$x_pos"
         if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
              printf "${CYAN}%s${RESET}" "$quality"
         fi
         if [ -n "$size" ] && [ "$size" != "N/A" ]; then
-             printf " | ${CYAN}%s${RESET}" "$size"
+             if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
+                 printf " | "
+             fi
+             printf "${CYAN}%s${RESET}" "$size"
         fi
+        # Clear to end of line to prevent overwrite
+        tput el
     done
     
     # Cleanup rendered files
@@ -328,8 +364,17 @@ draw_grid_row() {
         [[ -n "$rendered_file" ]] && rm -f "$rendered_file" 2>/dev/null
     done
     
-    # Return the next row position
-    echo $((start_row + row_height))
+    # Calculate the next row position
+    # Layout: start_row + img_height (15) + spacing (2) + text_lines (3) = start_row + 20
+    # This matches row_height which is 20
+    local next_row=$((start_row + row_height))
+    
+    # Ensure cursor is positioned at the next row before returning
+    # This ensures the cursor is in a known state for the next row
+    tput cup "$next_row" 0
+    
+    # Return the next row position via stderr (so it doesn't mix with stdout output)
+    echo "$next_row" >&2
 }
 
 # Cleanup poster images
@@ -1217,10 +1262,31 @@ display_catalog() {
     if [ "$num_cols" -gt 3 ]; then num_cols=3; fi  # Cap at 3 for now to match design
     
     local index=$start_idx
-    local current_row_pos=0  # Relative row position from start of grid
+    local current_start_row=0  # Track the starting row for the current row being drawn
+    
+    # Get terminal dimensions
+    local term_lines=$(tput lines)
+    local term_cols=$(tput cols)
+    local row_height=20  # Height of each grid row (image + text)
     
     local row_items=()
     local row_count=0
+    
+    # Get initial cursor position (only once at start)
+    # Use a simple method that's less likely to leak
+    local initial_row
+    echo -en "\033[6n" > /dev/tty
+    if IFS=';' read -rsdR CURPOS < /dev/tty 2>/dev/null; then
+        CURPOS=${CURPOS#*[}
+        initial_row=${CURPOS%%;*}
+        if ! [[ "$initial_row" =~ ^[0-9]+$ ]]; then
+            initial_row=5
+        fi
+    else
+        initial_row=5
+    fi
+    
+    current_start_row=$initial_row
     
     while [ $index -lt $end_idx ] && [ $index -lt $total ]; do
         local result="${all_results[$index]}"
@@ -1301,17 +1367,83 @@ display_catalog() {
                 done
             fi
             
-            # Get absolute coordinates for drawing
-            echo -en "\033[6n"
-            read -sdR CURPOS
-            CURPOS=${CURPOS#*[}
-            START_ROW=${CURPOS%%;*}
+            # Ensure cursor is at a known position before drawing
+            # Position cursor at the start row for this grid row
+            tput cup "$current_start_row" 0
             
-            # Draw the row (new signature: start_row start_index num_cols items...)
-            draw_grid_row "$START_ROW" "$start_idx" "$num_cols" "${row_items[@]}"
+            # Draw the row (returns the next row position via stderr)
+            # Use a temp file to capture the return value
+            local temp_return=$(mktemp)
+            # Redirect stderr to temp file, but keep stdout for display
+            # The function writes the return value as the LAST line to stderr
+            draw_grid_row "$current_start_row" "$start_idx" "$num_cols" "${row_items[@]}" 2>"$temp_return"
+            local next_row
+            # Get the last non-empty line from stderr (should be the return value)
+            next_row=$(tail -1 "$temp_return" 2>/dev/null | grep -E '^[0-9]+$' | tail -1)
+            rm -f "$temp_return"
             
-            # Move cursor past the row
-            tput cup $((START_ROW + 20)) 0
+            # Validate next_row is a number, fallback if not
+            if ! [[ "$next_row" =~ ^[0-9]+$ ]] || [ -z "$next_row" ]; then
+                # Fallback: calculate manually based on row_height (20 lines per row)
+                # This is safe because we know the exact row height
+                next_row=$((current_start_row + row_height))
+            fi
+            
+            # Check if next row would exceed terminal height or be too close to bottom
+            local available_lines=$((term_lines - next_row))
+            if [ "$next_row" -ge "$term_lines" ] || [ "$available_lines" -lt "$row_height" ]; then
+                # Need to scroll: output newlines to push content up
+                # Calculate how many lines to scroll (enough to fit next row + some margin)
+                local lines_to_scroll=$((row_height - available_lines + 3))
+                if [ "$lines_to_scroll" -lt 3 ]; then
+                    lines_to_scroll=3
+                fi
+                
+                # Scroll by outputting newlines (this pushes terminal content up)
+                for ((scroll=0; scroll<lines_to_scroll; scroll++)); do
+                    echo
+                done
+                
+                # After scrolling, calculate new position (don't query - it leaks!)
+                # Each newline moves cursor down by 1, so adjust accordingly
+                current_start_row=$((next_row - lines_to_scroll))
+                if [ "$current_start_row" -lt 0 ]; then
+                    current_start_row=1
+                fi
+                
+                # Ensure we have enough space - if not, scroll more
+                if [ "$current_start_row" -ge $((term_lines - row_height - 2)) ]; then
+                    # Still too close to bottom, scroll more
+                    for ((scroll=0; scroll<row_height; scroll++)); do
+                        echo
+                    done
+                    # Recalculate after additional scroll
+                    current_start_row=$((current_start_row - row_height))
+                    if [ "$current_start_row" -lt 1 ]; then
+                        current_start_row=1
+                    fi
+                fi
+            else
+                # Enough space, use the calculated next_row
+                current_start_row=$next_row
+            fi
+            
+            # CRITICAL: Ensure cursor is positioned at the start of the next row
+            # After scrolling, current_start_row should be safe to use
+            if [ "$current_start_row" -lt "$term_lines" ]; then
+                tput cup "$current_start_row" 0
+            else
+                # Safety fallback: if somehow still at bottom, just use newline
+                echo
+                # Estimate position (don't query - causes leaks)
+                current_start_row=$((term_lines - 5))
+                if [ "$current_start_row" -lt 1 ]; then
+                    current_start_row=1
+                fi
+                if [ "$current_start_row" -lt "$term_lines" ]; then
+                    tput cup "$current_start_row" 0
+                fi
+            fi
             
             # Reset for next row
             row_items=()
@@ -1321,9 +1453,15 @@ display_catalog() {
         index=$((index + 1))
     done
     
+    # CRITICAL: After all rows are drawn, ensure cursor is at the bottom
+    # Position cursor well below the last row to prevent any overwrites
+    # Calculate final position: current_start_row is already the next row after last drawn row
+    # Add a few lines of spacing before navigation text
+    local final_cursor_row=$((current_start_row + 2))
+    tput cup "$final_cursor_row" 0
+    
     # Add spacing after results
     echo
-    
     echo
     
     # Interactive selection with pagination
