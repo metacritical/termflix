@@ -1638,14 +1638,19 @@ display_catalog() {
                 # Don't use tput cup here - it would move cursor back up incorrectly
                 current_start_row=$next_row
                 
-                # CRITICAL: For the first row, add 3 more newlines to ensure proper spacing
+                # CRITICAL: For the first row, add 7 more newlines to ensure proper spacing
                 # This fixes the issue where first row text appears inside image areas
+                # Total: 3 (base) + 7 (extra) = 10 newlines after first row
                 if [ "$item_start_index" -eq 0 ]; then
                     echo
                     echo
                     echo
-                    # Update next_row again for the first row
-                    next_row=$((next_row + 3))
+                    echo
+                    echo
+                    echo
+                    echo
+                    # Update next_row again for the first row (7 extra newlines = 10 total)
+                    next_row=$((next_row + 7))
                     current_start_row=$next_row
                 fi
             else
