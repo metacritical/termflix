@@ -6,12 +6,66 @@
 
 # Don't exit on error - we handle errors gracefully
 set +e
+# Suppress job control messages (like "Terminated: 15")
+set +H 2>/dev/null || true
 
 # Cleanup function for poster images
 cleanup_on_exit() {
     cleanup_posters
 }
 trap cleanup_on_exit EXIT INT TERM
+
+# Spinner function for waiting/searching
+show_spinner() {
+    local pid=$1
+    local message="${2:-Processing...}"
+    local spinstr='|/-\'
+    local delay=0.1
+    while kill -0 "$pid" 2>/dev/null; do
+        local temp=${spinstr#?}
+        printf "\r${CYAN}%s${RESET} [%c]" "$message" "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+    done
+    printf "\r${GREEN}%s${RESET} [✓]\n" "$message"
+}
+
+# Progress bar with emojis
+show_progress() {
+    local current=$1
+    local total=$2
+    local label="${3:-Progress}"
+    local width=20
+    
+    # Ensure current doesn't exceed total
+    if [ "$current" -gt "$total" ]; then
+        current=$total
+    fi
+    
+    local filled=$((current * width / total))
+    if [ "$filled" -gt "$width" ]; then
+        filled=$width
+    fi
+    local empty=$((width - filled))
+    
+    # Build progress bar
+    local bar=""
+    local i=0
+    while [ $i -lt $filled ]; do
+        bar="${bar}🟩"
+        i=$((i + 1))
+    done
+    while [ $i -lt $width ]; do
+        bar="${bar}⬜"
+        i=$((i + 1))
+    done
+    
+    local percent=$((current * 100 / total))
+    if [ "$percent" -gt 100 ]; then
+        percent=100
+    fi
+    printf "\r${CYAN}%s:${RESET} %s %d%% (%d/%d) " "$label" "$bar" "$percent" "$current" "$total"
+}
 
 # Check for jq (needed for API parsing)
 check_jq() {
@@ -41,13 +95,10 @@ display_poster() {
     local poster_url="$1"
     local width="${2:-20}"
     local height="${3:-15}"
+    local x_pos="${4:-}"
+    local y_pos="${5:-}"
     
     if [ -z "$poster_url" ] || [ "$poster_url" = "N/A" ] || [ "$poster_url" = "" ]; then
-        return 1
-    fi
-    
-    # Check if viu is available
-    if ! check_viu >/dev/null 2>&1; then
         return 1
     fi
     
@@ -62,13 +113,223 @@ display_poster() {
         curl -s --max-time 3 "$poster_url" -o "$image_file" 2>/dev/null || return 1
     fi
     
-    # Display with viu and capture output
-    if [ -f "$image_file" ]; then
-        viu -w "$width" -h "$height" "$image_file" 2>/dev/null
+    if [ ! -f "$image_file" ]; then
+        return 1
+    fi
+
+    # Check for Kitty terminal
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitty &> /dev/null; then
+        if [ -n "$x_pos" ] && [ -n "$y_pos" ]; then
+            # Move cursor to position first
+            tput cup "$y_pos" "$x_pos"
+            kitty +kitten icat --align left --place "${width}x${height}@${x_pos}x${y_pos}" "$image_file" 2>/dev/null
+        else
+            kitty +kitten icat --align left --height "$height" "$image_file" 2>/dev/null
+        fi
+        return 0
+    fi
+    
+    # Check if viu is available
+    if check_viu >/dev/null 2>&1; then
+        if [ -n "$x_pos" ] && [ -n "$y_pos" ]; then
+            # Move cursor to position
+            tput cup "$y_pos" "$x_pos"
+            viu -w "$width" -h "$height" "$image_file" 2>/dev/null
+        else
+            viu -w "$width" -h "$height" "$image_file" 2>/dev/null
+        fi
         return 0
     fi
     
     return 1
+}
+
+# Draw a row of up to 3 items in a grid
+# Offline rendering: Pre-render images, then draw row-by-row with proper cursor positioning
+draw_grid_row() {
+    local start_row="$1"
+    local start_index="$2"
+    local num_cols="$3"
+    shift 3
+    local items=("$@")
+    
+    local col_width=40  # Approximate column width in characters
+    local img_width=20
+    local img_height=15
+    local row_height=20  # Total height for one row (image + text)
+    
+    # Calculate column positions based on terminal width
+    local term_cols=$(tput cols)
+    local spacing=$((term_cols / num_cols))
+    local col_positions=()
+    for ((c=0; c<num_cols; c++)); do
+        col_positions+=($((c * spacing)))
+    done
+
+    # Pass 1: Pre-download all images in parallel
+    local temp_dir="${TMPDIR:-/tmp}/torrent_posters_$$"
+    mkdir -p "$temp_dir" 2>/dev/null
+    
+    local pids=()
+    local image_files=()
+    
+    for i in "${!items[@]}"; do
+        local result="${items[$i]}"
+        IFS='|' read -r source name magnet quality size extra poster_url <<< "$result"
+        
+        if [[ -n "$poster_url" ]] && [[ "$poster_url" != "N/A" ]]; then
+            local image_file="${temp_dir}/poster_$(echo "$poster_url" | md5 2>/dev/null | cut -c1-8).jpg"
+            image_files[$i]="$image_file"
+            
+            # Download in background if not already cached
+            if [ ! -f "$image_file" ]; then
+                ( curl -s --max-time 5 "$poster_url" -o "$image_file" 2>/dev/null ) &
+                pids+=($!)
+            fi
+        else
+            image_files[$i]=""
+        fi
+    done
+    
+    # Wait for all downloads to complete
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null
+    done
+    
+    # Pass 2: Pre-render all images offline - capture each line separately
+    # Store rendered lines: image_lines[item_index][row_index] = line_content
+    declare -a has_image=()
+    declare -a is_kitty=()
+    # Use associative array-like structure with temp files for each item's lines
+    local image_line_files=()
+    
+    for i in "${!items[@]}"; do
+        local image_file="${image_files[$i]}"
+        has_image[$i]=0
+        is_kitty[$i]=0
+        image_line_files[$i]=""
+        
+        if [[ -n "$image_file" ]] && [[ -f "$image_file" ]]; then
+            # Check if we're using kitty (which handles positioning differently)
+            if [[ "$TERM" == "xterm-kitty" ]] && command -v kitty &> /dev/null; then
+                is_kitty[$i]=1
+                has_image[$i]=1
+            elif check_viu >/dev/null 2>&1; then
+                # Pre-render image with viu and capture output line by line
+                local rendered_file="${temp_dir}/rendered_${i}.txt"
+                viu -w "$img_width" -h "$img_height" "$image_file" 2>/dev/null > "$rendered_file"
+                if [ $? -eq 0 ] && [ -s "$rendered_file" ]; then
+                    image_line_files[$i]="$rendered_file"
+                    has_image[$i]=1
+                else
+                    rm -f "$rendered_file" 2>/dev/null
+                fi
+            fi
+        fi
+    done
+    
+    # Pass 3: Draw images row by row (offline rendering)
+    # For each row (0 to img_height-1), draw that row for all columns
+    for ((row=0; row<img_height; row++)); do
+        for i in "${!items[@]}"; do
+            local x_pos="${col_positions[$i]}"
+            local current_y=$((start_row + row + 1))
+            
+            if [[ "${has_image[$i]}" -eq 1 ]]; then
+                if [[ "${is_kitty[$i]}" -eq 1 ]]; then
+                    # For kitty, render once on first row only
+                    if [[ "$row" -eq 0 ]]; then
+                        local image_file="${image_files[$i]}"
+                        kitty +kitten icat --align left --place "${img_width}x${img_height}@${x_pos}x$((start_row + 1))" "$image_file" 2>/dev/null
+                    fi
+                else
+                    # For viu: Read specific row from pre-rendered file and draw at correct position
+                    local rendered_file="${image_line_files[$i]}"
+                    if [[ -n "$rendered_file" ]] && [[ -f "$rendered_file" ]]; then
+                        # Move cursor to exact position for this row and column
+                        tput cup "$current_y" "$x_pos"
+                        # Read and output the specific line (row+1 because sed line numbers start at 1)
+                        # Use sed to get the line, then printf to output without adding newline
+                        local image_line
+                        image_line=$(sed -n "$((row + 1))p" "$rendered_file" 2>/dev/null)
+                        if [[ -n "$image_line" ]]; then
+                            # Remove trailing newline if present and output
+                            printf "%s" "${image_line%$'\n'}"
+                        fi
+                    fi
+                fi
+            else
+                # Draw placeholder box row by row
+                local image_file="${image_files[$i]}"
+                if [[ -z "$image_file" ]] || [[ ! -f "$image_file" ]]; then
+                    tput cup "$current_y" "$x_pos"
+                    if [[ "$row" -eq 0 ]]; then
+                        echo -ne "${CYAN}┌──────────────────┐${RESET}"
+                    elif [[ "$row" -eq $((img_height-1)) ]]; then
+                        echo -ne "${CYAN}└──────────────────┘${RESET}"
+                    elif [[ "$row" -eq 7 ]]; then
+                        # Center row - show "No Poster" text
+                        echo -ne "${CYAN}│${RESET}"
+                        tput cup "$current_y" $((x_pos + 5))
+                        echo -ne "${CYAN}No Poster${RESET}"
+                        tput cup "$current_y" $((x_pos + 19))
+                        echo -ne "${CYAN}│${RESET}"
+                    else
+                        echo -ne "${CYAN}│                  │${RESET}"
+                    fi
+                fi
+            fi
+        done
+    done
+    
+    # Pass 4: Draw all text below images
+    for i in "${!items[@]}"; do
+        local item="${items[$i]}"
+        local x_pos="${col_positions[$i]}"
+        
+        # Parse item
+        IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
+        
+        local item_num=$((start_index + i + 1))
+        local source_color="$CYAN"
+        case "$source" in
+            YTS) source_color="$GREEN" ;;
+            TPB) source_color="$YELLOW" ;;
+            EZTV) source_color="$BLUE" ;;
+            1337x) source_color="$MAGENTA" ;;
+        esac
+        
+        # Truncate name if too long
+        local display_name="${name:0:38}"
+        if [ "${#name}" -gt 38 ]; then
+            display_name="${display_name}..."
+        fi
+        
+        # Display Info below image
+        local text_row=$((start_row + img_height + 2))
+        
+        tput cup "$text_row" "$x_pos"
+        printf "${BOLD}[%d]${RESET} ${source_color}[%s]${RESET}" "$item_num" "$source"
+        
+        tput cup $((text_row + 1)) "$x_pos"
+        printf "${BOLD}%s${RESET}" "$display_name"
+        
+        tput cup $((text_row + 2)) "$x_pos"
+        if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
+             printf "${CYAN}%s${RESET}" "$quality"
+        fi
+        if [ -n "$size" ] && [ "$size" != "N/A" ]; then
+             printf " | ${CYAN}%s${RESET}" "$size"
+        fi
+    done
+    
+    # Cleanup rendered files
+    for rendered_file in "${image_line_files[@]}"; do
+        [[ -n "$rendered_file" ]] && rm -f "$rendered_file" 2>/dev/null
+    done
+    
+    # Return the next row position
+    echo $((start_row + row_height))
 }
 
 # Cleanup poster images
@@ -76,6 +337,87 @@ cleanup_posters() {
     local temp_dir="${TMPDIR:-/tmp}/torrent_posters_$$"
     rm -rf "$temp_dir" 2>/dev/null
 }
+
+# Get OMDB API Key
+get_omdb_api_key() {
+    local config_dir="$HOME/.config"
+    local config_file="$config_dir/torrent_prefs"
+    
+    if [ -f "$config_file" ]; then
+        # Try specific OMDB_API_KEY first, then generic API_KEY
+        local key=$(grep "^OMDB_API_KEY=" "$config_file" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+        if [ -z "$key" ]; then
+            key=$(grep "^API_KEY=" "$config_file" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+        fi
+        echo "$key"
+    fi
+}
+
+# Fetch poster from OMDB with caching
+fetch_omdb_poster() {
+    local title="$1"
+    local year="$2"
+    
+    if [ -z "$title" ]; then
+        echo "N/A"
+        return 1
+    fi
+    
+    # Clean title for cache key (remove special chars)
+    local clean_title=$(echo "$title" | tr -cd '[:alnum:]')
+    local cache_key="${clean_title}_${year}"
+    local cache_dir="$HOME/.cache/torrent/omdb"
+    local cache_file="$cache_dir/${cache_key}.json"
+    
+    mkdir -p "$cache_dir" 2>/dev/null
+    
+    # Check cache first
+    if [ -f "$cache_file" ]; then
+        local poster=$(cat "$cache_file" | grep -o '"Poster":"[^"]*"' | cut -d'"' -f4)
+        if [ -n "$poster" ] && [ "$poster" != "N/A" ]; then
+            echo "$poster"
+            return 0
+        fi
+        # If cached but N/A, return N/A (don't retry immediately)
+        echo "N/A"
+        return 0
+    fi
+    
+    # Get API Key
+    local api_key=$(get_omdb_api_key)
+    if [ -z "$api_key" ]; then
+        echo "N/A"
+        return 1
+    fi
+    
+    # Fetch from API
+    # Encode title for URL
+    local encoded_title=$(echo "$title" | jq -sRr @uri | tr -d '\r\n')
+    local api_url="http://www.omdbapi.com/?apikey=${api_key}&t=${encoded_title}"
+    if [ -n "$year" ]; then
+        api_url="${api_url}&y=${year}"
+    fi
+    
+    if command -v curl &> /dev/null; then
+        local response=$(curl -s --max-time 3 "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ]; then
+            # Save to cache
+            echo "$response" > "$cache_file"
+            
+            # Extract poster
+            local poster=$(echo "$response" | grep -o '"Poster":"[^"]*"' | cut -d'"' -f4)
+            if [ -n "$poster" ] && [ "$poster" != "N/A" ]; then
+                echo "$poster"
+                return 0
+            fi
+        fi
+    fi
+    
+    echo "N/A"
+    return 1
+}
+export -f get_omdb_api_key fetch_omdb_poster
 
 # Colors
 RED='\033[0;31m'
@@ -200,6 +542,7 @@ ${BOLD}Options:${RESET}
   -q, --quality       Auto-select best quality
   -s, --subtitles     Enable subtitle loading (auto-detected if available)
   -v, --verbose       Verbose output
+      --debug         Show debug information (magnet links, etc.)
 
 ${BOLD}Commands:${RESET}
   player <mpv|vlc>    Change default media player preference
@@ -317,7 +660,8 @@ get_ytsrs_movies() {
     local limit="${4:-20}"
     local page="${5:-1}"  # Page not used for YTSRS but kept for compatibility
     
-    echo -e "${CYAN}[YTSRS]${RESET} Fetching movies (genre=$genre, quality=$quality, sort=$sort)..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[YTSRS]${RESET} Fetching movies (genre=$genre, quality=$quality, sort=$sort)..." >&2
     
     # Build URL
     local base_url="https://en.ytsrs.com/movies"
@@ -390,9 +734,14 @@ try:
         quality_match = re.search(r'<span[^>]*class="[^"]*movie-quality[^"]*"[^>]*>([^<]+)</span>', card_section)
         quality = quality_match.group(1).strip() if quality_match else default_quality
         
-        # Get poster image
-        poster_match = re.search(r'<img[^>]*class="[^"]*movie-poster[^"]*"[^>]*src="([^"]+)"', card_section)
-        poster = poster_match.group(1) if poster_match else "N/A"
+        # Get poster image - handle multiline and attribute order
+        img_match = re.search(r'<img[^>]+class="[^"]*movie-poster[^"]*"[^>]*>', card_section, re.DOTALL)
+        poster = "N/A"
+        if img_match:
+            img_tag = img_match.group(0)
+            src_match = re.search(r'src="([^"]+)"', img_tag)
+            if src_match:
+                poster = src_match.group(1)
         
         # Fetch movie details to get hash (with shorter timeout for speed)
         detail_url = f"https://en.ytsrs.com/?ajax=movie_details&movie_id={movie_id}&imdb_id={urllib.parse.quote(imdb_id)}&title={urllib.parse.quote(title)}&year={year}"
@@ -433,7 +782,8 @@ get_latest_movies() {
     local page="${2:-1}"
     
     # Try YTS first (same as YTS-Streaming app)
-    echo -e "${CYAN}[YTS]${RESET} Fetching latest movies..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[YTS]${RESET} Fetching latest movies..." >&2
     
     # Build URL the same way as YTS-Streaming app (with pagination)
     local base_url="https://yts.mx/api/v2/list_movies.json"
@@ -452,8 +802,12 @@ get_latest_movies() {
             if [ "$status" = "ok" ]; then
                 # Get movies and their torrents - same structure as YTS-Streaming
                 # Include poster URL (medium_cover_image)
-                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.date_uploaded // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
-                return 0
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.date_uploaded // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
             fi
         fi
     fi
@@ -478,7 +832,8 @@ get_trending_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    echo -e "${CYAN}[YTS]${RESET} Fetching trending movies..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[YTS]${RESET} Fetching trending movies..." >&2
     
     # Build URL the same way as YTS-Streaming app (with pagination)
     local base_url="https://yts.mx/api/v2/list_movies.json"
@@ -494,8 +849,12 @@ get_trending_movies() {
             local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
             
             if [ "$status" = "ok" ]; then
-                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.download_count // 0)|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
-                return 0
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.download_count // 0)|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
             fi
         fi
     fi
@@ -519,7 +878,8 @@ get_popular_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    echo -e "${CYAN}[YTS]${RESET} Fetching popular movies..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[YTS]${RESET} Fetching popular movies..." >&2
     
     # Build URL the same way as YTS-Streaming app (with pagination)
     local base_url="https://yts.mx/api/v2/list_movies.json"
@@ -535,8 +895,12 @@ get_popular_movies() {
             local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
             
             if [ "$status" = "ok" ]; then
-                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year)) - ⭐\(.rating // "N/A")|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.rating // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
-                return 0
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year)) - ⭐\(.rating // "N/A")|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.rating // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
             fi
         fi
     fi
@@ -559,7 +923,8 @@ get_latest_shows() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    echo -e "${CYAN}[EZTV]${RESET} Fetching latest TV shows..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[EZTV]${RESET} Fetching latest TV shows..." >&2
     
     local api_url="https://eztv.re/api/get-torrents?limit=$limit&page=$page"
     
@@ -579,7 +944,8 @@ get_catalog_by_genre() {
     local genre="$1"
     local limit="${2:-20}"
     
-    echo -e "${CYAN}[YTS]${RESET} Fetching $genre movies..." >&2
+    # Progress is shown by display_catalog, so suppress this message
+    # echo -e "${CYAN}[YTS]${RESET} Fetching $genre movies..." >&2
     
     # Map common genre names to YTS genre IDs (same as YTS-Streaming)
     local genre_id=""
@@ -642,10 +1008,32 @@ display_catalog() {
     local args_copy=("$@")
     local arg_idx=0
     local ytsrs_pids=()
+    local all_pids=()
+    local func_names=()
+    
+    # Determine source names for display
+    get_source_name() {
+        local func="$1"
+        # Check for YTSRS first (more specific patterns)
+        if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
+            echo "YTSRS"
+        elif [[ "$func" == "get_latest_movies" ]] || [[ "$func" == "get_trending_movies" ]] || [[ "$func" == "get_popular_movies" ]] || [[ "$func" == "get_catalog_by_genre" ]]; then
+            echo "YTS"
+        elif [[ "$func" == "get_tpb_movies" ]] || [[ "$func" == "get_tpb_trending" ]] || [[ "$func" == "get_tpb_popular" ]]; then
+            echo "TPB"
+        elif [[ "$func" == "get_latest_shows" ]] || [[ "$func" == *"eztv"* ]]; then
+            echo "EZTV"
+        else
+            echo "API"
+        fi
+    }
+    
+    echo -e "${CYAN}Fetching data from sources...${RESET}"
     
     while [ $arg_idx -lt ${#args_copy[@]} ]; do
         local func="${args_copy[$arg_idx]}"
         arg_idx=$((arg_idx + 1))
+        local source_name=$(get_source_name "$func")
         
         # Call the function with remaining arguments
         if [ $arg_idx -lt ${#args_copy[@]} ] && [[ "${args_copy[$arg_idx]}" =~ ^[0-9]+$ ]]; then
@@ -653,48 +1041,137 @@ display_catalog() {
             arg_idx=$((arg_idx + 1))
             # Call function with page number for pagination
             # For YTSRS, run in background since it's slower, but wait for it
-            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]]; then
+            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
                 ($func "$limit" "$page" >> "$temp_file" 2>&1) &
-                ytsrs_pids+=($!)
+                local pid=$!
+                ytsrs_pids+=($pid)
+                all_pids+=($pid)
+                # Ensure source_name is YTSRS for ytsrs functions
+                func_names+=("YTSRS")
             else
-                $func "$limit" "$page" >> "$temp_file" 2>&1
+                printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
+                ($func "$limit" "$page" >> "$temp_file" 2>&1) &
+                local pid=$!
+                all_pids+=($pid)
+                func_names+=("$source_name")
+                # Show spinner while waiting
+                local spin_idx=0
+                while kill -0 "$pid" 2>/dev/null; do
+                    case $((spin_idx % 4)) in
+                        0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
+                        1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
+                        2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
+                        3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
+                    esac
+                    sleep 0.2
+                    spin_idx=$((spin_idx + 1))
+                done
+                wait "$pid" 2>/dev/null || true
+                printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
             fi
         else
-            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]]; then
+            if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
                 ($func "$page" >> "$temp_file" 2>&1) &
-                ytsrs_pids+=($!)
+                local pid=$!
+                ytsrs_pids+=($pid)
+                all_pids+=($pid)
+                # Ensure source_name is YTSRS for ytsrs functions
+                func_names+=("YTSRS")
             else
-                $func "$page" >> "$temp_file" 2>&1
+                printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
+                ($func "$page" >> "$temp_file" 2>&1) &
+                local pid=$!
+                all_pids+=($pid)
+                func_names+=("$source_name")
+                # Show spinner while waiting
+                local spin_idx=0
+                while kill -0 "$pid" 2>/dev/null; do
+                    case $((spin_idx % 4)) in
+                        0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
+                        1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
+                        2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
+                        3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
+                    esac
+                    sleep 0.2
+                    spin_idx=$((spin_idx + 1))
+                done
+                wait "$pid" 2>/dev/null || true
+                printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
             fi
         fi
     done
     
-    # Wait for background YTSRS processes (with timeout)
+    # Wait for background YTSRS processes (with timeout and progress)
     if [ ${#ytsrs_pids[@]} -gt 0 ]; then
         # Wait up to 25 seconds for YTSRS to complete
-        for pid in "${ytsrs_pids[@]}"; do
-            for i in {1..25}; do
-                if ! kill -0 "$pid" 2>/dev/null; then
-                    break  # Process finished
-                fi
-                sleep 1
+        for pid_idx in "${!ytsrs_pids[@]}"; do
+            local pid="${ytsrs_pids[$pid_idx]}"
+            local source_name="${func_names[$pid_idx]}"
+            
+            # Verify source name is correct (should be YTSRS for ytsrs functions)
+            if [[ "$source_name" != "YTSRS" ]] && [[ "$source_name" != "API" ]]; then
+                # Try to get correct source name from the function
+                local func_at_idx=$((pid_idx * 2))  # Approximate - this might need adjustment
+                # For now, if it's in ytsrs_pids, it should be YTSRS
+                source_name="YTSRS"
+            fi
+            
+            local spin_idx=0
+            local waited=0
+            local max_wait=25
+            
+            printf "\r${CYAN}Fetching from ${source_name}...${RESET} ["
+            while [ $waited -lt $max_wait ] && kill -0 "$pid" 2>/dev/null; do
+                case $((spin_idx % 4)) in
+                    0) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [|]" ;;
+                    1) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [/" ;;
+                    2) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [-]" ;;
+                    3) printf "\r${CYAN}Fetching from ${source_name}...${RESET} [\\]" ;;
+                esac
+                sleep 0.2
+                spin_idx=$((spin_idx + 1))
+                waited=$((waited + 1))
             done
-            # Kill if still running
-            kill "$pid" 2>/dev/null || true
-            wait "$pid" 2>/dev/null || true
+            
+            # Check if process completed or timed out
+            if kill -0 "$pid" 2>/dev/null; then
+                # Still running - timeout
+                kill "$pid" 2>/dev/null || true
+                wait "$pid" 2>/dev/null || true
+                printf "\r${YELLOW}⚠ Timeout fetching from ${source_name} (${max_wait}s)${RESET}        \n"
+            else
+                # Process completed
+                wait "$pid" 2>/dev/null || true
+                local exit_code=$?
+                if [ $exit_code -eq 0 ]; then
+                    printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}        \n"
+                else
+                    printf "\r${YELLOW}⚠ Error fetching from ${source_name} (exit code: $exit_code)${RESET}        \n"
+                fi
+            fi
         done
     fi
     
+    echo -e "${CYAN}Parsing results...${RESET}"
+    
     # Read results from temp file
+    local result_count=0
     if [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
             if [ -n "$line" ] && echo "$line" | grep -q '|'; then
                 all_results+=("$line")
+                result_count=$((result_count + 1))
+                # Show progress while parsing
+                if [ $((result_count % 5)) -eq 0 ]; then
+                    printf "\r${CYAN}Parsing results...${RESET} [%d found]" "$result_count"
+                fi
             fi
         done < "$temp_file"
     fi
     
     rm -f "$temp_file" 2>/dev/null
+    
+    printf "\r${GREEN}✓ Parsed ${result_count} results${RESET}        \n"
     
     if [ ${#all_results[@]} -eq 0 ]; then
         echo -e "${RED}No results found${RESET}"
@@ -702,6 +1179,8 @@ display_catalog() {
         echo "Try again in a moment or use: ${CYAN}torrent search \"query\"${RESET}"
         return 1
     fi
+    
+    echo  # Blank line before results
     
     # Calculate pagination
     local total=${#all_results[@]}
@@ -712,27 +1191,36 @@ display_catalog() {
     # Display pagination info
     echo -e "${BOLD}${GREEN}Found ${total} results${RESET} (Page ${page}/${total_pages})"
     
-    # Check if we have any YTS results with posters
-    local has_yts_with_posters=false
+    # Check if we have any results with posters
+    local has_posters=false
     for result in "${all_results[@]}"; do
         IFS='|' read -r result_source result_name result_magnet result_quality result_size result_extra result_poster <<< "$result"
-        if [[ "$result_source" == "YTS" ]] && [[ -n "$result_poster" ]] && [[ "$result_poster" != "N/A" ]]; then
-            has_yts_with_posters=true
+        if [[ -n "$result_poster" ]] && [[ "$result_poster" != "N/A" ]]; then
+            has_posters=true
             break
         fi
     done
     
     # Show note about posters
-    if [ "$has_yts_with_posters" = false ] && check_viu >/dev/null 2>&1; then
-        echo -e "${YELLOW}Note:${RESET} Movie posters are only available for YTS results. Currently showing TPB results (no posters)."
-    elif [ "$has_yts_with_posters" = false ] && ! check_viu >/dev/null 2>&1; then
+    if [ "$has_posters" = false ] && check_viu >/dev/null 2>&1; then
+        echo -e "${YELLOW}Note:${RESET} Movie posters are not available for these results."
+    elif [ "$has_posters" = true ] && ! check_viu >/dev/null 2>&1; then
         echo -e "${YELLOW}Note:${RESET} Install ${CYAN}viu${RESET} to see movie posters: ${CYAN}brew install viu${RESET}"
     fi
     echo
     
-    # Display results in single column with detailed info
+    # Display results in grid layout
+    # Calculate columns based on terminal width
+    local term_cols=$(tput cols)
+    local num_cols=$((term_cols / 45))
+    if [ "$num_cols" -lt 1 ]; then num_cols=1; fi
+    if [ "$num_cols" -gt 3 ]; then num_cols=3; fi  # Cap at 3 for now to match design
+    
     local index=$start_idx
-    local display_count=0
+    local current_row_pos=0  # Relative row position from start of grid
+    
+    local row_items=()
+    local row_count=0
     
     while [ $index -lt $end_idx ] && [ $index -lt $total ]; do
         local result="${all_results[$index]}"
@@ -742,61 +1230,94 @@ display_catalog() {
             continue
         fi
         
-        # Parse result: SOURCE|NAME|MAGNET|QUALITY|SIZE|EXTRA|POSTER_URL
-        IFS='|' read -r source name magnet quality size extra poster_url <<< "$result"
+        row_items+=("$result")
+        row_count=$((row_count + 1))
         
-        if [ -z "$name" ] || [ -z "$magnet" ]; then
-            index=$((index + 1))
-            continue
-        fi
-        
-        local item_num=$((index + 1))
-        local source_color="$CYAN"
-        case "$source" in
-            YTS) source_color="$GREEN" ;;
-            TPB) source_color="$YELLOW" ;;
-            EZTV) source_color="$BLUE" ;;
-            1337x) source_color="$MAGENTA" ;;
-        esac
-        
-        # Don't truncate - use full available width
-        local display_name="$name"
-        
-        # Check if we should show posters (only for YTS, and if viu is available)
-        local show_poster=false
-        if [[ "$source" == "YTS" ]] && [[ -n "$poster_url" ]] && [[ "$poster_url" != "N/A" ]] && check_viu >/dev/null 2>&1; then
-            show_poster=true
-        fi
-        
-        # Display with optional poster
-        if [ "$show_poster" = true ]; then
-            # Display with poster - show poster above movie name
-            echo
-            printf "${BOLD}[%3d]${RESET} ${source_color}[%s]${RESET} " "$item_num" "$source"
-            # Display poster (viu outputs directly to terminal)
-            display_poster "$poster_url" 20 15 2>/dev/null || true
-            printf "${BOLD}%s${RESET}\n" "$display_name"
-            echo
-        else
-            # Display without poster - show detailed info in single column
-            # Format: [num] [source] Title
-            #          Quality: seeds | Size: sizeMB
-            printf "${BOLD}[%3d]${RESET} ${source_color}[%s]${RESET} ${BOLD}%s${RESET}\n" \
-                "$item_num" "$source" "$display_name"
-            # Show quality/size info if available
-            if [ -n "$quality" ] && [ "$quality" != "N/A" ] && [ "$quality" != "" ]; then
-                printf "     ${CYAN}Quality:${RESET} $quality"
-                if [ -n "$size" ] && [ "$size" != "N/A" ] && [ "$size" != "" ]; then
-                    printf " | ${CYAN}Size:${RESET} $size"
+        # If we have num_cols items or it's the last item, draw the row
+        if [ $row_count -eq $num_cols ] || [ $index -eq $((end_idx - 1)) ] || [ $index -eq $((total - 1)) ]; then
+            
+            # Parallel Fetching of Posters
+            local pids=()
+            local temp_files=()
+            local fetch_indices=()
+            local fetching=false
+            
+            # Check if any item needs a poster fetched
+            for i in "${!row_items[@]}"; do
+                local item="${row_items[$i]}"
+                IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
+                
+                # If poster is missing or N/A, try to fetch from OMDB
+                if [[ -z "$poster_url" ]] || [[ "$poster_url" == "N/A" ]]; then
+                    # Extract title and year
+                    local title_year=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/([0-9]{4}).*/\1/')
+                    local title=$(echo "$title_year" | sed -E 's/ [0-9]{4}//')
+                    local year=$(echo "$title_year" | grep -oE '[0-9]{4}' | head -1)
+                    
+                    if [ -n "$title" ]; then
+                        fetching=true
+                        local temp_file=$(mktemp)
+                        temp_files[$i]="$temp_file"
+                        fetch_indices+=($i)
+                        
+                        # Fetch in background
+                        (
+                            local new_poster=$(fetch_omdb_poster "$title" "$year")
+                            echo "$new_poster" > "$temp_file"
+                        ) &
+                        pids+=($!)
+                    fi
                 fi
-                if [ -n "$extra" ] && [ "$extra" != "N/A" ] && [ "$extra" != "" ] && [ "$extra" != "0" ]; then
-                    printf " | $extra"
-                fi
-                printf "\n"
+            done
+            
+            # If fetching, show status
+            if [ "$fetching" = true ]; then
+                tput sc
+                echo -ne "${YELLOW}Fetching posters...${RESET}"
+                
+                # Wait for all background jobs
+                for pid in "${pids[@]}"; do
+                    wait "$pid" 2>/dev/null
+                done
+                
+                # Clear status
+                tput rc
+                tput el
+                
+                # Update row items with fetched posters
+                for i in "${fetch_indices[@]}"; do
+                    local temp_file="${temp_files[$i]}"
+                    if [ -f "$temp_file" ]; then
+                        local new_poster=$(cat "$temp_file")
+                        rm -f "$temp_file"
+                        
+                        if [ -n "$new_poster" ] && [ "$new_poster" != "N/A" ]; then
+                            # Reconstruct item with new poster
+                            local item="${row_items[$i]}"
+                            IFS='|' read -r source name magnet quality size extra old_poster <<< "$item"
+                            row_items[$i]="$source|$name|$magnet|$quality|$size|$extra|$new_poster"
+                        fi
+                    fi
+                done
             fi
+            
+            # Get absolute coordinates for drawing
+            echo -en "\033[6n"
+            read -sdR CURPOS
+            CURPOS=${CURPOS#*[}
+            START_ROW=${CURPOS%%;*}
+            
+            # Draw the row (new signature: start_row start_index num_cols items...)
+            draw_grid_row "$START_ROW" "$start_idx" "$num_cols" "${row_items[@]}"
+            
+            # Move cursor past the row
+            tput cup $((START_ROW + 20)) 0
+            
+            # Reset for next row
+            row_items=()
+            row_count=0
+            start_idx=$((start_idx + num_cols)) # Update start index
         fi
-        
-        display_count=$((display_count + 1))
         index=$((index + 1))
     done
     
@@ -843,6 +1364,34 @@ display_catalog() {
                     local selected_result="${all_results[$((selection - 1))]}"
                     IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
                     
+                    # Validate magnet link
+                    magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    if [ -z "$magnet" ] || [[ ! "$magnet" =~ ^magnet: ]]; then
+                        echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
+                        echo -e "${YELLOW}Debug info:${RESET}"
+                        echo "  Source: $source"
+                        echo "  Name: $name"
+                        echo "  Magnet: '$magnet'"
+                        continue
+                    fi
+                    
+                    # Debug output
+                    if [ "$TORRENT_DEBUG" = true ]; then
+                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo -e "${CYAN}DEBUG MODE${RESET}"
+                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo -e "${YELLOW}Selected torrent:${RESET}"
+                        echo "  Index: $selection"
+                        echo "  Source: $source"
+                        echo "  Name: $name"
+                        echo "  Quality: $quality"
+                        echo "  Size: $size"
+                        echo -e "${YELLOW}Magnet link:${RESET}"
+                        echo "  $magnet"
+                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo
+                    fi
+                    
                     echo
                     echo -e "${GREEN}Streaming:${RESET} $name"
                     echo
@@ -854,6 +1403,23 @@ display_catalog() {
                     
                     # Stream the selected torrent (subtitles auto-detected)
                     stream_torrent "$magnet" "" false false
+                    local exit_code=$?
+                    
+                    if [ $exit_code -ne 0 ]; then
+                        echo
+                        echo -e "${YELLOW}Playback failed.${RESET}"
+                        echo -e "${YELLOW}Would you like to search for alternative versions of \"$name\"? (y/n)${RESET} "
+                        read -r answer
+                        if [[ "$answer" =~ ^[Yy]$ ]]; then
+                            # Clean up name for search
+                            local search_query=$(echo "$name" | tr '.' ' ')
+                            search_query=$(echo "$search_query" | sed -E 's/ (1080p|720p|4k|2160p|WEB-DL|BluRay|HDRip|x265|HEVC).*//i')
+                            search_query=$(echo "$search_query" | sed -E 's/ \([0-9]{4}\)//')
+                            
+                            echo -e "${CYAN}Searching for: $search_query${RESET}"
+                            search_torrent "$search_query"
+                        fi
+                    fi
                 else
                     echo "Invalid selection."
                 fi
@@ -966,6 +1532,34 @@ search_torrent() {
             local selected_result="${all_results[$((selection - 1))]}"
             IFS='|' read -r source name magnet quality size <<< "$selected_result"
             
+            # Validate magnet link
+            magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$magnet" ] || [[ ! "$magnet" =~ ^magnet: ]]; then
+                echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
+                echo -e "${YELLOW}Debug info:${RESET}"
+                echo "  Source: $source"
+                echo "  Name: $name"
+                echo "  Magnet: '$magnet'"
+                exit 1
+            fi
+            
+            # Debug output
+            if [ "$TORRENT_DEBUG" = true ]; then
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${CYAN}DEBUG MODE${RESET}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${YELLOW}Selected torrent:${RESET}"
+                echo "  Index: $selection"
+                echo "  Source: $source"
+                echo "  Name: $name"
+                echo "  Quality: $quality"
+                echo "  Size: $size"
+                echo -e "${YELLOW}Magnet link:${RESET}"
+                echo "  $magnet"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo
+            fi
+            
             echo
             echo -e "${GREEN}Streaming:${RESET} $name"
             echo
@@ -977,6 +1571,23 @@ search_torrent() {
             
             # Stream the selected torrent (subtitles auto-detected)
             stream_torrent "$magnet" "" false false
+            local exit_code=$?
+            
+            if [ $exit_code -ne 0 ]; then
+                echo
+                echo -e "${YELLOW}Playback failed.${RESET}"
+                echo -e "${YELLOW}Would you like to search for alternative versions of \"$name\"? (y/n)${RESET} "
+                read -r answer
+                if [[ "$answer" =~ ^[Yy]$ ]]; then
+                    # Clean up name for search
+                    local search_query=$(echo "$name" | tr '.' ' ')
+                    search_query=$(echo "$search_query" | sed -E 's/ (1080p|720p|4k|2160p|WEB-DL|BluRay|HDRip|x265|HEVC).*//i')
+                    search_query=$(echo "$search_query" | sed -E 's/ \([0-9]{4}\)//')
+                    
+                    echo -e "${CYAN}Searching for: $search_query${RESET}"
+                    search_torrent "$search_query"
+                fi
+            fi
         else
             echo "Cancelled."
         fi
@@ -1038,7 +1649,56 @@ stream_peerflix() {
     # Get player preference (will ask if first time, but with timeout to prevent hanging)
     local player=$(get_player_preference)
     
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${GREEN}Streaming with peerflix to $player...${RESET}"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    
+    # Validate source is a valid magnet link or file
+    source=$(echo "$source" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Normalize magnet link: ensure hash is lowercase (peerflix may have issues with uppercase)
+    if [[ "$source" =~ ^magnet: ]]; then
+        # Extract and lowercase the hash
+        local hash=$(echo "$source" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | head -1)
+        if [ -n "$hash" ]; then
+            local hash_lower=$(echo "$hash" | tr '[:upper:]' '[:lower:]')
+            # Replace uppercase hash with lowercase
+            if [ "$hash" != "$hash_lower" ]; then
+                 source="${source/btih:$hash/btih:$hash_lower}"
+            fi
+        fi
+        # Ensure proper magnet link format
+        if [[ ! "$source" =~ ^magnet:\?xt=urn:btih: ]]; then
+            # Try to fix common issues
+            source=$(echo "$source" | sed 's/^magnet:/magnet:?xt=urn:btih:/' | sed 's/btih:\([^&]*\)/btih:\1/')
+        fi
+    fi
+    
+    # Debug output
+    if [ "$TORRENT_DEBUG" = true ]; then
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${CYAN}DEBUG: stream_peerflix${RESET}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${YELLOW}Source (raw):${RESET} '$source'"
+        echo -e "${YELLOW}Source (cleaned):${RESET} '$(echo "$source" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')'"
+        echo -e "${YELLOW}Source length:${RESET} ${#source} characters"
+        echo -e "${YELLOW}Is magnet link:${RESET} $([[ "$source" =~ ^magnet: ]] && echo "yes" || echo "no")"
+        echo -e "${YELLOW}Is file:${RESET} $([ -f "$source" ] && echo "yes" || echo "no")"
+        if [[ "$source" =~ ^magnet: ]]; then
+            local hash_debug=$(echo "$source" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | head -1)
+            echo -e "${YELLOW}Magnet hash:${RESET} $hash_debug"
+            echo -e "${YELLOW}Normalized magnet:${RESET} $source"
+        fi
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo
+    fi
+    
+    if [[ ! "$source" =~ ^magnet: ]] && [ ! -f "$source" ]; then
+        echo -e "${RED}Error:${RESET} Invalid torrent source: '$source'"
+        echo -e "${YELLOW}Expected:${RESET} magnet link (magnet:?xt=...) or path to .torrent file"
+        return 1
+    fi
     
     local args=("-p" "0")
     
@@ -1185,7 +1845,9 @@ stream_peerflix() {
     local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
     local peerflix_pid
     
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${YELLOW}Starting peerflix to download torrent files...${RESET}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     # Remove quiet flag temporarily to see path output (we need "info path" line)
     local temp_args=()
     for arg in "${args[@]}"; do
@@ -1196,73 +1858,115 @@ stream_peerflix() {
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
     
+    # Check if peerflix started successfully (wait a moment, then check if process is still running)
+    sleep 2
+    if ! kill -0 "$peerflix_pid" 2>/dev/null; then
+        # Process died - check error output
+        if [ -f "$temp_output" ]; then
+            local error_output=$(cat "$temp_output" 2>/dev/null)
+            if echo "$error_output" | grep -q "Invalid data\|Missing delimiter\|parse-torrent\|bencode"; then
+                echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${RED}Error:${RESET} peerflix failed to parse torrent metadata"
+                echo -e "${YELLOW}This is a peerflix compatibility issue with this specific torrent.${RESET}"
+                echo ""
+                echo -e "${CYAN}Possible reasons:${RESET}"
+                echo "  • Torrent metadata is corrupted or malformed"
+                echo "  • Torrent is dead/invalid (no seeders, removed from trackers)"
+                echo "  • peerflix's parser doesn't support this torrent's format"
+                echo "  • The torrent uses an encoding peerflix can't handle"
+                echo ""
+                echo -e "${CYAN}Magnet link:${RESET}"
+                echo "  $source"
+                echo ""
+                echo -e "${CYAN}Note:${RESET} The magnet link format is valid. This is a peerflix limitation."
+                echo -e "${CYAN}Solution:${RESET} Try selecting a different torrent from the list."
+                echo ""
+                echo -e "${CYAN}Peerflix error:${RESET}"
+                echo "$error_output" | grep -A 5 "Error:" | head -10
+                echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                rm -f "$temp_output" 2>/dev/null
+                return 1
+            fi
+        fi
+    fi
+    
     # Wait for peerflix to start and show the path
     sleep 4
     
     # Extract the torrent path from peerflix output
     local torrent_path=""
-    local max_wait=25
-    local waited=0
+        local max_wait=125 # 25 seconds * 5
+        local waited=0
     
-    echo -e "${YELLOW}Waiting for peerflix to show torrent path...${RESET}"
-    while [ $waited -lt $max_wait ]; do
-        if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
-            # Read the file content (handle potential buffering)
-            local output_content=$(cat "$temp_output" 2>/dev/null)
-            
-            # Try multiple patterns to find the path - "info path" followed by path
-            # Pattern: "info path /tmp/torrent-stream/..."
-            torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}' | tr -d '\r\n')
-            
-            # If not found, try extracting from "info path" line more carefully
-            if [ -z "$torrent_path" ]; then
-                torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' | awk '{print $1}')
-            fi
-            
-            # Try finding /tmp/torrent-stream/ pattern (more flexible regex)
-            if [ -z "$torrent_path" ]; then
-                torrent_path=$(echo "$output_content" | grep -oE "/tmp/torrent-stream/[a-zA-Z0-9]+" "$temp_output" 2>/dev/null | head -1)
-            fi
-            
-            # Try finding any /tmp path after "info path"
-            if [ -z "$torrent_path" ]; then
-                torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | grep -oE "/tmp/[^[:space:]]+" | head -1)
-            fi
-            
-            # Verify it's a directory
-            if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
-                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                echo -e "${GREEN}✓ TORRENT PATH:${RESET}"
-                echo -e "${CYAN}$torrent_path${RESET}"
-                echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                break
-            fi
-        fi
-        sleep 1
-        waited=$((waited + 1))
-        if [ $((waited % 3)) -eq 0 ]; then
-            echo -e "${YELLOW}Still waiting... (${waited}s)${RESET}"
-            # Show what we've found so far for debugging
+        echo -e "${CYAN}Waiting for peerflix to show torrent path...${RESET}"
+        while [ $waited -lt $max_wait ]; do
             if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
-                local found_line=$(grep "info path" "$temp_output" 2>/dev/null | head -1)
-                if [ -n "$found_line" ]; then
-                    echo -e "${CYAN}Found 'info path' line:${RESET} $found_line"
-                    # Try to extract path from this line
-                    local test_path=$(echo "$found_line" | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}')
-                    if [ -n "$test_path" ]; then
-                        echo -e "${CYAN}Extracted path:${RESET} $test_path"
-                        if [ -d "$test_path" ]; then
-                            echo -e "${GREEN}Path exists and is a directory!${RESET}"
-                            torrent_path="$test_path"
-                            break
-                        else
-                            echo -e "${YELLOW}Path does not exist yet or is not a directory${RESET}"
+                # Read the file content (handle potential buffering)
+                local output_content=$(cat "$temp_output" 2>/dev/null)
+                
+                # Try multiple patterns to find the path - "info path" followed by path
+                # Pattern: "info path /tmp/torrent-stream/..."
+                torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}' | tr -d '\r\n')
+                
+                # If not found, try extracting from "info path" line more carefully
+                if [ -z "$torrent_path" ]; then
+                    torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' | awk '{print $1}')
+                fi
+                
+                # Try finding /tmp/torrent-stream/ pattern (more flexible regex)
+                if [ -z "$torrent_path" ]; then
+                    torrent_path=$(echo "$output_content" | grep -oE "/tmp/torrent-stream/[a-zA-Z0-9]+" "$temp_output" 2>/dev/null | head -1)
+                fi
+                
+                # Try finding any /tmp path after "info path"
+                if [ -z "$torrent_path" ]; then
+                    torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | grep -oE "/tmp/[^[:space:]]+" | head -1)
+                fi
+                
+                # Verify it's a directory
+                if [ -n "$torrent_path" ] && [ -d "$torrent_path" ]; then
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${GREEN}✓ TORRENT PATH:${RESET}"
+                    echo -e "${CYAN}$torrent_path${RESET}"
+                    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    break
+                fi
+            fi
+            # Show spinner
+            local spin_idx=$((waited % 4))
+            case $spin_idx in
+                0) local spin_char='|' ;;
+                1) local spin_char='/' ;;
+                2) local spin_char='-' ;;
+                3) local spin_char='\' ;;
+            esac
+            printf "\r${CYAN}Waiting for torrent path...${RESET} [%c]" "$spin_char"
+            
+            sleep 0.2
+            waited=$((waited + 1))
+            if [ $((waited % 15)) -eq 0 ]; then
+                printf "\r${YELLOW}Still waiting... ($((waited / 5))s)${RESET}    \n"
+                # Show what we've found so far for debugging
+                if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
+                    local found_line=$(grep "info path" "$temp_output" 2>/dev/null | head -1)
+                    if [ -n "$found_line" ]; then
+                        echo -e "${CYAN}Found 'info path' line:${RESET} $found_line"
+                        # Try to extract path from this line
+                        local test_path=$(echo "$found_line" | sed -E 's/.*info path[[:space:]]+//' | awk '{print $1}')
+                        if [ -n "$test_path" ]; then
+                            echo -e "${CYAN}Extracted path:${RESET} $test_path"
+                            if [ -d "$test_path" ]; then
+                                echo -e "${GREEN}Path exists and is a directory!${RESET}"
+                                torrent_path="$test_path"
+                                break
+                            else
+                                echo -e "${YELLOW}Path does not exist yet or is not a directory${RESET}"
+                            fi
                         fi
                     fi
                 fi
             fi
-        fi
-    done
+        done
     
     # If still not found, show debug output
     if [ -z "$torrent_path" ] || [ ! -d "$torrent_path" ]; then
@@ -1281,15 +1985,57 @@ stream_peerflix() {
     fi
     
     # Wait for video file to be available (search recursively)
-    echo -e "${YELLOW}Waiting for video file to download...${RESET}"
+    # Give peerflix time to start downloading files first
+    echo -e "${CYAN}Waiting for files to download...${RESET}"
+    sleep 3  # Give peerflix time to create directory structure and start downloading
+    
+    echo -e "${CYAN}Searching for video file...${RESET}"
     local video_file=""
     local video_wait=0
-    local max_video_wait=20
+    local max_video_wait=150  # 30 seconds * 5
     
     while [ $video_wait -lt $max_video_wait ]; do
+        # First, check if directory exists and has any files at all
+        if [ ! -d "$torrent_path" ]; then
+            sleep 0.2
+            video_wait=$((video_wait + 1))
+            continue
+        fi
+        
+        # List all files first to see what we have
+        local all_files=$(find "$torrent_path" -type f 2>/dev/null)
+        if [ -z "$all_files" ]; then
+            # No files yet, wait longer
+            local spin_idx=$((video_wait % 4))
+            case $spin_idx in
+                0) local spin_char='|' ;;
+                1) local spin_char='/' ;;
+                2) local spin_char='-' ;;
+                3) local spin_char='\' ;;
+            esac
+            printf "\r${CYAN}Waiting for files to download...${RESET} [%c] ($((video_wait / 5))s)" "$spin_char"
+            sleep 0.2
+            video_wait=$((video_wait + 1))
+            continue
+        fi
+        
+        # Debug: show what files we found
+        if [ "$TORRENT_DEBUG" = true ] && [ $((video_wait % 25)) -eq 0 ]; then
+            echo ""
+            echo -e "${CYAN}Files found so far:${RESET}"
+            echo "$all_files" | head -5 | while IFS= read -r file; do
+                if [ -n "$file" ]; then
+                    local rel_path="${file#$torrent_path/}"
+                    local fsize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                    echo -e "  ${CYAN}→${RESET} $rel_path (${fsize} bytes)"
+                fi
+            done
+            echo ""
+        fi
+        
         # Find the largest video file recursively (usually the main movie file)
         # Use find to get all video files, then sort by size
-        video_file=$(find "$torrent_path" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.m4v" \) 2>/dev/null | \
+        video_file=$(find "$torrent_path" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.m4v" -o -iname "*.flv" -o -iname "*.wmv" \) 2>/dev/null | \
             while IFS= read -r file; do
                 if [ -f "$file" ] && [ -s "$file" ]; then
                     local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
@@ -1301,37 +2047,54 @@ stream_peerflix() {
             # Check if file is large enough (at least 1MB) to be a real video
             local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo "0")
             if [ "$file_size" -gt 1048576 ]; then  # 1MB
+                printf "\r${GREEN}✓ Video file found${RESET}\n"
                 break
             fi
         fi
         
-        # Show progress
-        if [ $((video_wait % 3)) -eq 0 ] && [ $video_wait -gt 0 ]; then
-            echo -e "${YELLOW}Still waiting for video file... (${video_wait}s)${RESET}"
-            # Show what files we found
-            local found_files=$(find "$torrent_path" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" \) 2>/dev/null | head -3)
-            if [ -n "$found_files" ]; then
-                echo -e "${CYAN}Found video files:${RESET}"
-                echo "$found_files" | while IFS= read -r file; do
-                    if [ -n "$file" ]; then
-                        echo -e "  ${CYAN}→${RESET} $(basename "$file")"
-                    fi
-                done
-            fi
-        fi
+        # Show spinner
+        local spin_idx=$((video_wait % 4))
+        case $spin_idx in
+            0) local spin_char='|' ;;
+            1) local spin_char='/' ;;
+            2) local spin_char='-' ;;
+            3) local spin_char='\' ;;
+        esac
+        printf "\r${CYAN}Searching for video file...${RESET} [%c] ($((video_wait / 5))s)" "$spin_char"
         
-        sleep 1
+        sleep 0.2
         video_wait=$((video_wait + 1))
     done
     
     if [ -z "$video_file" ] || [ ! -f "$video_file" ]; then
+        echo ""
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
         echo -e "${RED}Error:${RESET} Could not find video file in torrent"
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
         echo -e "${YELLOW}Torrent path:${RESET} $torrent_path"
+        echo ""
+        echo -e "${YELLOW}Directory structure:${RESET}"
+        ls -la "$torrent_path" 2>/dev/null | head -20 || echo "  (directory listing failed)"
+        echo ""
         echo -e "${YELLOW}All files found (recursive):${RESET}"
+        local found_any=false
         find "$torrent_path" -type f 2>/dev/null | while IFS= read -r file; do
-            local rel_path="${file#$torrent_path/}"
-            echo -e "  ${CYAN}→${RESET} $rel_path"
+            if [ -n "$file" ]; then
+                found_any=true
+                local rel_path="${file#$torrent_path/}"
+                local fsize=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                local fname=$(basename "$file")
+                echo -e "  ${CYAN}→${RESET} $rel_path"
+                echo -e "    ${YELLOW}Size:${RESET} ${fsize} bytes | ${YELLOW}Name:${RESET} $fname"
+            fi
         done
+        if [ "$found_any" = false ]; then
+            echo -e "  ${YELLOW}(no files found - torrent may still be downloading)${RESET}"
+            echo ""
+            echo -e "${CYAN}Note:${RESET} This torrent may not have any video files, or files are still downloading."
+            echo -e "${CYAN}Try:${RESET} Wait a moment and try again, or check the torrent contents manually."
+        fi
+        echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
         kill $peerflix_pid 2>/dev/null || true
         rm -f "$temp_output" 2>/dev/null
         return 1
@@ -1341,9 +2104,135 @@ stream_peerflix() {
     local video_dir=$(dirname "$video_path")
     local video_name=$(basename "$video_path")
     
-    echo -e "${GREEN}Video file found:${RESET} $video_name"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${GREEN}✓ Video file found:${RESET} $video_name"
     echo -e "${CYAN}Video directory:${RESET} $video_dir"
     echo -e "${CYAN}Full path:${RESET} $video_path"
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    
+    # Buffer video before starting player (wait for 3-4 minutes of content)
+    # Estimate: assume average bitrate of 2-3 Mbps for 1080p, so 3-4 minutes = ~45-60 MB
+    # We'll wait for at least 50MB to be downloaded
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo -e "${CYAN}Buffering video...${RESET}"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    local target_buffer_size=52428800  # 50MB (3-4 minutes at ~2Mbps)
+    local buffer_wait=0
+    local max_buffer_wait=300  # 5 minutes max wait
+    local last_size=0
+    local stalled_count=0
+    local connected_peers=0
+    local total_peers=0
+    
+    while [ $buffer_wait -lt $max_buffer_wait ]; do
+        if [ ! -f "$video_path" ]; then
+            sleep 1
+            buffer_wait=$((buffer_wait + 1))
+            continue
+        fi
+        
+        local current_size=$(stat -f%z "$video_path" 2>/dev/null || stat -c%s "$video_path" 2>/dev/null || echo "0")
+        
+        # Extract peer information from peerflix output
+        if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
+            local peer_info=$(grep "info streaming" "$temp_output" 2>/dev/null | tail -1)
+            if [ -n "$peer_info" ]; then
+                # Extract "from X/Y peers" pattern: "info streaming ... from 5/10 peers"
+                # Pattern can be: "from 5/10 peers" or "from 5/10"
+                local peer_match=$(echo "$peer_info" | grep -oE "from [0-9]+/[0-9]+" 2>/dev/null | head -1)
+                if [ -n "$peer_match" ]; then
+                    # Extract connected peers (first number)
+                    connected_peers=$(echo "$peer_match" | sed -E 's/from ([0-9]+)\/[0-9]+/\1/' 2>/dev/null)
+                    # Extract total peers (second number)
+                    total_peers=$(echo "$peer_match" | sed -E 's/from [0-9]+\/([0-9]+)/\1/' 2>/dev/null)
+                fi
+            fi
+        fi
+        
+        # Check if file is growing (not stalled)
+        if [ "$current_size" -eq "$last_size" ] && [ "$current_size" -gt 0 ]; then
+            stalled_count=$((stalled_count + 1))
+            if [ $stalled_count -gt 10 ]; then
+                # File hasn't grown in 10 seconds, might be stalled or complete
+                # If we have enough buffer, proceed anyway
+                if [ "$current_size" -ge $target_buffer_size ]; then
+                    break
+                fi
+            fi
+        else
+            stalled_count=0
+        fi
+        
+        last_size=$current_size
+        
+        # Show progress with peer information
+        if [ "$current_size" -gt 0 ]; then
+            # Calculate progress as percentage of target buffer
+            local progress_percent=$((current_size * 100 / target_buffer_size))
+            if [ $progress_percent -gt 100 ]; then
+                progress_percent=100
+            fi
+            
+            # Build progress bar
+            local width=20
+            local filled=$((progress_percent * width / 100))
+            if [ "$filled" -gt "$width" ]; then
+                filled=$width
+            fi
+            
+            local bar=""
+            local i=0
+            while [ $i -lt $filled ]; do
+                bar="${bar}🟩"
+                i=$((i + 1))
+            done
+            while [ $i -lt $width ]; do
+                bar="${bar}⬜"
+                i=$((i + 1))
+            done
+            
+            # Show peers if available, otherwise show percentage
+            if [ "$total_peers" -gt 0 ]; then
+                printf "\r${CYAN}Buffering:${RESET} %s %d%% (%d/%d peers) " "$bar" "$progress_percent" "$connected_peers" "$total_peers"
+            else
+                printf "\r${CYAN}Buffering:${RESET} %s %d%% " "$bar" "$progress_percent"
+            fi
+        else
+            if [ "$total_peers" -gt 0 ]; then
+                printf "\r${CYAN}Buffering...${RESET} [0%%] (%d/%d peers) " "$connected_peers" "$total_peers"
+            else
+                printf "\r${CYAN}Buffering...${RESET} [0%%]"
+            fi
+        fi
+        
+        # If we have enough buffer, proceed
+        if [ "$current_size" -ge $target_buffer_size ]; then
+            echo ""  # New line after progress bar
+            echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo -e "${GREEN}✓ Buffer ready (${current_size} bytes)${RESET}"
+            if [ "$total_peers" -gt 0 ]; then
+                echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
+            fi
+            echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            break
+        fi
+        
+        sleep 1
+        buffer_wait=$((buffer_wait + 1))
+    done
+    
+    # Final check
+    local final_size=$(stat -f%z "$video_path" 2>/dev/null || stat -c%s "$video_path" 2>/dev/null || echo "0")
+    if [ "$final_size" -lt $target_buffer_size ]; then
+        echo ""  # New line after progress bar
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${YELLOW}⚠ Warning:${RESET} Buffer not fully ready (${final_size} bytes), but proceeding..."
+        if [ "$total_peers" -gt 0 ]; then
+            echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
+        fi
+        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    fi
     echo
     
     # Prepare subtitle file path (relative to video file directory)
@@ -1353,29 +2242,29 @@ stream_peerflix() {
         local sub_name=$(basename "$sub_abs")
         local sub_dir=$(dirname "$sub_abs")
         
-        echo -e "${GREEN}Subtitle file found:${RESET} $sub_name"
-        echo -e "${CYAN}Subtitle directory:${RESET} $sub_dir"
-        echo -e "${CYAN}Full path:${RESET} $sub_abs"
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${GREEN}✓ SRT File Found:${RESET} $sub_abs"
+        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo
         
         # Check if subtitle is in the same directory as video
         if [ "$sub_dir" = "$video_dir" ]; then
             # Same directory - use relative path (just filename)
             subtitle_arg="$sub_name"
-            echo -e "${GREEN}Using relative path:${RESET} $sub_name"
         else
             # Different directory - use absolute path
             subtitle_arg="$sub_abs"
-            echo -e "${GREEN}Using absolute path:${RESET} $sub_abs"
         fi
-        echo
     fi
     
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${GREEN}Launching $player from local directory...${RESET}"
     echo -e "  ${CYAN}Directory:${RESET} $video_dir"
     echo -e "  ${CYAN}Video:${RESET} $video_name"
     if [ -n "$subtitle_arg" ]; then
         echo -e "  ${CYAN}Subtitle:${RESET} $subtitle_arg"
     fi
+    echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo
     
     # Launch player from the video directory
@@ -1417,7 +2306,6 @@ stream_peerflix() {
     fi
     
     echo -e "${CYAN}Player started (PID: $player_pid). Peerflix running (PID: $peerflix_pid)${RESET}"
-    echo -e "${YELLOW}Press Ctrl+C to stop both processes${RESET}"
     echo
     
     # Monitor player process - VLC/mpv may fork, so we need to check by process name
@@ -1427,7 +2315,7 @@ stream_peerflix() {
         kill $peerflix_pid 2>/dev/null || true
         sleep 1
         kill -9 $peerflix_pid 2>/dev/null || true
-        wait $peerflix_pid 2>/dev/null || true
+        wait $peerflix_pid 2>/dev/null &>/dev/null || true
         rm -f "$temp_output" 2>/dev/null
         exit 0
     }
@@ -1511,7 +2399,7 @@ stream_peerflix() {
     kill $peerflix_pid 2>/dev/null || true
     sleep 1
     kill -9 $peerflix_pid 2>/dev/null || true
-    wait $peerflix_pid 2>/dev/null || true
+    wait $peerflix_pid 2>/dev/null &>/dev/null || true
     
     rm -f "$temp_output" 2>/dev/null
 }
@@ -1523,6 +2411,22 @@ stream_torrent() {
     local index="${2:-}"
     local list_only="${3:-false}"
     local enable_subtitles="${4:-false}"
+    
+    # Validate source (must be magnet link or file path)
+    if [ -z "$source" ]; then
+        echo -e "${RED}Error:${RESET} No torrent source provided"
+        return 1
+    fi
+    
+    # Clean up source (remove whitespace, newlines)
+    source=$(echo "$source" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    
+    # Check if it's a magnet link or file path
+    if [[ ! "$source" =~ ^magnet: ]] && [ ! -f "$source" ]; then
+        echo -e "${RED}Error:${RESET} Invalid torrent source: '$source'"
+        echo -e "${YELLOW}Expected:${RESET} magnet link (magnet:?xt=...) or path to .torrent file"
+        return 1
+    fi
     
     # Ensure TORRENT_TOOL is set (should always be peerflix now)
     if [ -z "$TORRENT_TOOL" ]; then
@@ -1565,6 +2469,9 @@ select_best_quality() {
     fi
 }
 
+# Global debug flag
+TORRENT_DEBUG=false
+
 # Main function
 main() {
     local source=""
@@ -1600,6 +2507,11 @@ main() {
                 ;;
             -v|--verbose)
                 set -x
+                shift
+                ;;
+            --debug)
+                TORRENT_DEBUG=true
+                export TORRENT_DEBUG
                 shift
                 ;;
             player)
@@ -1651,11 +2563,17 @@ main() {
         get_ytsrs_movies "$genre" "1080p" "seeds" "$1" "$2"
     }
     
+    # Filter args for routing (remove --debug)
+    local routing_args=()
+    for arg in "${args[@]}"; do
+        [[ "$arg" != "--debug" ]] && routing_args+=("$arg")
+    done
+    
     # Handle catalog modes FIRST (doesn't need streaming tool)
-    case "${args[0]}" in
+    case "${routing_args[0]}" in
         latest)
             check_jq
-            local type="${args[1]:-all}"
+            local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
                     # Show results from both TPB and YTSRS
@@ -1672,7 +2590,7 @@ main() {
             ;;
         trending)
             check_jq
-            local type="${args[1]:-all}"
+            local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
                     # Show results from both TPB and YTSRS
@@ -1689,7 +2607,7 @@ main() {
             ;;
         popular)
             check_jq
-            local type="${args[1]:-all}"
+            local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
                     # Show results from both TPB and YTSRS
@@ -1706,7 +2624,7 @@ main() {
             ;;
         catalog)
             check_jq
-            local genre="${args[1]:-}"
+            local genre="${routing_args[1]:-}"
             if [ -z "$genre" ]; then
                 echo -e "${BOLD}Available Genres:${RESET}"
                 echo "  action, adventure, animation, comedy, crime, documentary,"
@@ -1726,7 +2644,7 @@ main() {
             ;;
         search)
             check_jq
-            local query="${args[1]:-}"
+            local query="${routing_args[1]:-}"
             if [ -z "$query" ]; then
                 echo -e "${RED}Error:${RESET} Please provide a search query"
                 echo "Usage: torrent search <query>"
@@ -1773,4 +2691,7 @@ main() {
 }
 
 # Run main function
-main "$@"
+# Run main function if executed directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
