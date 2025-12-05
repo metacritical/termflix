@@ -71,7 +71,11 @@ show_progress() {
 check_jq() {
     if ! command -v jq &> /dev/null; then
         echo -e "${YELLOW}Warning:${RESET} jq not found. Some search features may be limited."
-        echo "Install with: ${CYAN}brew install jq${RESET}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "Install with: ${CYAN}brew install jq${RESET}"
+        else
+            echo "Install with: ${CYAN}sudo apt-get install jq${RESET} (Debian/Ubuntu) or ${CYAN}sudo yum install jq${RESET} (RHEL/CentOS)"
+        fi
         echo
     fi
 }
@@ -112,7 +116,9 @@ display_poster() {
         local temp_dir="${TMPDIR:-/tmp}/torrent_posters_$$"
         mkdir -p "$temp_dir" 2>/dev/null || return 1
         
-        image_file="${temp_dir}/poster_$(echo "$poster_source" | md5 2>/dev/null | cut -c1-8).jpg"
+        # Use md5 on macOS, md5sum on Linux
+        local hash=$(echo "$poster_source" | md5 2>/dev/null || echo "$poster_source" | md5sum 2>/dev/null | cut -d' ' -f1)
+        image_file="${temp_dir}/poster_$(echo "$hash" | cut -c1-8).jpg"
         
         if [ ! -f "$image_file" ]; then
             curl -s --max-time 5 "$poster_source" -o "$image_file" 2>/dev/null || return 1
@@ -201,7 +207,9 @@ draw_grid_row() {
                 image_files[$i]="$poster_url"
             else
                 # It's a URL, download it
-                local image_file="${temp_dir}/poster_$(echo "$poster_url" | md5 2>/dev/null | cut -c1-8).jpg"
+                # Use md5 on macOS, md5sum on Linux
+                local hash=$(echo "$poster_url" | md5 2>/dev/null || echo "$poster_url" | md5sum 2>/dev/null | cut -d' ' -f1)
+                local image_file="${temp_dir}/poster_$(echo "$hash" | cut -c1-8).jpg"
                 image_files[$i]="$image_file"
                 
                 # Download in background if not already cached
@@ -876,7 +884,11 @@ get_player_preference() {
         # Verify player is installed
         if ! command -v "$selected_player" &> /dev/null; then
             echo -e "${RED}Error:${RESET} $selected_player is not installed."
-            echo "Please install it first: ${CYAN}brew install $selected_player${RESET}"
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                echo "Please install it first: ${CYAN}brew install $selected_player${RESET}"
+            else
+                echo "Please install it first: ${CYAN}sudo apt-get install $selected_player${RESET} (Debian/Ubuntu) or ${CYAN}sudo yum install $selected_player${RESET} (RHEL/CentOS)"
+            fi
             echo "Defaulting to mpv..."
             selected_player="mpv"
         fi
@@ -915,7 +927,11 @@ check_deps() {
         echo "  ${GREEN}npm install -g peerflix${RESET}  (recommended)"
         echo "  ${GREEN}npm install -g webtorrent-cli${RESET}  (alternative)"
         echo
-        echo "Or use: ${CYAN}brew install peerflix${RESET}"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "Or use: ${CYAN}brew install peerflix${RESET}"
+        else
+            echo "Or use: ${CYAN}npm install -g peerflix${RESET} (works on all platforms)"
+        fi
         exit 1
     fi
     
@@ -2323,8 +2339,13 @@ search_torrent() {
         echo
         echo "Try:"
         echo "  - Check your internet connection"
-        echo "  - Install jq: ${CYAN}brew install jq${RESET}"
-        echo "  - Install python3: ${CYAN}brew install python3${RESET} (for YTSRS search)"
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            echo "  - Install jq: ${CYAN}brew install jq${RESET}"
+            echo "  - Install python3: ${CYAN}brew install python3${RESET} (for YTSRS search)"
+        else
+            echo "  - Install jq: ${CYAN}sudo apt-get install jq${RESET} (Debian/Ubuntu) or ${CYAN}sudo yum install jq${RESET} (RHEL/CentOS)"
+            echo "  - Install python3: ${CYAN}sudo apt-get install python3${RESET} (Debian/Ubuntu) or ${CYAN}sudo yum install python3${RESET} (RHEL/CentOS)"
+        fi
         echo "  - Try a different search query"
         echo "  - The search APIs may be temporarily unavailable"
         return 1
