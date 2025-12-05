@@ -2791,11 +2791,11 @@ stream_peerflix() {
                     fi
                     
                     if [ ! -f "$transmission_config" ]; then
-                        # Create default config file with download-dir set to /tmp/torrent-stream
+                        # Create default config file with download-dir set to /tmp/torrent-transmission/
+                        # Matching the exact format of the existing settings.json
                         cat > "$transmission_config" << 'EOF'
-{
-    "download-dir": "/tmp/torrent-stream"
-}
+
+"download-dir": "/tmp/torrent-transmission/"
 EOF
                         echo -e "${CYAN}Created transmission config file:${RESET} $transmission_config"
                     fi
