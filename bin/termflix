@@ -2779,9 +2779,26 @@ stream_peerflix() {
                     # Note: transmission-cli may create subdirectories within the download directory
                     # We'll search recursively to find the actual video files
                     # Check for transmission config and temporarily override download directory if needed
-                    local transmission_config="$HOME/.config/transmission/settings.json"
+                    local transmission_config_dir="$HOME/.config/transmission"
+                    local transmission_config="$transmission_config_dir/settings.json"
                     local config_backup=""
                     local original_download_dir=""
+                    
+                    # Auto-create config directory and file if they don't exist
+                    if [ ! -d "$transmission_config_dir" ]; then
+                        mkdir -p "$transmission_config_dir" 2>/dev/null
+                        echo -e "${CYAN}Created transmission config directory:${RESET} $transmission_config_dir"
+                    fi
+                    
+                    if [ ! -f "$transmission_config" ]; then
+                        # Create default config file with download-dir set to /tmp/torrent-stream
+                        cat > "$transmission_config" << 'EOF'
+{
+    "download-dir": "/tmp/torrent-stream"
+}
+EOF
+                        echo -e "${CYAN}Created transmission config file:${RESET} $transmission_config"
+                    fi
                     
                     if [ -f "$transmission_config" ]; then
                         # Backup the config file
@@ -3028,13 +3045,15 @@ EOF
                     local buffer_wait=0
                     local max_buffer_wait=300  # 5 minutes max
                     local last_size=0
+                    local last_progress=0
                     local current_progress=0
                     local connected_peers=0
                     local total_peers=0
                     local download_speed=""
+                    local last_update_time=$(date +%s)
                     
                     while [ $buffer_wait -lt $max_buffer_wait ]; do
-                        # Parse progress from transmission output
+                        # Parse progress from transmission output (check more frequently)
                         if [ -f "$transmission_output" ]; then
                             # Look for "Progress: X.X%" pattern
                             local progress_line=$(grep "Progress:" "$transmission_output" 2>/dev/null | tail -1)
@@ -3052,10 +3071,46 @@ EOF
                             fi
                         fi
                         
-                        # Also check file size as fallback
+                        # Check file size (more reliable and updates frequently)
                         local current_size=$(stat -f%z "$video_path" 2>/dev/null || stat -c%s "$video_path" 2>/dev/null || echo "0")
+                        local size_mb=$((current_size / 1048576))
+                        local size_display=""
+                        if [ "$current_size" -gt 1048576 ]; then
+                            size_display="${size_mb} MB"
+                        elif [ "$current_size" -gt 1024 ]; then
+                            size_display="$((current_size / 1024)) KB"
+                        else
+                            size_display="${current_size} B"
+                        fi
                         
-                        # Show progress
+                        # Calculate download rate (bytes per second)
+                        local current_time=$(date +%s)
+                        local time_diff=$((current_time - last_update_time))
+                        local size_diff=$((current_size - last_size))
+                        local bytes_per_sec=0
+                        if [ "$time_diff" -gt 0 ] && [ "$size_diff" -gt 0 ]; then
+                            bytes_per_sec=$((size_diff / time_diff))
+                        fi
+                        local speed_display=""
+                        if [ "$bytes_per_sec" -gt 0 ]; then
+                            if [ "$bytes_per_sec" -gt 1048576 ]; then
+                                if command -v bc &> /dev/null; then
+                                    speed_display="$(echo "scale=2; $bytes_per_sec / 1048576" | bc) MB/s"
+                                else
+                                    speed_display="$((bytes_per_sec / 1048576)) MB/s"
+                                fi
+                            elif [ "$bytes_per_sec" -gt 1024 ]; then
+                                if command -v bc &> /dev/null; then
+                                    speed_display="$(echo "scale=2; $bytes_per_sec / 1024" | bc) KB/s"
+                                else
+                                    speed_display="$((bytes_per_sec / 1024)) KB/s"
+                                fi
+                            else
+                                speed_display="${bytes_per_sec} B/s"
+                            fi
+                        fi
+                        
+                        # Show progress with multiple indicators
                         if [ -n "$current_progress" ] && [ "$current_progress" != "0" ]; then
                             local progress_int=$(echo "$current_progress" | cut -d. -f1)
                             
@@ -3076,27 +3131,35 @@ EOF
                                 i=$((i + 1))
                             done
                             
+                            # Build comprehensive progress display
                             local progress_display="${current_progress}%"
                             if [ -n "$download_speed" ]; then
                                 progress_display="${progress_display} $download_speed"
+                            elif [ -n "$speed_display" ] && [ "$bytes_per_sec" -gt 0 ]; then
+                                progress_display="${progress_display} (~$speed_display)"
                             fi
                             if [ "$total_peers" -gt 0 ]; then
-                                progress_display="${progress_display} (${connected_peers}/${total_peers} peers)"
+                                progress_display="${progress_display} | ${connected_peers}/${total_peers} peers"
+                            fi
+                            if [ "$current_size" -gt 0 ]; then
+                                progress_display="${progress_display} | ${size_display} downloaded"
                             fi
                             
-                            printf "\r${CYAN}Buffering:${RESET} %s %s " "$bar" "$progress_display"
+                            printf "\r${CYAN}Buffering:${RESET} %s %s" "$bar" "$progress_display"
                             
                             # Check if we have 10% progress
                             if [ "$progress_int" -ge "$target_progress" ]; then
                                 echo ""
-                                echo -e "${GREEN}✓ Buffer ready (${current_progress}% progress)${RESET}"
+                                echo -e "${GREEN}✓ Buffer ready (${current_progress}% progress, ${size_display} downloaded)${RESET}"
                                 if [ "$total_peers" -gt 0 ]; then
                                     echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
                                 fi
                                 break
                             fi
+                            
+                            last_progress=$current_progress
                         elif [ "$current_size" -gt 0 ]; then
-                            # Fallback to size-based buffering if progress not available
+                            # Show size-based progress with download rate
                             local progress_percent=$((current_size * 100 / target_buffer_size))
                             if [ $progress_percent -gt 100 ]; then
                                 progress_percent=100
@@ -3119,12 +3182,21 @@ EOF
                                 i=$((i + 1))
                             done
                             
-                            printf "\r${CYAN}Buffering:${RESET} %s %d%% (${current_size} bytes) " "$bar" "$progress_percent"
+                            # Build size-based display
+                            local size_display_full="${size_display} / $((target_buffer_size / 1048576)) MB"
+                            if [ -n "$speed_display" ] && [ "$bytes_per_sec" -gt 0 ]; then
+                                size_display_full="${size_display_full} @ ~$speed_display"
+                            fi
+                            if [ "$total_peers" -gt 0 ]; then
+                                size_display_full="${size_display_full} | ${connected_peers}/${total_peers} peers"
+                            fi
+                            
+                            printf "\r${CYAN}Buffering:${RESET} %s %d%% (%s)" "$bar" "$progress_percent" "$size_display_full"
                             
                             # Check if we have enough buffer
                             if [ "$current_size" -ge $target_buffer_size ]; then
                                 echo ""
-                                echo -e "${GREEN}✓ Buffer ready (${current_size} bytes)${RESET}"
+                                echo -e "${GREEN}✓ Buffer ready (${size_display} downloaded)${RESET}"
                                 break
                             fi
                             
@@ -3132,16 +3204,25 @@ EOF
                             if [ "$current_size" -eq "$last_size" ] && [ "$current_size" -gt 0 ]; then
                                 if [ "$current_size" -ge 20971520 ]; then  # 20MB minimum
                                     echo ""
-                                    echo -e "${YELLOW}⚠ Proceeding with available buffer (${current_size} bytes)${RESET}"
+                                    echo -e "${YELLOW}⚠ Proceeding with available buffer (${size_display})${RESET}"
                                     break
                                 fi
                             fi
                         else
-                            printf "\r${CYAN}Buffering...${RESET} [0%%]"
+                            # Show initial state with peer info if available
+                            local initial_display="Connecting..."
+                            if [ "$total_peers" -gt 0 ]; then
+                                initial_display="${initial_display} (${connected_peers}/${total_peers} peers)"
+                            fi
+                            printf "\r${CYAN}Buffering:${RESET} ⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜⬜ 0%% - $initial_display"
                         fi
                         
+                        # Update tracking variables
+                        if [ "$current_size" != "$last_size" ] || [ "$current_progress" != "$last_progress" ]; then
+                            last_update_time=$current_time
+                        fi
                         last_size=$current_size
-                        sleep 1
+                        sleep 0.5  # Update more frequently (every 0.5 seconds)
                         buffer_wait=$((buffer_wait + 1))
                     done
                     echo ""
