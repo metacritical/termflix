@@ -901,18 +901,23 @@ get_player_preference() {
 check_deps() {
     local missing=()
     
-    # Check for peerflix (only tool we use now)
-    if ! command -v peerflix &> /dev/null; then
-        echo -e "${RED}Error:${RESET} peerflix not found."
+    # Check for peerflix (primary tool) or webtorrent (alternative)
+    if command -v peerflix &> /dev/null; then
+        TORRENT_TOOL="peerflix"
+    elif command -v webtorrent &> /dev/null; then
+        TORRENT_TOOL="webtorrent"
+        echo -e "${YELLOW}Note:${RESET} Using webtorrent (peerflix not found)"
+        echo "  For better compatibility, install peerflix: ${CYAN}npm install -g peerflix${RESET}"
+    else
+        echo -e "${RED}Error:${RESET} No torrent streaming tool found."
         echo
-        echo "Please install peerflix:"
-        echo "  ${GREEN}npm install -g peerflix${RESET}"
+        echo "Please install one of:"
+        echo "  ${GREEN}npm install -g peerflix${RESET}  (recommended)"
+        echo "  ${GREEN}npm install -g webtorrent-cli${RESET}  (alternative)"
         echo
         echo "Or use: ${CYAN}brew install peerflix${RESET}"
         exit 1
     fi
-    
-    TORRENT_TOOL="peerflix"
     
     # Note: Player preference will be checked when streaming starts
     # This avoids prompting during catalog browsing
@@ -976,7 +981,7 @@ search_yts() {
     local api_url="${base_url}?query_term=${query// /+}&limit=10"
     
     if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+        local response=$(curl -s --max-time 5 --connect-timeout 3 \
             -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
             -H "Accept: application/json" \
             "$api_url" 2>/dev/null)
@@ -992,6 +997,121 @@ search_yts() {
     fi
 }
 
+# Search using YTSRS (en.ytsrs.com) - web crawler approach
+search_ytsrs() {
+    local query="$1"
+    
+    echo -e "${CYAN}[YTSRS]${RESET} Searching movies..." >&2
+    
+    if ! command -v python3 &> /dev/null; then
+        return 1
+    fi
+    
+    # YTSRS doesn't have a direct search API, so we need to crawl the home page
+    # and filter by title. For now, let's try searching via their movies page
+    # with a query parameter if they support it, otherwise crawl and filter
+    
+    local search_url="https://en.ytsrs.com/home"
+    local html=$(curl -s --max-time 8 --connect-timeout 3 \
+        -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+        "$search_url" 2>/dev/null)
+    
+    if [ -z "$html" ] || [ ${#html} -lt 100 ]; then
+        return 1
+    fi
+    
+    # Use Python to search through the HTML
+    local temp_html=$(mktemp)
+    echo "$html" > "$temp_html"
+    
+    export YTSRS_QUERY="$query"
+    export YTSRS_TEMP_FILE="$temp_html"
+    
+    python3 << 'PYEOF'
+import sys, re, json, urllib.parse, urllib.request, os
+
+try:
+    temp_file = os.environ.get('YTSRS_TEMP_FILE', '/tmp/ytsrs_search_temp.html')
+    query = os.environ.get('YTSRS_QUERY', '').lower()
+    
+    if not query or not os.path.exists(temp_file):
+        sys.exit(1)
+    
+    with open(temp_file, "r", encoding="utf-8", errors="ignore") as f:
+        html = f.read()
+    
+    if not html or len(html) < 100:
+        sys.exit(1)
+    
+    # Find all movie cards with openModal onclick
+    movie_pattern = r'onclick=[\'"]openModal\((\d+),\s*["\']([^"\']+)["\'],\s*["\']([^"\']+)["\'],\s*["\'](\d+)["\']\)'
+    movies = re.findall(movie_pattern, html)
+    
+    if not movies:
+        sys.exit(1)
+    
+    # Filter movies by query (case-insensitive)
+    matching_movies = []
+    for movie_id, imdb_id, title, year in movies:
+        if query in title.lower() or query in year:
+            matching_movies.append((movie_id, imdb_id, title, year))
+    
+    if not matching_movies:
+        sys.exit(1)
+    
+    # Limit to top 10 matches
+    count = 0
+    for movie_id, imdb_id, title, year in matching_movies[:10]:
+        if count >= 10:
+            break
+        
+        # Extract quality from nearby HTML
+        card_start = html.find(f'openModal({movie_id},')
+        if card_start == -1:
+            continue
+        card_section = html[max(0, card_start-200):card_start+1000]
+        
+        quality_match = re.search(r'<span[^>]*class="[^"]*movie-quality[^"]*"[^>]*>([^<]+)</span>', card_section)
+        quality = quality_match.group(1).strip() if quality_match else "1080p"
+        
+        # Fetch movie details to get hash
+        detail_url = f"https://en.ytsrs.com/?ajax=movie_details&movie_id={movie_id}&imdb_id={urllib.parse.quote(imdb_id)}&title={urllib.parse.quote(title)}&year={year}"
+        
+        try:
+            req = urllib.request.Request(detail_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=3) as response:
+                detail_data = json.loads(response.read().decode())
+                
+                torrents = detail_data.get('yts', {}).get('data', {}).get('movie', {}).get('torrents', [])
+                if not torrents:
+                    continue
+                
+                # Find matching quality or use first
+                torrent = next((t for t in torrents if t.get('quality') == quality), torrents[0])
+                if not torrent.get('hash'):
+                    continue
+                
+                hash_val = torrent['hash']
+                size = torrent.get('size', 'N/A')
+                seeds = torrent.get('seeds', 0)
+                
+                print(f"YTSRS|{title} ({year})|magnet:?xt=urn:btih:{hash_val}|{quality}|{size}|{seeds} seeds")
+                count += 1
+        except Exception as e:
+            continue
+    
+    os.unlink(temp_file)
+    sys.exit(0 if count > 0 else 1)
+except Exception as e:
+    if 'temp_file' in locals() and os.path.exists(temp_file):
+        os.unlink(temp_file)
+    sys.exit(1)
+PYEOF
+    local result=$?
+    rm -f "$temp_html" 2>/dev/null
+    return $result
+}
+
 # Search using 1337x API - same as Stremio 1337x addon
 search_1337x() {
     local query="$1"
@@ -1003,7 +1123,7 @@ search_1337x() {
     
     if command -v curl &> /dev/null; then
         # Try to parse 1337x HTML (they don't have official API)
-        local html=$(curl -s -L -H "User-Agent: Mozilla/5.0" "$search_url" 2>/dev/null)
+        local html=$(curl -s -L --max-time 5 --connect-timeout 3 -H "User-Agent: Mozilla/5.0" "$search_url" 2>/dev/null)
         
         if [ -n "$html" ]; then
             # Extract torrent links and names (BSD grep compatible)
@@ -1028,9 +1148,11 @@ search_tpb() {
     local api_url="https://apibay.org/q.php?q=${query// /%20}&cat=0"
     
     if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s "$api_url" 2>/dev/null)
+        local response=$(curl -s --max-time 5 --connect-timeout 3 "$api_url" 2>/dev/null)
         
-        echo "$response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+        if [ -n "$response" ]; then
+            echo "$response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+        fi
     fi
 }
 
@@ -1043,11 +1165,14 @@ search_eztv() {
     local api_url="https://eztv.re/api/get-torrents?imdb_id=&limit=20&page=1&query_string=${query// /+}"
     
     if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s "$api_url" 2>/dev/null)
-        local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
+        local response=$(curl -s --max-time 5 --connect-timeout 3 "$api_url" 2>/dev/null)
         
-        if [ "$count" -gt 0 ] 2>/dev/null; then
-            echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+        if [ -n "$response" ]; then
+            local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
+            
+            if [ "$count" -gt 0 ] 2>/dev/null; then
+                echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
+            fi
         fi
     fi
 }
@@ -1994,7 +2119,14 @@ display_catalog() {
                     stream_torrent "$magnet" "" false false
                     local exit_code=$?
                     
-                    if [ $exit_code -ne 0 ]; then
+                    # Exit code 2 means player closed normally - return to catalog
+                    if [ $exit_code -eq 2 ]; then
+                        # Player closed, return to catalog view
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        selection=""
+                        continue
+                    elif [ $exit_code -ne 0 ]; then
+                        # Other error occurred
                         echo
                         echo -e "${YELLOW}Playback failed.${RESET}"
                         echo -e "${YELLOW}Would you like to search for alternative versions of \"$name\"? (y/n)${RESET} "
@@ -2008,6 +2140,15 @@ display_catalog() {
                             echo -e "${CYAN}Searching for: $search_query${RESET}"
                             search_torrent "$search_query"
                         fi
+                        # Redraw catalog after search or if user said no
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        selection=""
+                        continue
+                    else
+                        # Player exited normally (exit code 0) - also return to catalog
+                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                        selection=""
+                        continue
                     fi
                     
                     # Exit navigation loop after selection
@@ -2050,19 +2191,54 @@ search_torrent() {
     done
     
     # Note: Due to pipe creating subshell, we need to use a different approach
-    # Let's use a temp file instead
+    # Let's use a temp file instead and run searches in parallel with timeouts
     local temp_file=$(mktemp 2>/dev/null || echo "/tmp/torrent_$$")
-    {
-        search_yts "$query" 2>/dev/null
-        search_tpb "$query" 2>/dev/null
-        search_eztv "$query" 2>/dev/null
-        search_1337x "$query" 2>/dev/null
-    } > "$temp_file"
+    local search_pids=()
+    
+    # Run all searches in parallel (each has its own timeout via curl --max-time)
+    (search_yts "$query" 2>/dev/null || true) >> "$temp_file" &
+    search_pids+=($!)
+    (search_ytsrs "$query" 2>/dev/null || true) >> "$temp_file" &
+    search_pids+=($!)
+    (search_tpb "$query" 2>/dev/null || true) >> "$temp_file" &
+    search_pids+=($!)
+    (search_eztv "$query" 2>/dev/null || true) >> "$temp_file" &
+    search_pids+=($!)
+    (search_1337x "$query" 2>/dev/null || true) >> "$temp_file" &
+    search_pids+=($!)
+    
+    # Wait for all searches to complete (max 10 seconds total)
+    local wait_count=0
+    while [ $wait_count -lt 20 ]; do
+        local all_done=true
+        for pid in "${search_pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                all_done=false
+                break
+            fi
+        done
+        if [ "$all_done" = true ]; then
+            break
+        fi
+        sleep 0.5
+        wait_count=$((wait_count + 1))
+    done
+    
+    # Kill any remaining processes after timeout
+    for pid in "${search_pids[@]}"; do
+        if kill -0 "$pid" 2>/dev/null; then
+            kill "$pid" 2>/dev/null || true
+        fi
+    done
+    wait "${search_pids[@]}" 2>/dev/null || true
     
     # Read results from temp file
     if [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
         while IFS= read -r line || [ -n "$line" ]; do
+            # Skip empty lines and lines without pipe separator
             if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                # Remove any trailing whitespace
+                line=$(echo "$line" | sed 's/[[:space:]]*$//')
                 all_results+=("$line")
             fi
         done < "$temp_file"
@@ -2070,13 +2246,44 @@ search_torrent() {
     
     rm -f "$temp_file" 2>/dev/null
     
+    # Remove duplicates (same magnet link)
+    if [ ${#all_results[@]} -gt 0 ]; then
+        local unique_results=()
+        local seen_hashes=()
+        for result in "${all_results[@]}"; do
+            IFS='|' read -r source name magnet quality size extra <<< "$result"
+            # Extract hash from magnet link
+            local hash=$(echo "$magnet" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | tr '[:upper:]' '[:lower:]')
+            if [ -n "$hash" ]; then
+                # Check if we've seen this hash before
+                local seen=false
+                for seen_hash in "${seen_hashes[@]}"; do
+                    if [ "$hash" = "$seen_hash" ]; then
+                        seen=true
+                        break
+                    fi
+                done
+                if [ "$seen" = false ]; then
+                    unique_results+=("$result")
+                    seen_hashes+=("$hash")
+                fi
+            else
+                # If no hash, just add it (shouldn't happen but be safe)
+                unique_results+=("$result")
+            fi
+        done
+        all_results=("${unique_results[@]}")
+    fi
+    
     if [ ${#all_results[@]} -eq 0 ]; then
         echo -e "${RED}No results found${RESET}"
         echo
         echo "Try:"
         echo "  - Check your internet connection"
         echo "  - Install jq: ${CYAN}brew install jq${RESET}"
+        echo "  - Install python3: ${CYAN}brew install python3${RESET} (for YTSRS search)"
         echo "  - Try a different search query"
+        echo "  - The search APIs may be temporarily unavailable"
         return 1
     fi
     
@@ -2163,7 +2370,12 @@ search_torrent() {
             stream_torrent "$magnet" "" false false
             local exit_code=$?
             
-            if [ $exit_code -ne 0 ]; then
+            # Exit code 2 means player closed normally - just return (search results don't have pagination to return to)
+            if [ $exit_code -eq 2 ]; then
+                # Player closed, just return
+                return 0
+            elif [ $exit_code -ne 0 ]; then
+                # Other error occurred
                 echo
                 echo -e "${YELLOW}Playback failed.${RESET}"
                 echo -e "${YELLOW}Would you like to search for alternative versions of \"$name\"? (y/n)${RESET} "
@@ -2262,6 +2474,27 @@ stream_peerflix() {
         if [[ ! "$source" =~ ^magnet:\?xt=urn:btih: ]]; then
             # Try to fix common issues
             source=$(echo "$source" | sed 's/^magnet:/magnet:?xt=urn:btih:/' | sed 's/btih:\([^&]*\)/btih:\1/')
+        fi
+        
+        # Add common trackers if not present (helps peerflix connect to peers)
+        # Some magnet links work with transmission but not peerflix because they lack trackers
+        if ! echo "$source" | grep -q "&tr="; then
+            local common_trackers=(
+                "udp://tracker.openbittorrent.com:80/announce"
+                "udp://tracker.opentrackr.org:1337/announce"
+                "udp://tracker.coppersurfer.tk:6969/announce"
+                "udp://tracker.leechers-paradise.org:6969/announce"
+                "udp://tracker.internetwarriors.net:1337/announce"
+                "udp://9.rarbg.to:2710/announce"
+                "udp://9.rarbg.me:2710/announce"
+                "udp://exodus.desync.com:6969/announce"
+            )
+            
+            for tracker in "${common_trackers[@]}"; do
+                # URL encode the tracker (magnet links need URL-encoded trackers)
+                local encoded_tracker=$(echo "$tracker" | sed 's/:/%3A/g' | sed 's/\//%2F/g' | sed 's/ /%20/g')
+                source="${source}&tr=${encoded_tracker}"
+            done
         fi
     fi
     
@@ -2454,25 +2687,385 @@ stream_peerflix() {
         # Process died - check error output
         if [ -f "$temp_output" ]; then
             local error_output=$(cat "$temp_output" 2>/dev/null)
-            if echo "$error_output" | grep -q "Invalid data\|Missing delimiter\|parse-torrent\|bencode"; then
+            if echo "$error_output" | grep -q "Invalid data\|Missing delimiter\|parse-torrent\|bencode\|Error\|Failed"; then
                 echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                echo -e "${RED}Error:${RESET} peerflix failed to parse torrent metadata"
-                echo -e "${YELLOW}This is a peerflix compatibility issue with this specific torrent.${RESET}"
+                echo -e "${RED}Error:${RESET} peerflix failed to handle this magnet link"
                 echo ""
-                echo -e "${CYAN}Possible reasons:${RESET}"
-                echo "  • Torrent metadata is corrupted or malformed"
-                echo "  • Torrent is dead/invalid (no seeders, removed from trackers)"
-                echo "  • peerflix's parser doesn't support this torrent's format"
-                echo "  • The torrent uses an encoding peerflix can't handle"
+                echo -e "${CYAN}Explanation:${RESET}"
+                echo "  peerflix expects torrent metadata in bencoded format, but some magnet links"
+                echo "  don't provide this immediately. peerflix tries to parse the metadata before"
+                echo "  it's fully downloaded from peers, causing this error."
+                echo ""
+                echo -e "${CYAN}Why transmission works but peerflix doesn't:${RESET}"
+                echo "  • transmission downloads metadata first, then parses it"
+                echo "  • peerflix tries to parse immediately, which fails for some links"
+                echo "  • This is a known peerflix limitation, not a problem with the magnet link"
                 echo ""
                 echo -e "${CYAN}Magnet link:${RESET}"
                 echo "  $source"
                 echo ""
-                echo -e "${CYAN}Note:${RESET} The magnet link format is valid. This is a peerflix limitation."
-                echo -e "${CYAN}Solution:${RESET} Try selecting a different torrent from the list."
-                echo ""
                 echo -e "${CYAN}Peerflix error:${RESET}"
-                echo "$error_output" | grep -A 5 "Error:" | head -10
+                echo "$error_output" | grep -A 5 -E "Error|Failed|Invalid" | head -10
+                echo ""
+                
+                # Offer transmission-cli as fallback
+                if command -v transmission-cli &> /dev/null; then
+                    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${YELLOW}Fallback option available:${RESET}"
+                    echo -e "${CYAN}transmission-cli can download this torrent (full download, not streaming)${RESET}"
+                    echo ""
+                    echo -e "${YELLOW}Would you like to download with transmission-cli? (y/n)${RESET} "
+                    read -r use_transmission
+                    
+                    if [[ "$use_transmission" =~ ^[Yy]$ ]]; then
+                        echo ""
+                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo -e "${CYAN}Streaming with transmission-cli...${RESET}"
+                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo ""
+                        
+                        # Use same directory as peerflix (/tmp/torrent-stream/)
+                        local download_dir="/tmp/torrent-stream"
+                        mkdir -p "$download_dir" 2>/dev/null
+                        
+                        # Get player preference
+                        local player=$(get_player_preference)
+                        
+                        echo -e "${CYAN}Download directory:${RESET} $download_dir"
+                        echo -e "${CYAN}Player:${RESET} $player"
+                        echo ""
+                        
+                        # Capture transmission output to parse progress
+                        local transmission_output=$(mktemp 2>/dev/null || echo "/tmp/transmission_output_$$")
+                        
+                        # Run transmission-cli with download directory (capture output)
+                        transmission-cli --download-dir "$download_dir" "$source" > "$transmission_output" 2>&1 &
+                        local transmission_pid=$!
+                        
+                        echo -e "${GREEN}Transmission started (PID: $transmission_pid)${RESET}"
+                        echo -e "${CYAN}Waiting for files to download...${RESET}"
+                        echo ""
+                        
+                        # Wait for video file to appear (similar to peerflix logic)
+                        local video_file=""
+                        local video_wait=0
+                        local max_video_wait=150  # 30 seconds * 5
+                        
+                        while [ $video_wait -lt $max_video_wait ]; do
+                            # Find the largest video file recursively
+                            video_file=$(find "$download_dir" -type f \( -iname "*.mp4" -o -iname "*.mkv" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" -o -iname "*.m4v" \) 2>/dev/null | \
+                                while IFS= read -r file; do
+                                    if [ -f "$file" ] && [ -s "$file" ]; then
+                                        local size=$(stat -f%z "$file" 2>/dev/null || stat -c%s "$file" 2>/dev/null || echo "0")
+                                        echo "$size|$file"
+                                    fi
+                                done | sort -t'|' -k1 -rn | head -1 | cut -d'|' -f2)
+                            
+                            if [ -n "$video_file" ] && [ -f "$video_file" ] && [ -s "$video_file" ]; then
+                                local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo "0")
+                                if [ "$file_size" -gt 1048576 ]; then  # 1MB minimum
+                                    break
+                                fi
+                            fi
+                            
+                            local spin_idx=$((video_wait % 4))
+                            case $spin_idx in
+                                0) local spin_char='|' ;;
+                                1) local spin_char='/' ;;
+                                2) local spin_char='-' ;;
+                                3) local spin_char='\' ;;
+                            esac
+                            printf "\r${CYAN}Waiting for video file...${RESET} [%c] ($((video_wait / 5))s)" "$spin_char"
+                            
+                            sleep 0.2
+                            video_wait=$((video_wait + 1))
+                        done
+                        
+                        if [ -z "$video_file" ] || [ ! -f "$video_file" ]; then
+                            echo ""
+                            echo -e "${RED}Error:${RESET} Could not find video file"
+                            kill $transmission_pid 2>/dev/null || true
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
+                        
+                        local video_path=$(realpath "$video_file" 2>/dev/null || echo "$video_file")
+                        local video_dir=$(dirname "$video_path")
+                        local video_name=$(basename "$video_path")
+                        
+                        echo ""
+                        echo -e "${GREEN}✓ Video file found:${RESET} $video_name"
+                        echo ""
+                        
+                        # Wait for buffer (10% progress or 50MB, whichever comes first)
+                        echo -e "${CYAN}Buffering video (waiting for 10% progress)...${RESET}"
+                        local target_progress=10  # 10% progress
+                        local target_buffer_size=52428800  # 50MB fallback
+                        local buffer_wait=0
+                        local max_buffer_wait=300  # 5 minutes max
+                        local last_size=0
+                        local current_progress=0
+                        local connected_peers=0
+                        local total_peers=0
+                        local download_speed=""
+                        
+                        while [ $buffer_wait -lt $max_buffer_wait ]; do
+                            # Parse progress from transmission output
+                            if [ -f "$transmission_output" ]; then
+                                # Look for "Progress: X.X%" pattern
+                                local progress_line=$(grep "Progress:" "$transmission_output" 2>/dev/null | tail -1)
+                                if [ -n "$progress_line" ]; then
+                                    # Extract percentage: "Progress: 18.0%" -> 18.0
+                                    current_progress=$(echo "$progress_line" | grep -oE "Progress: [0-9]+\.[0-9]+%" | grep -oE "[0-9]+\.[0-9]+" | head -1)
+                                    # Extract peers: "dl from 18 of 49 peers" -> 18 and 49
+                                    local peer_match=$(echo "$progress_line" | grep -oE "dl from [0-9]+ of [0-9]+ peers" 2>/dev/null)
+                                    if [ -n "$peer_match" ]; then
+                                        connected_peers=$(echo "$peer_match" | grep -oE "[0-9]+" | head -1)
+                                        total_peers=$(echo "$peer_match" | grep -oE "[0-9]+" | tail -1)
+                                    fi
+                                    # Extract download speed: "(1.38 MB/s)" or "(3.63 MB/s)"
+                                    download_speed=$(echo "$progress_line" | grep -oE "\([0-9]+\.[0-9]+ [A-Z]+/s\)" | head -1)
+                                fi
+                            fi
+                            
+                            # Also check file size as fallback
+                            local current_size=$(stat -f%z "$video_path" 2>/dev/null || stat -c%s "$video_path" 2>/dev/null || echo "0")
+                            
+                            # Show progress
+                            if [ -n "$current_progress" ] && [ "$current_progress" != "0" ]; then
+                                local progress_int=$(echo "$current_progress" | cut -d. -f1)
+                                
+                                local width=20
+                                local filled=$((progress_int * width / 100))
+                                if [ "$filled" -gt "$width" ]; then
+                                    filled=$width
+                                fi
+                                
+                                local bar=""
+                                local i=0
+                                while [ $i -lt $filled ]; do
+                                    bar="${bar}🟩"
+                                    i=$((i + 1))
+                                done
+                                while [ $i -lt $width ]; do
+                                    bar="${bar}⬜"
+                                    i=$((i + 1))
+                                done
+                                
+                                local progress_display="${current_progress}%"
+                                if [ -n "$download_speed" ]; then
+                                    progress_display="${progress_display} $download_speed"
+                                fi
+                                if [ "$total_peers" -gt 0 ]; then
+                                    progress_display="${progress_display} (${connected_peers}/${total_peers} peers)"
+                                fi
+                                
+                                printf "\r${CYAN}Buffering:${RESET} %s %s " "$bar" "$progress_display"
+                                
+                                # Check if we have 10% progress
+                                if [ "$progress_int" -ge "$target_progress" ]; then
+                                    echo ""
+                                    echo -e "${GREEN}✓ Buffer ready (${current_progress}% progress)${RESET}"
+                                    if [ "$total_peers" -gt 0 ]; then
+                                        echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
+                                    fi
+                                    break
+                                fi
+                            elif [ "$current_size" -gt 0 ]; then
+                                # Fallback to size-based buffering if progress not available
+                                local progress_percent=$((current_size * 100 / target_buffer_size))
+                                if [ $progress_percent -gt 100 ]; then
+                                    progress_percent=100
+                                fi
+                                
+                                local width=20
+                                local filled=$((progress_percent * width / 100))
+                                if [ "$filled" -gt "$width" ]; then
+                                    filled=$width
+                                fi
+                                
+                                local bar=""
+                                local i=0
+                                while [ $i -lt $filled ]; do
+                                    bar="${bar}🟩"
+                                    i=$((i + 1))
+                                done
+                                while [ $i -lt $width ]; do
+                                    bar="${bar}⬜"
+                                    i=$((i + 1))
+                                done
+                                
+                                printf "\r${CYAN}Buffering:${RESET} %s %d%% (${current_size} bytes) " "$bar" "$progress_percent"
+                                
+                                # Check if we have enough buffer
+                                if [ "$current_size" -ge $target_buffer_size ]; then
+                                    echo ""
+                                    echo -e "${GREEN}✓ Buffer ready (${current_size} bytes)${RESET}"
+                                    break
+                                fi
+                                
+                                # Check if stalled but have minimum buffer
+                                if [ "$current_size" -eq "$last_size" ] && [ "$current_size" -gt 0 ]; then
+                                    if [ "$current_size" -ge 20971520 ]; then  # 20MB minimum
+                                        echo ""
+                                        echo -e "${YELLOW}⚠ Proceeding with available buffer (${current_size} bytes)${RESET}"
+                                        break
+                                    fi
+                                fi
+                            else
+                                printf "\r${CYAN}Buffering...${RESET} [0%%]"
+                            fi
+                            
+                            last_size=$current_size
+                            sleep 1
+                            buffer_wait=$((buffer_wait + 1))
+                        done
+                        echo ""
+                        
+                        # Find subtitle file (same logic as peerflix)
+                        local subtitle_file=""
+                        local subtitle_arg=""
+                        
+                        if [ "$enable_subtitles" = true ] || has_subtitles "$source" >/dev/null 2>&1; then
+                            echo -e "${CYAN}Searching for subtitle file...${RESET}"
+                            
+                            # Search for subtitle files in the same directory as video
+                            subtitle_file=$(find "$video_dir" -type f \( -iname "*.srt" -o -iname "*.vtt" -o -iname "*.ass" -o -iname "*.ssa" \) 2>/dev/null | head -1)
+                            
+                            if [ -n "$subtitle_file" ] && [ -f "$subtitle_file" ]; then
+                                local sub_abs=$(realpath "$subtitle_file" 2>/dev/null || echo "$subtitle_file")
+                                local sub_name=$(basename "$sub_abs")
+                                local sub_dir=$(dirname "$sub_abs")
+                                
+                                echo -e "${GREEN}✓ Subtitle found:${RESET} $sub_name"
+                                
+                                if [ "$sub_dir" = "$video_dir" ]; then
+                                    subtitle_arg="$sub_name"
+                                else
+                                    subtitle_arg="$sub_abs"
+                                fi
+                            fi
+                        fi
+                        
+                        # Launch player (same as peerflix)
+                        echo ""
+                        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo -e "${GREEN}Launching $player from local directory...${RESET}"
+                        echo -e "  ${CYAN}Directory:${RESET} $video_dir"
+                        echo -e "  ${CYAN}Video:${RESET} $video_name"
+                        if [ -n "$subtitle_arg" ]; then
+                            echo -e "  ${CYAN}Subtitle:${RESET} $subtitle_arg"
+                        fi
+                        echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                        echo ""
+                        
+                        local player_pid=""
+                        cd "$video_dir" || {
+                            echo -e "${RED}Error:${RESET} Could not change to video directory"
+                            kill $transmission_pid 2>/dev/null || true
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        }
+                        
+                        if [ "$player" = "vlc" ]; then
+                            if [ -n "$subtitle_arg" ]; then
+                                vlc "$video_name" --sub-file="$subtitle_arg" >/dev/null 2>&1 &
+                            else
+                                vlc "$video_name" >/dev/null 2>&1 &
+                            fi
+                            player_pid=$!
+                        else
+                            # mpv
+                            local mpv_args=("$video_name")
+                            if [ -n "$subtitle_arg" ]; then
+                                mpv_args+=("--sub-file=$subtitle_arg")
+                                mpv_args+=("--sid=1")
+                                mpv_args+=("--sub-visibility=yes")
+                            fi
+                            mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+                            player_pid=$!
+                        fi
+                        
+                        if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Failed to launch player"
+                            kill $transmission_pid 2>/dev/null || true
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
+                        
+                        echo -e "${CYAN}Player started (PID: $player_pid). Transmission running (PID: $transmission_pid)${RESET}"
+                        echo ""
+                        
+                        # Monitor player (same as peerflix)
+                        local player_running=true
+                        local check_count=0
+                        
+                        trap 'echo -e "\n${YELLOW}Interrupted. Stopping transmission...${RESET}"; kill $transmission_pid 2>/dev/null || true; kill $player_pid 2>/dev/null || true; rm -f "$transmission_output" 2>/dev/null; return 2' INT TERM
+                        
+                        while [ "$player_running" = true ]; do
+                            local player_processes=""
+                            if [ "$player" = "vlc" ]; then
+                                player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
+                                if [ -z "$player_processes" ]; then
+                                    player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
+                                fi
+                            else
+                                player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
+                            fi
+                            
+                            if [ -z "$player_processes" ]; then
+                                sleep 1
+                                if [ "$player" = "vlc" ]; then
+                                    player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
+                                else
+                                    player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
+                                fi
+                                
+                                if [ -z "$player_processes" ]; then
+                                    player_running=false
+                                    break
+                                fi
+                            fi
+                            
+                            sleep 1
+                            check_count=$((check_count + 1))
+                            
+                            if [ $check_count -gt 600 ]; then
+                                echo -e "${YELLOW}Warning:${RESET} Monitoring timeout, stopping transmission anyway"
+                                player_running=false
+                                break
+                            fi
+                        done
+                        
+                        trap - INT TERM
+                        
+                        # Player closed, stop transmission
+                        echo -e "${CYAN}Player closed. Stopping transmission...${RESET}"
+                        kill $transmission_pid 2>/dev/null || true
+                        sleep 1
+                        kill -9 $transmission_pid 2>/dev/null || true
+                        wait $transmission_pid 2>/dev/null &>/dev/null || true
+                        
+                        rm -f "$transmission_output" 2>/dev/null
+                        rm -f "$temp_output" 2>/dev/null
+                        return 2  # Return to catalog
+                    fi
+                fi
+                
+                echo -e "${CYAN}Solutions:${RESET}"
+                echo "  1. Try selecting a different torrent from the list"
+                if ! command -v transmission-cli &> /dev/null; then
+                    echo "  2. Install transmission-cli for download fallback:"
+                    echo "     ${GREEN}brew install transmission-cli${RESET}"
+                    echo "     Then use: ${GREEN}transmission-cli --download-dir \"/tmp/torrent-stream\" \"$source\"${RESET}"
+                fi
+                echo "  3. Use webtorrent (if installed):"
+                echo "     ${GREEN}webtorrent \"$source\" --mpv${RESET}"
+                echo "  4. Or add to transmission-daemon:"
+                echo "     ${GREEN}transmission-remote -a \"$source\"${RESET}"
                 echo -e "${RED}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
                 rm -f "$temp_output" 2>/dev/null
                 return 1
@@ -2992,6 +3585,10 @@ stream_peerflix() {
     wait $peerflix_pid 2>/dev/null &>/dev/null || true
     
     rm -f "$temp_output" 2>/dev/null
+    
+    # Return special exit code to indicate player closed (not an error)
+    # This allows the calling code to return to catalog view
+    return 2
 }
 
 
