@@ -140,25 +140,32 @@ When browsing the catalog:
 
 ![Movie Selection](img/03-movie-selection.png)
 
+After selecting a movie, termflix will set up streaming:
+
+![Streaming Setup](img/04-streaming-setup.png)
+
+The script will buffer the video and show progress:
+
+![Buffering Progress](img/05-buffering-progress.png)
+
+Once buffered, your media player will launch automatically:
+
+![Player Running](img/07-player-running.png)
+
 ## How It Works
 
 1. **Catalog Browsing**: Fetches latest/trending content from multiple sources
 
-   ![Full Catalog View](img/08-full-catalog-view.png)
+   ![Full Catalog with Posters](img/06-catalog-with-posters.png)
 
 2. **Caching**: Results are cached for 8 hours to reduce API calls
 3. **Streaming**: Uses `peerflix` for streaming, falls back to `transmission-cli` if needed
-
-   ![Streaming Setup](img/04-streaming-setup.png)
-
 4. **Posters**: Downloads and caches movie posters from TMDB
+
+   ![Full Catalog View](img/08-full-catalog-view.png)
+
 5. **Player Integration**: Launches mpv/vlc with video and subtitle files
-
-   ![Buffering Progress](img/05-buffering-progress.png)
-
 6. **Return to Catalog**: After playback, returns to the catalog view
-
-   ![Player Running](img/07-player-running.png)
 
 ## Troubleshooting
 
