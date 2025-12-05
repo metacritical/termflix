@@ -19,10 +19,10 @@ A powerful terminal-based torrent streaming tool that lets you browse and stream
 
 ```bash
 # Download and install
-curl -fsSL https://raw.githubusercontent.com/YOUR_USERNAME/termflix/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/metacritical/termflix/main/install.sh | bash
 
 # Or manually
-git clone https://github.com/YOUR_USERNAME/termflix.git
+git clone https://github.com/metacritical/termflix.git
 cd termflix
 ./install.sh
 ```
