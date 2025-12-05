@@ -2824,7 +2824,13 @@ EOF
                         echo -e "${CYAN}Note:${RESET} Temporarily overriding transmission config download directory"
                     fi
                     
-                    transmission-cli --download-dir "$download_dir" "$source" > "$transmission_output" 2>&1 &
+                    # Run transmission-cli with both --config-dir and --download-dir to ensure it uses our modified config
+                    local transmission_config_dir="$HOME/.config/transmission"
+                    if [ -d "$transmission_config_dir" ]; then
+                        transmission-cli --config-dir "$transmission_config_dir" --download-dir "$download_dir" "$source" > "$transmission_output" 2>&1 &
+                    else
+                        transmission-cli --download-dir "$download_dir" "$source" > "$transmission_output" 2>&1 &
+                    fi
                     local transmission_pid=$!
                     
                     # Wait a moment for transmission-cli to start and check if it's still running
