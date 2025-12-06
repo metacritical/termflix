@@ -169,7 +169,7 @@ draw_grid_row() {
     local col_width=40  # Approximate column width in characters
     local img_width=20
     local img_height=15
-    local row_height=20  # Total height for one row (image + text)
+    local row_height=21  # Total height for one row (image + 3 text lines + spacing)
     
     # Calculate column positions based on terminal width
     # Ensure proper spacing: each column needs at least img_width + padding
@@ -251,6 +251,10 @@ draw_grid_row() {
                 # Pre-render image with viu and capture output line by line
                 local rendered_file="${temp_dir}/rendered_${i}.txt"
                 viu -w "$img_width" -h "$img_height" "$image_file" 2>/dev/null > "$rendered_file"
+                # Sanitize VIU output: remove cursor movement codes but keep colors
+                if command -v perl &> /dev/null; then
+                    perl -i -pe "s/\x1b\[[0-9;]*[A-HJKSTf]//g" "$rendered_file" 2>/dev/null
+                fi
                 if [ $? -eq 0 ] && [ -s "$rendered_file" ]; then
                     image_line_files[$i]="$rendered_file"
                     has_image[$i]=1
@@ -285,8 +289,10 @@ draw_grid_row() {
                         local image_line
                         image_line=$(sed -n "$((row + 1))p" "$rendered_file" 2>/dev/null)
                         if [[ -n "$image_line" ]]; then
-                            # Remove trailing newline
+                            # Remove trailing newline and any remaining escape codes
                             local clean_line="${image_line%$'\n'}"
+                            # Remove any cursor movement codes that might have leaked through
+                            clean_line=$(echo -n "$clean_line" | sed 's/\x1b\[[0-9;]*[A-HJKSTf]//g' | sed 's/\[0m//g')
                             # Output the line - viu should already respect width
                             printf "%s" "$clean_line"
                             # Position cursor at end of image area (x_pos + img_width) to prevent overwrite
@@ -301,27 +307,24 @@ draw_grid_row() {
                     fi
                 fi
             else
-                # Draw placeholder box row by row
-                local image_file="${image_files[$i]}"
-                if [[ -z "$image_file" ]] || [[ ! -f "$image_file" ]]; then
-                    tput cup "$current_y" "$x_pos"
-                    if [[ "$row" -eq 0 ]]; then
-                        echo -ne "${CYAN}┌──────────────────┐${RESET}"
-                    elif [[ "$row" -eq $((img_height-1)) ]]; then
-                        echo -ne "${CYAN}└──────────────────┘${RESET}"
-                    elif [[ "$row" -eq 7 ]]; then
-                        # Center row - show "No Poster" text
-                        echo -ne "${CYAN}│${RESET}"
-                        tput cup "$current_y" $((x_pos + 5))
-                        echo -ne "${CYAN}No Poster${RESET}"
-                        tput cup "$current_y" $((x_pos + 19))
-                        echo -ne "${CYAN}│${RESET}"
-                    else
-                        echo -ne "${CYAN}│                  │${RESET}"
-                    fi
-                    # Ensure cursor is positioned after placeholder
-                    tput cup "$current_y" $((x_pos + 20))
+                # Draw placeholder box row by row (always draw if no image)
+                tput cup "$current_y" "$x_pos"
+                if [[ "$row" -eq 0 ]]; then
+                    echo -ne "${CYAN}┌──────────────────┐${RESET}"
+                elif [[ "$row" -eq $((img_height-1)) ]]; then
+                    echo -ne "${CYAN}└──────────────────┘${RESET}"
+                elif [[ "$row" -eq 7 ]]; then
+                    # Center row - show "No Poster" text
+                    echo -ne "${CYAN}│${RESET}"
+                    tput cup "$current_y" $((x_pos + 5))
+                    echo -ne "${CYAN}No Poster${RESET}"
+                    tput cup "$current_y" $((x_pos + 19))
+                    echo -ne "${CYAN}│${RESET}"
+                else
+                    echo -ne "${CYAN}│                  │${RESET}"
                 fi
+                # Ensure cursor is positioned after placeholder
+                tput cup "$current_y" $((x_pos + 20))
             fi
         done
         # CRITICAL: After drawing each image row, don't move cursor - let it stay at end of row
@@ -409,7 +412,6 @@ draw_grid_row() {
         fi
         
         # CRITICAL: Clear each line before writing to prevent overlap
-        # Row 1: [num] [source]
         # Calculate clear end position
         local clear_end
         if [ "$i" -lt $((${#items[@]} - 1)) ]; then
@@ -418,121 +420,137 @@ draw_grid_row() {
             clear_end=$term_cols
         fi
         
-        # Ensure we're writing below images
-        # Draw text even if it's beyond visible terminal - terminal will scroll
-        if [ "$actual_text_row" -ge 1 ]; then
-            tput cup "$actual_text_row" "$x_pos"
-            # Clear to end of column
-            printf "%*s" $((clear_end - x_pos)) ""
-            tput cup "$actual_text_row" "$x_pos"
-            echo -ne "${BOLD}[${item_num}]${RESET} ${source_color}[${source}]${RESET}"
-        fi
+        # CRITICAL: Strip ANSI codes from quality and extra fields first before parsing
+        local clean_quality=$(echo -n "$quality" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/\[0m//g')
+        local clean_extra=$(echo -n "$extra" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/\[0m//g')
         
-        # Row 2: Movie name (truncate to fit column width)
-        local text_row_2=$((actual_text_row + 1))
-        local truncated_name="${display_name:0:$col_width}"
-        if [ "${#display_name}" -gt "$col_width" ]; then
-            truncated_name="${truncated_name}..."
-        fi
-        
-        if [ "$text_row_2" -ge 1 ]; then
-            tput cup "$text_row_2" "$x_pos"
-            # Clear to end of column
-            printf "%*s" $((clear_end - x_pos)) ""
-            tput cup "$text_row_2" "$x_pos"
-            echo -ne "${BOLD}${truncated_name}${RESET}"
-        fi
-        
-        # Row 3: Quality, size, seeds, and IMDB rating
-        # Parse seeds from extra field (format: "1234 seeds" or "1234 seeds, 567 peers")
-        # CRITICAL: Strip ANSI codes first before parsing
-        local clean_extra=$(echo -n "$extra" | sed 's/\x1b\[[0-9;]*m//g')
+        # Extract seeds from either quality field (TPB format: "1234 seeds") or extra field (YTSRS format: "1234 seeds, 567 peers")
         local seeds=""
-        if [[ "$clean_extra" =~ ([0-9]+)[[:space:]]*seeds ]]; then
+        local quality_has_seeds=false
+        if [[ "$clean_quality" =~ ([0-9]+)[[:space:]]*seeds ]]; then
+            seeds="${BASH_REMATCH[1]}"
+            quality_has_seeds=true
+        elif [[ "$clean_extra" =~ ([0-9]+)[[:space:]]*seeds ]]; then
             seeds="${BASH_REMATCH[1]}"
         fi
         
-        # Get IMDB rating from TMDB API (cache it)
+        # Get quality preference from config (default: 1080p)
+        local config_file=$(get_termflix_config_file)
+        local preferred_quality="1080p"
+        if [ -f "$config_file" ]; then
+            local config_quality=$(grep "^QUALITY=" "$config_file" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]')
+            if [ -n "$config_quality" ]; then
+                preferred_quality="$config_quality"
+            fi
+        fi
+        
+        # Extract quality (720p/1080p) - use config preference as default
+        local quality_display="$preferred_quality"
+        if [ -n "$clean_quality" ] && [ "$clean_quality" != "N/A" ] && [ "$quality_has_seeds" = false ]; then
+            # Extract resolution from quality string (e.g., "720p", "1080p", "4K")
+            if [[ "$clean_quality" =~ ([0-9]+[pK]) ]]; then
+                quality_display="${BASH_REMATCH[1]}"
+            elif [[ "$clean_quality" =~ (720|1080|2160|4K) ]]; then
+                if [[ "$clean_quality" =~ 720 ]]; then
+                    quality_display="720p"
+                elif [[ "$clean_quality" =~ 1080 ]]; then
+                    quality_display="1080p"
+                elif [[ "$clean_quality" =~ (2160|4K) ]]; then
+                    quality_display="4K"
+                fi
+            fi
+        fi
+        
+        # Get IMDB rating and genre from TMDB API cache
         local imdb_rating=""
-        local rating_stars=""
+        local rating_display=""
+        local genre_display=""
         if [ -n "$name" ]; then
             # Extract year from name if available
             local year=$(echo "$name" | grep -oE '[0-9]{4}' | head -1)
             local clean_title=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/ \([0-9]{4}\).*//' | sed 's/\[.*\]//g' | xargs)
             
-            # Check cache for rating (using TMDB cache)
+            # Check cache for rating and genre (using TMDB cache)
             local cache_dir=$(get_termflix_cache_dir)/tmdb
             local cache_key=$(echo "${clean_title}_${year}" | tr -cd '[:alnum:]')
             local cache_file="$cache_dir/${cache_key}.json"
             
             if [ -f "$cache_file" ]; then
                 # Try to get rating from cached file
-                imdb_rating=$(cat "$cache_file" 2>/dev/null | grep -o '"imdbRating":"[^"]*"' | cut -d'"' -f4)
-                # If not found, try alternative JSON parsing
-                if [ -z "$imdb_rating" ] || [ "$imdb_rating" == "N/A" ]; then
-                    if command -v jq &> /dev/null; then
-                        imdb_rating=$(cat "$cache_file" 2>/dev/null | jq -r '.imdbRating // empty' 2>/dev/null)
+                if command -v jq &> /dev/null; then
+                    imdb_rating=$(cat "$cache_file" 2>/dev/null | jq -r '.imdbRating // .vote_average // empty' 2>/dev/null)
+                    # Get first genre from genres array
+                    genre_display=$(cat "$cache_file" 2>/dev/null | jq -r '.genres[0].name // .genres[0] // empty' 2>/dev/null)
+                else
+                    imdb_rating=$(cat "$cache_file" 2>/dev/null | grep -o '"imdbRating":"[^"]*"' | cut -d'"' -f4)
+                    if [ -z "$imdb_rating" ]; then
+                        imdb_rating=$(cat "$cache_file" 2>/dev/null | grep -o '"vote_average":[0-9.]*' | cut -d':' -f2)
                     fi
+                    # Try to get genre (first one)
+                    genre_display=$(cat "$cache_file" 2>/dev/null | grep -o '"name":"[^"]*"' | head -1 | cut -d'"' -f4)
                 fi
             fi
             
-            # Convert rating to stars (0-5 stars)
+            # Format rating display (e.g., "7.5 ⭐")
             if [ -n "$imdb_rating" ] && [ "$imdb_rating" != "N/A" ] && [ "$imdb_rating" != "" ] && [ "$imdb_rating" != "null" ]; then
-                local rating_num=$(echo "$imdb_rating" | awk '{print int($1 + 0.5)}')
-                if [ "$rating_num" -ge 9 ] && [ "$rating_num" -le 10 ]; then
-                    rating_stars="⭐⭐⭐⭐⭐"
-                elif [ "$rating_num" -ge 8 ] && [ "$rating_num" -lt 9 ]; then
-                    rating_stars="⭐⭐⭐⭐"
-                elif [ "$rating_num" -ge 7 ] && [ "$rating_num" -lt 8 ]; then
-                    rating_stars="⭐⭐⭐"
-                elif [ "$rating_num" -ge 6 ] && [ "$rating_num" -lt 7 ]; then
-                    rating_stars="⭐⭐"
-                elif [ "$rating_num" -ge 5 ] && [ "$rating_num" -lt 6 ]; then
-                    rating_stars="⭐"
-                fi
+                # Round to 1 decimal place
+                local rating_num=$(echo "$imdb_rating" | awk '{printf "%.1f", $1}')
+                rating_display="${rating_num} ⭐"
             fi
         fi
         
-        # Build display text: quality | size | seeds | rating
-        local display_parts=()
-        if [ -n "$quality" ] && [ "$quality" != "N/A" ]; then
-            display_parts+=("${CYAN}${quality}${RESET}")
+        # Clean up title for display (remove dots, brackets, etc.)
+        local clean_display_name=$(echo "$display_name" | sed -E 's/\./ /g' | sed -E 's/\[.*\]//g' | sed -E 's/  +/ /g' | xargs)
+        # Truncate title if too long (leave some room for column width)
+        local title_max_len=$((col_width - 5))
+        if [ "$title_max_len" -lt 10 ]; then
+            title_max_len=10
         fi
-        if [ -n "$size" ] && [ "$size" != "N/A" ]; then
-            display_parts+=("${CYAN}${size}${RESET}")
-        fi
-        if [ -n "$seeds" ]; then
-            display_parts+=("${YELLOW}${seeds} seeds${RESET}")
-        fi
-        if [ -n "$rating_stars" ]; then
-            display_parts+=("${rating_stars}")
+        if [ "${#clean_display_name}" -gt "$title_max_len" ]; then
+            clean_display_name="${clean_display_name:0:$title_max_len}..."
         fi
         
-        # Join parts with " | "
-        local display_text=""
-        for part in "${display_parts[@]}"; do
-            if [ -n "$display_text" ]; then
-                display_text="${display_text} | "
+        # Row 1: [Number] [Source] Quality | Rating ⭐
+        if [ "$actual_text_row" -ge 1 ]; then
+            tput cup "$actual_text_row" "$x_pos"
+            # Clear to end of column
+            printf "%*s" $((clear_end - x_pos)) ""
+            tput cup "$actual_text_row" "$x_pos"
+            local row1_text="${BOLD}[${item_num}]${RESET} ${source_color}[${source}]${RESET} ${CYAN}${quality_display}${RESET}"
+            if [ -n "$rating_display" ]; then
+                row1_text="${row1_text} | ${rating_display}"
             fi
-            display_text="${display_text}${part}"
-        done
-        
-        # Truncate if too long (remove ANSI codes for length calculation)
-        local clean_text=$(echo -n "$display_text" | sed 's/\x1b\[[0-9;]*m//g' | sed 's/⭐//g')
-        if [ "${#clean_text}" -gt "$col_width" ]; then
-            # Truncate the clean text, then reconstruct (simplified - just show first part)
-            local truncated_clean="${clean_text:0:$col_width}"
-            display_text="${CYAN}${truncated_clean}${RESET}"
+            echo -ne "$row1_text"
         fi
         
-        # CRITICAL: Clear the line first to prevent overlap
+        # Row 2: Full Title (cleaned up)
+        local text_row_2=$((actual_text_row + 1))
+        if [ "$text_row_2" -ge 1 ]; then
+            tput cup "$text_row_2" "$x_pos"
+            # Clear to end of column
+            printf "%*s" $((clear_end - x_pos)) ""
+            tput cup "$text_row_2" "$x_pos"
+            echo -ne "${BOLD}${clean_display_name}${RESET}"
+        fi
+        
+        # Row 3: Seeds | Genre
         local text_row_3=$((actual_text_row + 2))
         if [ "$text_row_3" -ge 1 ]; then
             tput cup "$text_row_3" "$x_pos"
-            # Clear to end of column (clear_end already calculated above)
+            # Clear to end of column
             printf "%*s" $((clear_end - x_pos)) ""
             tput cup "$text_row_3" "$x_pos"
-            echo -ne "$display_text"
+            local row3_text=""
+            if [ -n "$seeds" ]; then
+                row3_text="${YELLOW}${seeds} Seeds${RESET}"
+            fi
+            if [ -n "$genre_display" ] && [ "$genre_display" != "" ] && [ "$genre_display" != "null" ]; then
+                if [ -n "$row3_text" ]; then
+                    row3_text="${row3_text} | "
+                fi
+                row3_text="${row3_text}[${genre_display}]"
+            fi
+            echo -ne "$row3_text"
             
             # After writing all text for this item, move cursor to end of its column area
             # This prevents overwrites when we write the next column
@@ -547,7 +565,7 @@ draw_grid_row() {
     
     # Calculate the next row position
     # Layout: start_row + img_height (15) + spacing (1) + text_lines (3) = start_row + 19
-    # But we use row_height=20 for consistency with scrolling logic
+    # But we use row_height=21 for consistency with scrolling logic (3 text lines)
     local next_row=$((start_row + row_height))
     
     # Ensure cursor is positioned at the next row before returning
@@ -600,7 +618,7 @@ generate_cache_key() {
     echo "$key"
 }
 
-# Check if cache is valid (less than 8 hours old)
+# Check if cache is valid (less than 1 hour old)
 is_cache_valid() {
     local cache_file="$1"
     if [ ! -f "$cache_file" ]; then
@@ -608,7 +626,7 @@ is_cache_valid() {
     fi
     
     local cache_age=$(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || stat -c %Y "$cache_file" 2>/dev/null)))
-    local max_age=$((8 * 60 * 60))  # 8 hours in seconds
+    local max_age=$((1 * 60 * 60))  # 1 hour in seconds
     
     if [ "$cache_age" -lt "$max_age" ]; then
         return 0  # Cache is valid
@@ -795,8 +813,32 @@ fetch_tmdb_poster() {
         fi
     fi
     
-    # Save movie data to cache
-    if command -v jq &> /dev/null; then
+    # Fetch full movie details to get genre names and other metadata
+    local movie_details=""
+    if [ -n "$movie_id" ] && [ "$movie_id" != "null" ]; then
+        local details_url="https://api.themoviedb.org/3/movie/${movie_id}"
+        if [ -n "$read_token" ]; then
+            movie_details=$(curl -s --max-time 5 \
+                --header "Authorization: Bearer ${read_token}" \
+                "$details_url" 2>/dev/null)
+        fi
+        if [ -z "$movie_details" ] || echo "$movie_details" | grep -q "Invalid\|Unauthorized\|401"; then
+            details_url="${details_url}?api_key=${api_key}"
+            movie_details=$(curl -s --max-time 5 "$details_url" 2>/dev/null)
+        fi
+    fi
+    
+    # Save to cache (prefer movie details if available, otherwise use search response)
+    if [ -n "$movie_details" ] && [ "$movie_details" != "" ]; then
+        # Use movie details which includes genre names
+        if command -v jq &> /dev/null; then
+            echo "$movie_details" | jq --arg path "$poster_path" '. + {poster_path: $path}' > "$cache_file" 2>/dev/null || \
+            echo "$movie_details" > "$cache_file" 2>/dev/null
+        else
+            echo "$movie_details" > "$cache_file"
+        fi
+    elif command -v jq &> /dev/null; then
+        # Fallback to search response
         echo "$search_response" | jq --arg id "$movie_id" --arg path "$poster_path" '.results[0] | .id = ($id | tonumber) | .poster_path = $path' > "$cache_file" 2>/dev/null || \
         echo "$search_response" | jq '.results[0] // {}' > "$cache_file" 2>/dev/null
     else
@@ -1844,7 +1886,7 @@ display_catalog() {
     local cache_dir=$(get_termflix_cache_dir)
     local cache_file="$cache_dir/catalog_${cache_key}.txt"
     
-    # Check if cache is valid (less than 8 hours old)
+    # Check if cache is valid (less than 1 hour old)
     if is_cache_valid "$cache_file"; then
         echo -e "${CYAN}Loading from cache...${RESET}"
         # Read results from cache

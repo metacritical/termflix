@@ -130,25 +130,22 @@ draw_grid_row() {
                     fi
                 fi
             else
-                # Draw placeholder box
-                local image_file="${image_files[$i]}"
-                if [[ -z "$image_file" ]] || [[ ! -f "$image_file" ]]; then
-                    tput cup "$current_y" "$x_pos"
-                    if [[ "$row" -eq 0 ]]; then
-                        echo -ne "${CYAN}┌──────────────────┐${RESET}"
-                    elif [[ "$row" -eq $((img_height-1)) ]]; then
-                        echo -ne "${CYAN}└──────────────────┘${RESET}"
-                    elif [[ "$row" -eq 7 ]]; then
-                        echo -ne "${CYAN}│${RESET}"
-                        tput cup "$current_y" $((x_pos + 5))
-                        echo -ne "${CYAN}No Poster${RESET}"
-                        tput cup "$current_y" $((x_pos + 19))
-                        echo -ne "${CYAN}│${RESET}"
-                    else
-                        echo -ne "${CYAN}│                  │${RESET}"
-                    fi
-                    tput cup "$current_y" $((x_pos + 20))
+                # Draw placeholder box row by row (always draw if no image)
+                tput cup "$current_y" "$x_pos"
+                if [[ "$row" -eq 0 ]]; then
+                    echo -ne "${CYAN}┌──────────────────┐${RESET}"
+                elif [[ "$row" -eq $((img_height-1)) ]]; then
+                    echo -ne "${CYAN}└──────────────────┘${RESET}"
+                elif [[ "$row" -eq 7 ]]; then
+                    echo -ne "${CYAN}│${RESET}"
+                    tput cup "$current_y" $((x_pos + 5))
+                    echo -ne "${CYAN}No Poster${RESET}"
+                    tput cup "$current_y" $((x_pos + 19))
+                    echo -ne "${CYAN}│${RESET}"
+                else
+                    echo -ne "${CYAN}│                  │${RESET}"
                 fi
+                tput cup "$current_y" $((x_pos + 20))
             fi
         done
         # Move cursor to next line after each image row
