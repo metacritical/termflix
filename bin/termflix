@@ -1674,7 +1674,8 @@ redraw_catalog_page() {
     local current_start_row=5
     local term_lines=$(tput lines)
     local term_cols=$(tput cols)
-    local row_height=20
+    local row_height=21  # Must match row_height in draw_grid_row function
+    local scroll_offset=0  # Track how much we've scrolled (for cursor position calculations)
     
     local row_items=()
     local row_count=0
@@ -1758,95 +1759,79 @@ redraw_catalog_page() {
                 done
             fi
             
+            # Position cursor at current_start_row for this row
+            # For first row, this is the initial position (5)
+            # For subsequent rows, this is where the previous row ended (next_row from draw_grid_row)
+            # This creates a chain: row1 ends at next_row -> row2 starts at next_row -> row2 ends at next_row2 -> etc.
+            
             if [ "$current_start_row" -lt 1 ]; then
                 current_start_row=1
             fi
-            if [ "$current_start_row" -ge "$term_lines" ]; then
-                local scroll_needed=$((current_start_row - term_lines + row_height + 5))
-                if [ "$scroll_needed" -lt 3 ]; then
-                    scroll_needed=3
-                fi
-                for ((scroll=0; scroll<scroll_needed; scroll++)); do
+            
+            # SIMPLIFIED APPROACH: Check if we're getting close to bottom, scroll if needed
+            # When cursor approaches bottom (within 23 lines), scroll up and recalculate position
+            local available_lines=$((term_lines - current_start_row))
+            local scroll_threshold=23  # Scroll when we're within 23 lines of bottom
+            
+            # If we're getting close to the bottom, scroll up to make room
+            if [ "$available_lines" -lt "$scroll_threshold" ] || [ "$current_start_row" -ge "$term_lines" ]; then
+                # Scroll by outputting newlines - this moves visible content up
+                # Scroll enough to ensure we have room for the row (row_height = 21) plus margin
+                local scroll_amount=$((row_height + 8))  # Scroll row_height + 8 lines for safety
+                
+                # Output newlines to scroll the terminal up
+                for ((scroll=0; scroll<scroll_amount; scroll++)); do
                     echo
                 done
-                current_start_row=$((current_start_row - scroll_needed))
-                if [ "$current_start_row" -lt 1 ]; then
-                    current_start_row=1
+                
+                # After scrolling, recalculate where we should start drawing
+                # We want to start at a position that gives us enough room for the row
+                # Calculate from terminal height: leave row_height + 10 lines of space (further reduced gap)
+                local new_start_row=$((term_lines - row_height - 10))
+                if [ "$new_start_row" -lt 1 ]; then
+                    new_start_row=1
                 fi
+                
+                # Update current_start_row to the new calculated position
+                current_start_row=$new_start_row
+                
+                # Position cursor at the new start row
+                tput cup "$current_start_row" 0
+            else
+                # We have enough space, just position cursor at current_start_row
+                tput cup "$current_start_row" 0
             fi
-            tput cup "$current_start_row" 0
             
             local item_start_index=$((index - row_count + 1))
             if [ "$item_start_index" -lt 0 ]; then
                 item_start_index=0
             fi
             
+            # Draw the row - this function will position the cursor at next_row when done
             local temp_return=$(mktemp)
             draw_grid_row "$current_start_row" "$item_start_index" "$num_cols" "${row_items[@]}" 2>"$temp_return"
             local next_row
             next_row=$(tail -1 "$temp_return" 2>/dev/null | grep -E '^[0-9]+$' | tail -1)
             rm -f "$temp_return"
             
+            # Fallback if next_row wasn't returned correctly
             if ! [[ "$next_row" =~ ^[0-9]+$ ]] || [ -z "$next_row" ]; then
                 next_row=$((current_start_row + row_height))
             fi
             
-            # Check if this is the first or last row
-            local is_first_row=false
-            if [ "$item_start_index" -eq 0 ]; then
-                is_first_row=true
-            fi
+            # CRITICAL: Use next_row as the starting point for the next row
+            # draw_grid_row already positioned the cursor at next_row, so we just update
+            # current_start_row to use for the next iteration. This creates a chain where
+            # each row starts exactly where the previous row ended.
+            # 
+            # Note: If we scrolled before drawing this row, we already adjusted current_start_row,
+            # and draw_grid_row calculated next_row from that adjusted position, so next_row
+            # should already be correct relative to the scrolled screen.
+            current_start_row=$next_row
             
-            local is_last_row=false
-            if [ $index -eq $((end_idx - 1)) ] || [ $index -eq $((total - 1)) ]; then
-                is_last_row=true
-            fi
-            
-            if [ "$row_count" -eq "$num_cols" ]; then
-                # Skip spacing for first or last row
-                if [ "$is_first_row" = true ] || [ "$is_last_row" = true ]; then
-                    # Minimal spacing for first/last row
-                    echo
-                    next_row=$((next_row + 1))
-                else
-                    # Standard spacing (3 echo statements) + additional spacing (4 echo statements) for middle rows
-                    echo
-                    echo
-                    echo
-                    next_row=$((next_row + 3))
-                    echo
-                    echo
-                    echo
-                    echo
-                    next_row=$((next_row + 4))
-                fi
-                current_start_row=$next_row
-            else
-                current_start_row=$next_row
-                if [ "$current_start_row" -lt "$term_lines" ]; then
-                    tput cup "$current_start_row" 0
-                fi
-            fi
-            
-            if [ "$row_count" -eq "$num_cols" ]; then
-                local available_lines=$((term_lines - current_start_row))
-                if [ "$current_start_row" -ge "$term_lines" ] || [ "$available_lines" -lt "$row_height" ]; then
-                    local lines_to_scroll=$((row_height - available_lines + 3))
-                    if [ "$lines_to_scroll" -lt 3 ]; then
-                        lines_to_scroll=3
-                    fi
-                    for ((scroll=0; scroll<lines_to_scroll; scroll++)); do
-                        echo
-                    done
-                    current_start_row=$((term_lines - row_height - 5))
-                    if [ "$current_start_row" -lt 1 ]; then
-                        current_start_row=1
-                    fi
-                    if [ "$current_start_row" -lt "$term_lines" ]; then
-                        tput cup "$current_start_row" 0
-                    fi
-                fi
-            fi
+            # draw_grid_row already positioned cursor at (next_row, 0), so we're ready
+            # for the next iteration. The scroll check at the start of next iteration will
+            # handle scrolling if needed.
             
             row_items=()
             row_count=0
@@ -1854,15 +1839,12 @@ redraw_catalog_page() {
         index=$((index + 1))
     done
     
-    # Navigation will be displayed by the calling function
-    # Just ensure we're at a reasonable position
-    local term_lines=$(tput lines)
-    local final_cursor_row=$((term_lines - 8))
-    if [ "$final_cursor_row" -lt 1 ]; then
-        final_cursor_row=1
-    fi
-    tput cup "$final_cursor_row" 0
+    # After drawing all rows, current_start_row contains where the last row ended
+    # draw_grid_row already positioned the cursor at current_start_row (which is next_row from last draw)
+    # Add a couple of blank lines for spacing before navigation
     echo
+    echo
+    # Cursor is now positioned correctly for navigation text to be displayed
 }
 
 # Display catalog results in columns with pagination
@@ -2052,15 +2034,9 @@ display_catalog() {
         local number_input=""
         
         while true; do
-            # Display navigation instructions at bottom of screen
-            local term_lines=$(tput lines)
-            local nav_row=$((term_lines - 8))
-            if [ "$nav_row" -lt 1 ]; then
-                nav_row=1
-            fi
-            tput cup "$nav_row" 0
-            echo
-            echo
+            # Display navigation instructions right after the last row
+            # redraw_catalog_page already positioned the cursor correctly (after last row + 2 blank lines)
+            # So we can just display navigation directly - no need to reposition cursor
             
             if [ $total_pages -gt 1 ]; then
                 echo -e "${CYAN}Navigation:${RESET}"
