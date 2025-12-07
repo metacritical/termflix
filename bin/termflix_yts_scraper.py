@@ -11,11 +11,21 @@ import urllib.parse
 import urllib.request
 import os
 
-def scrape_yts_movies(sort='date_added', order='desc', limit=20, page=1, genre=None, quality='1080p'):
+def scrape_yts_movies(sort='date_added', order='desc', limit=20, page=1, genre=None, quality='1080p', keyword=None):
     """Scrape movies from YTS website - uses working domains: yts.rs and yts.hn"""
     # Try multiple YTS domains in order of preference (yts.mx is not working)
     # User confirmed these work: https://yts.rs/browse-movies, https://yts.hn/browse-movies
-    domains = ['https://yts.rs', 'https://yts.hn']
+    # Try multiple YTS domains in order of preference
+    # yts.mx is the official one, but others are reliable mirrors if it's blocked
+    domains = [
+        'https://yts.mx', 
+        'https://yts.ag', 
+        'https://yts.am', 
+        'https://yts.pm', 
+        'https://yts.lt',
+        'https://yts.rs', 
+        'https://yts.hn'
+    ]
     base_url = None
     
     # Test which domain works by checking browse-movies page
@@ -51,6 +61,8 @@ def scrape_yts_movies(sort='date_added', order='desc', limit=20, page=1, genre=N
         params.append(f"page={page}")
     if genre:
         params.append(f"genre={urllib.parse.quote(genre)}")
+    if keyword:
+        params.append(f"keyword={urllib.parse.quote(keyword)}")
     
     if params:
         url += "?" + "&".join(params)
@@ -169,5 +181,6 @@ if __name__ == '__main__':
     limit = int(sys.argv[3]) if len(sys.argv) > 3 else 20
     page = int(sys.argv[4]) if len(sys.argv) > 4 else 1
     genre = sys.argv[5] if len(sys.argv) > 5 else None
+    keyword = sys.argv[6] if len(sys.argv) > 6 else None
     
-    scrape_yts_movies(sort=sort, order=order, limit=limit, page=page, genre=genre)
+    scrape_yts_movies(sort=sort, order=order, limit=limit, page=page, genre=genre, keyword=keyword)
