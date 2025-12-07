@@ -50,6 +50,19 @@ echo -e "${CYAN}Installing termflix to ${INSTALL_DIR}...${RESET}"
 cp "$TERMFLIX_SCRIPT" "$INSTALL_DIR/termflix"
 chmod +x "$INSTALL_DIR/termflix"
 
+# Install auxiliary tools if they exist
+if [ -f "$SCRIPT_DIR/bin/termflix_combine.py" ]; then
+    cp "$SCRIPT_DIR/bin/termflix_combine.py" "$INSTALL_DIR/termflix_combine.py"
+    chmod +x "$INSTALL_DIR/termflix_combine.py"
+    echo -e "${GREEN}✓ Installed termflix_combine.py${RESET}"
+fi
+
+if [ -f "$SCRIPT_DIR/bin/termflix_yts_scraper.py" ]; then
+    cp "$SCRIPT_DIR/bin/termflix_yts_scraper.py" "$INSTALL_DIR/termflix_yts_scraper.py"
+    chmod +x "$INSTALL_DIR/termflix_yts_scraper.py"
+    echo -e "${GREEN}✓ Installed termflix_yts_scraper.py${RESET}"
+fi
+
 # Check if install directory is in PATH
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo ""
