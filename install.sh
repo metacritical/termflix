@@ -94,6 +94,17 @@ if ! command -v mpv &> /dev/null && ! command -v vlc &> /dev/null; then
     MISSING+=("mpv or vlc")
 fi
 
+# Gum check (Optional)
+if ! command -v gum &> /dev/null; then
+    echo -e "${YELLOW}Optional:${RESET} gum (for better menus)"
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "  Install with: ${CYAN}brew install gum${RESET}"
+    else
+        echo "  Install with: ${CYAN}go install github.com/charmbracelet/gum@latest${RESET}"
+    fi
+    echo ""
+fi
+
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo -e "${YELLOW}Missing dependencies:${RESET}"
     for dep in "${MISSING[@]}"; do
