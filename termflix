@@ -1467,6 +1467,9 @@ def normalize_title(title, year):
     tags = ['1080p', '720p', '480p', 'bluray', 'web-dl', 'webrip', 'hdr', 'x264', 'x265', 'hevc', 'aac', 'yts', 'yify', 'rarbg', 'eztv']
     for tag in tags:
         t = re.sub(r'\b' + tag + r'\b', '', t, flags=re.IGNORECASE)
+
+    # Remove version tags like v2, v3
+    t = re.sub(r'\bv[0-9]+\b', '', t, flags=re.IGNORECASE)
     
     # Remove non-alphanumeric characters (keep spaces)
     t = re.sub(r'[^a-zA-Z0-9 ]', '', t)
@@ -1474,6 +1477,7 @@ def normalize_title(title, year):
     # Collapse multiple spaces and strip
     t = re.sub(r'\s+', ' ', t).strip()
     return t.lower()
+
 
 def extract_seeds(text):
     match = re.search(r'(\d+)', str(text))
