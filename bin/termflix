@@ -673,6 +673,92 @@ get_omdb_api_key() {
     fi
 }
 
+# Fetch poster from Google Images (fallback)
+fetch_google_poster() {
+    local title="$1"
+    local year="$2"
+    
+    if [ -z "$title" ]; then
+        echo "N/A"
+        return 1
+    fi
+    
+    # Use Python for robust scraping
+    export GOOGLE_QUERY="$title $year movie poster"
+    
+    python3 << 'PYEOF'
+import sys, re, urllib.request, urllib.parse, os, ssl
+
+def scrape_google():
+    query = os.environ.get('GOOGLE_QUERY', '')
+    if not query: return
+    
+    # Simple User-Agent
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    try:
+        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}&tbm=isch"
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
+            html = response.read().decode('utf-8', errors='ignore')
+            
+        # Extract image URLs
+        # Google images usually puts images in: ["http...jpg", height, width]
+        # or simplified HTML: <img src="...">
+        
+        # Look for http/https image URLs ending in jpg/png/jpeg inside the source
+        # This is a heuristic.
+        
+        # Try finding typical "http...jpg" patterns in the script tags or img src
+        # Pattern for high-res images in js: "http.*?\.jpg"
+        
+        # Simple approach: find first img tag with http src that isn't a tiny icon/base64
+        # Google often serves thumbnails in base64 or encrypted urls.
+        
+        # Let's try DuckDuckGo first as it's cleaner? No, user asked for Google.
+        # Efficient Google Images scrape:
+        # Regex for large image url: "http[^"]+\.jpg"
+        
+        urls = re.findall(r'(https?://[^"]+?\.jpg)', html)
+        if not urls:
+             urls = re.findall(r'(https?://[^"]+?\.jpeg)', html)
+             
+        # Filter out google domains
+        valid_urls = [u for u in urls if 'google' not in u and 'gstatic' not in u]
+        
+        if valid_urls:
+            print(valid_urls[0])
+            return
+            
+        # Fallback to whatever img src we can find that looks real
+        img_srcs = re.findall(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', html)
+        valid_srcs = [u for u in img_srcs if 'google' not in u and 'gstatic' not in u and len(u) > 50]
+        
+        if valid_srcs:
+            print(valid_srcs[0])
+            return
+            
+        # Last resort: Any non-google image
+        if img_srcs and len(img_srcs) > 1: # Skip first few which are logos
+             for src in img_srcs:
+                 if 'gstatic' not in src and 'google' not in src:
+                     print(src)
+                     return
+
+    except Exception as e:
+        pass
+
+if __name__ == "__main__":
+    scrape_google()
+PYEOF
+}
+
 # Fetch poster from TMDB (TheMovieDB) with caching
 fetch_tmdb_poster() {
     local title="$1"
@@ -870,7 +956,7 @@ fetch_omdb_poster() {
     # Use TMDB only (no OMDB fallback)
     fetch_tmdb_poster "$1" "$2"
 }
-export -f get_omdb_api_key get_tmdb_api_key get_tmdb_read_token fetch_omdb_poster fetch_tmdb_poster
+export -f get_omdb_api_key get_tmdb_api_key get_tmdb_read_token fetch_omdb_poster fetch_tmdb_poster fetch_google_poster
 
 # Colors
 RED='\033[0;31m'
@@ -1078,25 +1164,157 @@ search_yts() {
     
     echo -e "${CYAN}[YTS]${RESET} Searching movies..." >&2
     
-    # Build URL the same way as YTS-Streaming app
-    local base_url="https://yts.mx/api/v2/list_movies.json"
-    local api_url="${base_url}?query_term=${query// /+}&limit=10"
-    
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s --max-time 5 --connect-timeout 3 \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            "$api_url" 2>/dev/null)
-        
-        if [ -n "$response" ] && [ "$response" != "" ]; then
-            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
-            
-            if [ "$status" = "ok" ]; then
-                # Same structure as YTS-Streaming app
-                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -10
-            fi
-        fi
+    if ! command -v python3 &> /dev/null; then
+        echo -e "${YELLOW}Warning:${RESET} python3 required for YTS scraping" >&2
+        return 1
     fi
+    
+    export YTS_QUERY="$query"
+    
+    python3 << 'PYEOF'
+import sys, re, urllib.request, urllib.parse, os, ssl
+
+def scrape():
+    query = os.environ.get('YTS_QUERY', '')
+    if not query: return
+    
+    # Try multiple YTS domains
+    domains = [
+        'https://yts.mx', 'https://yts.rs', 'https://yts.lt', 
+        'https://yts.do', 'https://yts.ag', 'https://yts.am', 
+        'https://yts.pm', 'https://yts.hn'
+    ]
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+    }
+    
+    # Create SSL context that ignores errors
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    
+    html = None
+    base_url = None
+    
+    for domain in domains:
+        try:
+            # Construct search URL
+            # Standard YTS search: /browse-movies/{query}/all/all/0/latest/0/all
+            # Or query param: /browse-movies?keyword={query}
+            url = f"{domain}/browse-movies/{urllib.parse.quote(query)}"
+            
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
+                if response.status == 200:
+                    content = response.read().decode('utf-8', errors='ignore')
+                    if 'browse-movie-wrap' in content or 'browse-movie-link' in content:
+                        html = content
+                        base_url = domain
+                        break
+        except:
+            continue
+            
+    if not html:
+        return
+
+    # Extract movie links
+    # Pattern: <a href="https://yts.mx/movies/..." class="browse-movie-link">
+    # Or relative: <a href="/movies/..." ...>
+    links = re.findall(r'<a[^>]+href=["\'](.*?/movies/[^"\']+)["\'][^>]*class=["\'][^"\']*browse-movie-link', html)
+    if not links:
+        links = re.findall(r'<a[^>]+href=["\'](.*?/movies/[^"\']+)["\']', html)
+        
+    # Filter for actual movie pages (exclude simple navigation if mixed in)
+    movie_links = []
+    seen = set()
+    for link in links:
+        if '/movies/' in link and link not in seen:
+            if not link.startswith('http'):
+                link = base_url + link if link.startswith('/') else f"{base_url}/{link}"
+            movie_links.append(link)
+            seen.add(link)
+            
+    # Process top 10 results
+    count = 0
+    for link in movie_links[:10]:
+        try:
+            req = urllib.request.Request(link, headers=headers)
+            with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
+                page = response.read().decode('utf-8', errors='ignore')
+                
+            # Title
+            title_m = re.search(r'<h1[^>]*>(.*?)</h1>', page)
+            if not title_m: continue
+            title = title_m.group(1).strip()
+            
+            # Year
+            year_m = re.search(r'<h2[^>]*>(\d{4})</h2>', page)
+            if not year_m:
+                year_m = re.search(r'class="year"[^>]*>(\d{4})', page)
+            year = year_m.group(1) if year_m else ""
+            year_str = f" ({year})" if year else ""
+            
+            # Poster (medium)
+            poster_m = re.search(r'<img[^>]+class="[^"]*hero-poster[^"]*"[^>]+src=["\'](.*?)["\']', page)
+            if not poster_m:
+                poster_m = re.search(r'<img[^>]+src=["\'](.*?)["\'][^>]+class="[^"]*hero-poster', page)
+            if not poster_m:
+                poster_m = re.search(r'<img[^>]+class="[^"]*movie-poster[^"]*"[^>]+src=["\'](.*?)["\']', page)
+                
+            poster = poster_m.group(1) if poster_m else "N/A"
+            if poster.startswith('/'): poster = base_url + poster
+            
+            # Torrents
+            # Look for 720p or 1080p magnets
+            # YTS usually has multiple qualities. We prioritize 1080p, then 720p.
+            # Magnets are usually in links with href="magnet:..."
+            
+            # Find all magnets with their quality label
+            # This is tricky with regex on full page. 
+            # Strategy: Find "modal-torrent" or similar blocks, or just scan all magnets and guess quality?
+            # YTS usually puts quality in text near the download button.
+            
+            # Let's extract all magnets first
+            magnets = re.findall(r'href=["\'](magnet:\?xt=urn:btih:[^"\']+)["\']', page)
+            
+            # If we find magnets, try to determine quality and size for the best one
+            # Ideally we want to output one line per quality or just the best one?
+            # Termflix API impl outputted one line per torrent. 
+            # But the loop below expects to output distinct items.
+            # Let's pick the best single torrent (1080p > 720p) to keep it simple and fast, 
+            # Or output list if we can map quality.
+            
+            # Better approach: Scan for torrent blocks
+            # <div class="modal-torrent"> ... <div class="modal-quality">1080p.BluRay</div> ... href="magnet..."
+            
+            # Fallback: Just take the first magnet (usually 720p or 1080p)
+            if magnets:
+                magnet = magnets[0]
+                # Try to find quality associated (rough check)
+                quality = "1080p" if "1080p" in page and "720p" not in page else "720p"
+                # Refine quality check if possible
+                if "2160p" in page: quality = "4K"
+                elif "1080p" in page: quality = "1080p"
+                
+                # Size
+                size = "N/A"
+                # Try to find size text like "1.5 GB"
+                size_m = re.search(r'(\d+(?:\.\d+)?\s+[KMGT]B)', page)
+                if size_m: size = size_m.group(1)
+                
+                # Output
+                # Format: YTS|Title (Year)|magnet|quality|size|seeds|poster
+                print(f"YTS|{title}{year_str}|{magnet}|{quality}|{size}|N/A|{poster}")
+                count += 1
+                
+        except:
+            continue
+
+if __name__ == "__main__":
+    scrape()
+PYEOF
 }
 
 # Search using YTSRS (en.ytsrs.com) - web crawler approach
@@ -1212,6 +1430,168 @@ PYEOF
     local result=$?
     rm -f "$temp_html" 2>/dev/null
     return $result
+}
+
+
+
+# Group results by Title and Year
+group_results() {
+    python3 << 'PYEOF'
+import sys, re
+from collections import defaultdict
+
+def extract_year(name):
+    # Try 4 digits in parens (19xx-20xx)
+    match = re.search(r'\((19[2-9][0-9]|20[0-2][0-9])\)', name)
+    if match: return match.group(1)
+    
+    # Try just 4 digits 19xx-20xx surrounded by non-alnum or start/end
+    match = re.search(r'(?:^|[\W_])(19[2-9][0-9]|20[0-2][0-9])(?:$|[\W_])', name)
+    if match: return match.group(1)
+    
+    return ""
+
+def normalize_title(title, year):
+    # Replace separators with spaces
+    t = re.sub(r'[._\-\+]', ' ', title)
+    
+    if year:
+        # Remove the year from the title
+        t = t.replace(year, "")
+        
+    # Remove content in parens/brackets
+    t = re.sub(r'\(.*?\)', '', t)
+    t = re.sub(r'\[.*?\]', '', t)
+    
+    # Remove common quality tags to avoid them being part of title
+    tags = ['1080p', '720p', '480p', 'bluray', 'web-dl', 'webrip', 'hdr', 'x264', 'x265', 'hevc', 'aac', 'yts', 'yify', 'rarbg', 'eztv']
+    for tag in tags:
+        t = re.sub(r'\b' + tag + r'\b', '', t, flags=re.IGNORECASE)
+    
+    # Remove non-alphanumeric characters (keep spaces)
+    t = re.sub(r'[^a-zA-Z0-9 ]', '', t)
+    
+    # Collapse multiple spaces and strip
+    t = re.sub(r'\s+', ' ', t).strip()
+    return t.lower()
+
+def extract_seeds(text):
+    match = re.search(r'(\d+)', str(text))
+    val = int(match.group(1)) if match else 0
+    return val
+
+def print_combined(items, preferred_year=""):
+    if not items: return
+    
+    if len(items) == 1:
+        print(items[0]['original'])
+        return
+
+    # Pick best display name
+    best_name = items[0]['name']
+    
+    # Prefer name with the preferred year if available
+    if preferred_year:
+        for item in items:
+            if preferred_year in item['name']:
+                best_name = item['name']
+                break
+    else:
+        # Otherwise prefer names with any year
+        for item in items:
+            if re.search(r'\d{4}', item['name']):
+                best_name = item['name']
+                break
+                
+    sources = [i['source'] for i in items]
+    qualities = [i['quality'] for i in items]
+    sizes = [i['size'] for i in items]
+    seeds = [str(i['seeds']) for i in items]
+    magnets = [i['magnet'] for i in items]
+    
+    best_poster = "N/A"
+    for item in items:
+        if item['poster'] and item['poster'] != "N/A":
+            best_poster = item['poster']
+            break
+            
+    combined_line = f"COMBINED|{best_name}|{'^'.join(sources)}|{'^'.join(seeds)}|{'^'.join(qualities)}|{'^'.join(sizes)}|{'^'.join(magnets)}|{best_poster}"
+    print(combined_line)
+
+# Main Processing
+results = []
+try:
+    for line in sys.stdin:
+        line = line.strip()
+        if not line or '|' not in line: continue
+        results.append(line)
+except:
+    pass
+
+# First pass: Group by Normalized Title
+title_groups = defaultdict(list)
+
+for line in results:
+    parts = line.split('|')
+    if len(parts) < 6: continue
+    
+    source = parts[0]
+    name = parts[1]
+    magnet = parts[2]
+    quality = parts[3]
+    size = parts[4]
+    seeds_text = parts[5] if len(parts) > 5 else "0"
+    poster = parts[6] if len(parts) > 6 else "N/A"
+    
+    year = extract_year(name)
+    title = normalize_title(name, year)
+    
+    if not title: continue
+    
+    item = {
+        'original': line,
+        'source': source,
+        'name': name,
+        'magnet': magnet,
+        'quality': quality,
+        'size': size,
+        'seeds': extract_seeds(seeds_text),
+        'poster': poster,
+        'year': year
+    }
+    
+    title_groups[title].append(item)
+
+# Second pass: Analyze years within each title group
+for title, items in title_groups.items():
+    # Collect all non-empty years found in this group
+    known_years = set(i['year'] for i in items if i['year'])
+    
+    if len(known_years) == 0:
+        # No years found, assume all are same movie
+        print_combined(items)
+        
+    elif len(known_years) == 1:
+        # One valid year found (e.g. 1973).
+        # Assume items with NO year also belong to this movie (e.g. "Badlands")
+        single_year = list(known_years)[0]
+        print_combined(items, preferred_year=single_year)
+        
+    else:
+        # Multiple different years found (e.g. "Total Recall" 1990 vs 2012)
+        # We must split valid years into separate groups.
+        # But what about "unknown year" items?
+        # Safe strategy: Keep unknowns separate? Or try to guess?
+        # For safety/accuracy: Group unknowns together as "Unknown Year", and knowns by their year.
+        
+        by_year = defaultdict(list)
+        for i in items:
+            y = i['year'] if i['year'] else "unknown"
+            by_year[y].append(i)
+            
+        for y, sub_items in by_year.items():
+            print_combined(sub_items, preferred_year=(y if y != "unknown" else ""))
+PYEOF
 }
 
 # Search using 1337x API - same as Stremio 1337x addon
@@ -1630,8 +2010,30 @@ redraw_catalog_page() {
     # Get the cached results array
     eval "local all_results=(\"\${${cached_results_ref}[@]}\")"
     
+    # Group results to remove duplicates
+    local grouped_results=()
+    if [ ${#all_results[@]} -gt 0 ]; then
+        # Create temp file for grouping
+        local group_input=$(mktemp)
+        printf "%s\n" "${all_results[@]}" > "$group_input"
+        
+        # Run grouping
+        local group_output=$(cat "$group_input" | group_results)
+        
+        # Read back into array
+        # If read failed (empty output), grouped_results might be empty but piping worked.
+        # Check if we got output. explicit read loop to be safe with bash array
+        if [ -n "$group_output" ]; then
+             mapfile -t grouped_results <<< "$group_output"
+             all_results=("${grouped_results[@]}")
+             total=${#all_results[@]}
+        fi
+        rm -f "$group_input"
+    fi
+    
     # Calculate pagination
     local total_pages=$(( (total + per_page - 1) / per_page ))
+    if [ "$total_pages" -eq 0 ]; then total_pages=1; fi
     local start_idx=$(( (page - 1) * per_page ))
     local end_idx=$(( start_idx + per_page ))
     
@@ -1705,10 +2107,13 @@ redraw_catalog_page() {
                 local item="${row_items[$i]}"
                 IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
                 
-                local title_year=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/([0-9]{4}).*/\1/')
-                local title=$(echo "$title_year" | sed -E 's/ [0-9]{4}//')
-                local year=$(echo "$title_year" | grep -oE '[0-9]{4}' | head -1)
-                local clean_title=$(echo "$title" | sed -E 's/ \([0-9]{4}\).*//' | sed 's/\[.*\]//g' | xargs)
+                local title_year=$(echo "$name" | sed -E 's/\./ /g')
+                local year=$(echo "$title_year" | grep -oE '\(?[0-9]{4}\)?' | head -1 | tr -d '()')
+                
+                # Careful title cleaning: remove year and everything after, remove brackets
+                local title_clean1=$(echo "$title_year" | sed -E "s/\\(${year}\\).*//")
+                local title_clean2=$(echo "$title_clean1" | sed -E "s/ ${year}.*//")
+                local clean_title=$(echo "$title_clean2" | sed 's/\[.*\]//g' | xargs)
                 
                 if [[ -z "$poster_url" ]] || [[ "$poster_url" == "N/A" ]]; then
                     if [ -n "$clean_title" ]; then
@@ -1755,6 +2160,7 @@ redraw_catalog_page() {
                             IFS='|' read -r source name magnet quality size extra old_poster <<< "$item"
                             row_items[$i]="$source|$name|$magnet|$quality|$size|$extra|$new_poster"
                         fi
+
                     fi
                 done
             fi
@@ -1901,23 +2307,6 @@ display_catalog() {
     local all_pids=()
     local func_names=()
     
-    # Determine source names for display
-    get_source_name() {
-        local func="$1"
-        # Check for YTSRS first (more specific patterns)
-        if [[ "$func" == *"ytsrs"* ]] || [[ "$func" == *"YTSRS"* ]] || [[ "$func" == "get_ytsrs"* ]] || ([[ "$func" == *"_wrapper"* ]] && [[ "$func" == *"ytsrs"* ]]); then
-            echo "YTSRS"
-        elif [[ "$func" == "get_latest_movies" ]] || [[ "$func" == "get_trending_movies" ]] || [[ "$func" == "get_popular_movies" ]] || [[ "$func" == "get_catalog_by_genre" ]]; then
-            echo "YTS"
-        elif [[ "$func" == "get_tpb_movies" ]] || [[ "$func" == "get_tpb_trending" ]] || [[ "$func" == "get_tpb_popular" ]]; then
-            echo "TPB"
-        elif [[ "$func" == "get_latest_shows" ]] || [[ "$func" == *"eztv"* ]]; then
-            echo "EZTV"
-        else
-            echo "API"
-        fi
-    }
-    
     # Only fetch if cache was not used
     if [ "$goto_pagination" != "true" ]; then
         echo -e "${CYAN}Fetching data from sources (all pages)...${RESET}"
@@ -2011,8 +2400,21 @@ display_catalog() {
     
     echo  # Blank line before results
     
+    # Group results
+    local grouped_results=()
+    if [ ${#all_results[@]} -gt 0 ]; then
+        local group_input=$(mktemp)
+        printf "%s\n" "${all_results[@]}" > "$group_input"
+        local group_output=$(cat "$group_input" | group_results)
+        if [ -n "$group_output" ]; then
+             mapfile -t grouped_results <<< "$group_output"
+             all_results=("${grouped_results[@]}")
+        fi
+        rm -f "$group_input"
+    fi
+    
     # Calculate pagination
-    local total=${#all_results[@]}
+    local total="${#all_results[@]}"
     local total_pages=$(( (total + per_page - 1) / per_page ))
     
     # Store cached results in a variable name for redraw function
@@ -2155,7 +2557,59 @@ display_catalog() {
                 if [ "$selection" -ge 1 ] && [ "$selection" -le "$total" ] 2>/dev/null; then
                     local selected_result
                     eval "selected_result=\"\${${cached_results_var}[$((selection - 1))]}\""
+
                     IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
+                    
+                    # Check if item is COMBINED
+                    if [[ "$source" == "COMBINED" ]]; then
+                        IFS='|' read -r _ c_name c_sources c_seeds c_qualities c_sizes c_magnets _ <<< "$selected_result"
+                        local sources_arr=() 
+                        local seeds_arr=()
+                        local qualities_arr=()
+                        local sizes_arr=()
+                        local magnets_arr=()
+                        IFS='^' read -ra sources_arr <<< "$c_sources"
+                        IFS='^' read -ra seeds_arr <<< "$c_seeds"
+                        IFS='^' read -ra qualities_arr <<< "$c_qualities"
+                        IFS='^' read -ra sizes_arr <<< "$c_sizes"
+                        IFS='^' read -ra magnets_arr <<< "$c_magnets"
+                        
+                        echo -e "${CYAN}Multiple versions found for:${RESET} $c_name"
+                        local selected_idx=0
+                        if command -v gum &> /dev/null; then
+                             local gum_opts=()
+                             for i in "${!sources_arr[@]}"; do
+                                 gum_opts+=("[$((i+1))] [${sources_arr[$i]}] ${qualities_arr[$i]} - ${sizes_arr[$i]} (${seeds_arr[$i]} seeds)")
+                             done
+                             echo -e "${GREEN}Select a version:${RESET}"
+                             local choice=$(printf "%s\n" "${gum_opts[@]}" | gum choose --height=10 --cursor="➤ " --header="Available Versions")
+                             if [ -n "$choice" ]; then
+                                 local choice_num=$(echo "$choice" | grep -oE '^\[([0-9]+)\]' | grep -oE '[0-9]+')
+                                 selected_idx=$((choice_num - 1))
+                             else
+                                 selection=""
+                                 continue
+                             fi
+                        else
+                            # Restoring standard terminal mode for input
+                            local stty_bak=$(stty -g)
+                            stty icanon echo
+                            echo "Select details:"
+                            for i in "${!sources_arr[@]}"; do
+                                echo "$((i+1))) [${sources_arr[$i]}] ${qualities_arr[$i]} - ${sizes_arr[$i]} (${seeds_arr[$i]} seeds)"
+                            done
+                            read -p "Enter choice [1-${#sources_arr[@]}]: " choice_num
+                            stty "$stty_bak"
+                            if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
+                                selected_idx=$((choice_num - 1))
+                            fi
+                        fi
+                        source="${sources_arr[$selected_idx]}"
+                        magnet="${magnets_arr[$selected_idx]}"
+                        quality="${qualities_arr[$selected_idx]}"
+                        size="${sizes_arr[$selected_idx]}"
+                        name="$c_name"
+                    fi
                     
                     # Validate magnet link
                     magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
@@ -2328,7 +2782,22 @@ search_torrent() {
     
     rm -f "$temp_file" 2>/dev/null
     
-    # Remove duplicates (same magnet link)
+    rm -f "$temp_file" 2>/dev/null
+    
+    # Group results
+    local grouped_results=()
+    if [ ${#all_results[@]} -gt 0 ]; then
+        local group_input=$(mktemp)
+        printf "%s\n" "${all_results[@]}" > "$group_input"
+        local group_output=$(cat "$group_input" | group_results)
+        if [ -n "$group_output" ]; then
+             mapfile -t grouped_results <<< "$group_output"
+             all_results=("${grouped_results[@]}")
+        fi
+        rm -f "$group_input"
+    fi
+    
+    # Remove duplicates (fallback)
     if [ ${#all_results[@]} -gt 0 ]; then
         local unique_results=()
         local seen_hashes=()
@@ -2414,7 +2883,65 @@ search_torrent() {
         
         if [ -n "$selection" ] && [ "$selection" -ge 1 ] && [ "$selection" -le "$index" ] 2>/dev/null; then
             local selected_result="${all_results[$((selection - 1))]}"
-            IFS='|' read -r source name magnet quality size <<< "$selected_result"
+
+            IFS='|' read -r source name magnet quality size extra poster <<< "$selected_result"
+            
+            # Check if item is COMBINED
+            if [[ "$source" == "COMBINED" ]]; then
+                # Parse output from group_results
+                # Format: COMBINED|Name|Sources|Seeds|Qualities|Sizes|Magnets|Poster
+                IFS='|' read -r _ c_name c_sources c_seeds c_qualities c_sizes c_magnets _ <<< "$selected_result"
+                
+                local sources_arr=() 
+                local seeds_arr=()
+                local qualities_arr=()
+                local sizes_arr=()
+                local magnets_arr=()
+                
+                IFS='^' read -ra sources_arr <<< "$c_sources"
+                IFS='^' read -ra seeds_arr <<< "$c_seeds"
+                IFS='^' read -ra qualities_arr <<< "$c_qualities"
+                IFS='^' read -ra sizes_arr <<< "$c_sizes"
+                IFS='^' read -ra magnets_arr <<< "$c_magnets"
+                
+                echo -e "${CYAN}Multiple versions found for:${RESET} $c_name"
+                
+                local selected_idx=0
+                
+                if command -v gum &> /dev/null; then
+                     local gum_opts=()
+                     for i in "${!sources_arr[@]}"; do
+                         gum_opts+=("[$((i+1))] [${sources_arr[$i]}] ${qualities_arr[$i]} - ${sizes_arr[$i]} (${seeds_arr[$i]} seeds)")
+                     done
+                     
+                     echo -e "${GREEN}Select a version:${RESET}"
+                     local choice=$(printf "%s\n" "${gum_opts[@]}" | gum choose --height=10 --cursor="➤ " --header="Available Versions")
+                     
+                     if [ -n "$choice" ]; then
+                         local choice_num=$(echo "$choice" | grep -oE '^\[([0-9]+)\]' | grep -oE '[0-9]+')
+                         selected_idx=$((choice_num - 1))
+                     else
+                         return 1
+                     fi
+                else
+                    echo "Select details:"
+                    for i in "${!sources_arr[@]}"; do
+                        echo "$((i+1))) [${sources_arr[$i]}] ${qualities_arr[$i]} - ${sizes_arr[$i]} (${seeds_arr[$i]} seeds)"
+                    done
+                    read -p "Enter choice [1-${#sources_arr[@]}]: " choice_num
+                    if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
+                        selected_idx=$((choice_num - 1))
+                    fi
+                fi
+                
+                source="${sources_arr[$selected_idx]}"
+                magnet="${magnets_arr[$selected_idx]}"
+                quality="${qualities_arr[$selected_idx]}"
+                size="${sizes_arr[$selected_idx]}"
+                name="$c_name"
+                
+                echo -e "${GREEN}Selected:${RESET} $source $quality - $size"
+            fi
             
             # Validate magnet link
             magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
