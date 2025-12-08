@@ -78,7 +78,7 @@ show_progress() {
     if [ "$percent" -gt 100 ]; then
         percent=100
     fi
-    printf "\r${CYAN}%s:${RESET} %s %d%% (%d/%d) " "$label" "$bar" "$percent" "$current" "$total"
+    printf "\r${MAGENTA}%s:${RESET} %s %d%% (%d/%d) " "$label" "$bar" "$percent" "$current" "$total"
 }
 
 # Check for jq (needed for API parsing)
@@ -1189,11 +1189,11 @@ get_player_preference() {
     if [ -c /dev/tty ] 2>/dev/null && [ -r /dev/tty ] 2>/dev/null; then
         # Use a timeout to prevent hanging - try to read with a timeout
         echo
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo -e "${YELLOW}First time setup:${RESET} Which media player would you like to use?"
-        echo -e "  ${GREEN}1${RESET}) mpv (recommended)"
-        echo -e "  ${GREEN}2${RESET}) VLC"
-        echo -ne "${YELLOW}Enter choice (1 or 2, default: 1):${RESET} "
+        echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${PINK}First time setup:${RESET} Which media player would you like to use?"
+        echo -e "  ${MAGENTA}1${RESET}) mpv (recommended)"
+        echo -e "  ${MAGENTA}2${RESET}) VLC"
+        echo -ne "${PINK}Enter choice (1 or 2, default: 1):${RESET} "
         
         # Try to read with timeout (10 seconds) - if it fails, default to mpv
         # Use read -t which is built into bash and won't block forever
@@ -1229,7 +1229,7 @@ get_player_preference() {
         echo "PLAYER=$selected_player" > "$config_file"
         echo -e "${GREEN}✓ Preference saved to:${RESET} $config_file"
         echo -e "${CYAN}Note:${RESET} Edit this file to change your preference later."
-        echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
         echo
         
         echo "$selected_player"
@@ -1316,11 +1316,11 @@ check_deps() {
 
 # Show help
 show_help() {
-    echo -e "${BOLD}${CYAN}Termflix - Torrent Streaming Tool${RESET}"
+    echo -e "${BOLD}${MAGENTA}Termflix${RESET} ${CYAN}- Torrent Streaming Tool${RESET}"
     echo
     echo "Stream torrents directly to mpv or VLC player using peerflix."
     echo
-    echo -e "${BOLD}Usage:${RESET}"
+    echo -e "${PINK}Usage:${RESET}"
     echo "  termflix                                    Show latest movies and shows (default)"
     echo "  termflix <magnet_link>"
     echo "  termflix <torrent_file>"
@@ -1330,7 +1330,7 @@ show_help() {
     echo "  termflix popular [movies|shows|all]"
     echo "  termflix catalog [genre]"
     echo
-    echo -e "${BOLD}Options:${RESET}"
+    echo -e "${PINK}Options:${RESET}"
     echo "  -h, --help          Show this help"
     echo "  -l, --list          List available files in torrent"
     echo "  -i, --index <num>   Select specific file by index"
@@ -1340,10 +1340,10 @@ show_help() {
     echo "      --debug         Show debug information (magnet links, etc.)"
     echo "      --clear         Clear catalog cache files"
     echo
-    echo -e "${BOLD}Commands:${RESET}"
+    echo -e "${PINK}Commands:${RESET}"
     echo "  player <mpv|vlc>    Change default media player preference"
     echo
-    echo -e "${BOLD}Examples:${RESET}"
+    echo -e "${PINK}Examples:${RESET}"
     echo "  termflix                                    # Show latest movies and shows"
     echo "  termflix \"magnet:?xt=urn:btih:...\""
     echo "  termflix movie.torrent"
@@ -1352,7 +1352,7 @@ show_help() {
     echo "  termflix trending shows"
     echo "  termflix catalog action"
     echo
-    echo -e "${BOLD}Catalog Features:${RESET}"
+    echo -e "${PINK}Catalog Features:${RESET}"
     echo "  - Browse latest movies and TV shows (like Stremio)"
     echo "  - View trending and popular content"
     echo "  - Browse by genre/category"
