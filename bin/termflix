@@ -15,6 +15,16 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT INT TERM
 
+# Resolve script directory (works even when called via PATH or symlinks)
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
+done
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+export TERMFLIX_SCRIPTS_DIR="${SCRIPT_DIR}/termflix_scripts"
+
 # Charm-style dual spinner function for waiting/searching
 # Uses magenta + cyan spinners rotating in opposite directions
 show_spinner() {
@@ -99,7 +109,144 @@ check_viu() {
     return 0
 }
 
-# Download and display poster image
+# ============================================================
+# VIU ANSI CACHING SYSTEM
+# Pre-renders poster images with viu and caches the ANSI escape
+# sequences for instant display (~4x faster than rendering each time)
+# ============================================================
+
+# Get the VIU render cache directory
+get_viu_cache_dir() {
+    local cache_dir="$HOME/.config/termflix/cache/viu_renders"
+    mkdir -p "$cache_dir" 2>/dev/null
+    echo "$cache_dir"
+}
+
+# Generate cache key from image source and dimensions
+# Returns: hash string suitable for filename
+viu_cache_key() {
+    local image_source="$1"
+    local width="${2:-15}"
+    local height="${3:-10}"
+    
+    # Create unique key from source + dimensions
+    local key_input="${image_source}_${width}x${height}"
+    local hash
+    hash=$(echo "$key_input" | md5 2>/dev/null || echo "$key_input" | md5sum 2>/dev/null | cut -d' ' -f1)
+    echo "${hash:0:16}"
+}
+
+# Check if cached viu render exists and is valid
+# Returns 0 if cache hit, 1 if cache miss
+viu_cache_exists() {
+    local cache_key="$1"
+    local cache_dir
+    cache_dir=$(get_viu_cache_dir)
+    local cache_file="${cache_dir}/${cache_key}.ansi"
+    
+    if [ -f "$cache_file" ] && [ -s "$cache_file" ]; then
+        return 0  # Cache hit
+    fi
+    return 1  # Cache miss
+}
+
+# Pre-render image with viu and cache the ANSI output
+# This is the expensive operation (~300-1000ms) we want to do only once
+prerender_poster_viu() {
+    local image_file="$1"
+    local width="${2:-15}"
+    local height="${3:-10}"
+    local cache_key="${4:-}"
+    
+    if [ ! -f "$image_file" ] || [ ! -s "$image_file" ]; then
+        return 1
+    fi
+    
+    # Generate cache key if not provided
+    if [ -z "$cache_key" ]; then
+        cache_key=$(viu_cache_key "$image_file" "$width" "$height")
+    fi
+    
+    local cache_dir
+    cache_dir=$(get_viu_cache_dir)
+    local cache_file="${cache_dir}/${cache_key}.ansi"
+    
+    # Check if already cached
+    if [ -f "$cache_file" ] && [ -s "$cache_file" ]; then
+        echo "$cache_file"
+        return 0
+    fi
+    
+    # Check if viu is available
+    if ! command -v viu &>/dev/null; then
+        return 1
+    fi
+    
+    # Pre-render with viu and capture ANSI output
+    viu -w "$width" -h "$height" "$image_file" 2>/dev/null > "$cache_file"
+    
+    if [ -f "$cache_file" ] && [ -s "$cache_file" ]; then
+        echo "$cache_file"
+        return 0
+    fi
+    
+    rm -f "$cache_file" 2>/dev/null
+    return 1
+}
+
+# Display cached viu render (instant - just cat the ANSI file)
+display_cached_viu() {
+    local cache_file="$1"
+    local x_pos="${2:-}"
+    local y_pos="${3:-}"
+    
+    if [ ! -f "$cache_file" ] || [ ! -s "$cache_file" ]; then
+        return 1
+    fi
+    
+    # Position cursor if coordinates provided
+    if [ -n "$x_pos" ] && [ -n "$y_pos" ]; then
+        tput cup "$y_pos" "$x_pos" 2>/dev/null || true
+    fi
+    
+    # Instant display - just cat the pre-rendered ANSI
+    cat "$cache_file"
+    return 0
+}
+
+# Background pre-render multiple posters in parallel
+# Usage: prerender_posters_batch image1 image2 image3 ...
+prerender_posters_batch() {
+    local width="${1:-15}"
+    local height="${2:-10}"
+    shift 2
+    local image_files=("$@")
+    
+    local pids=()
+    for image_file in "${image_files[@]}"; do
+        if [ -f "$image_file" ] && [ -s "$image_file" ]; then
+            prerender_poster_viu "$image_file" "$width" "$height" &
+            pids+=($!)
+        fi
+    done
+    
+    # Wait for all background renders to complete
+    for pid in "${pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+}
+
+# Clean up old viu cache files (older than 7 days)
+cleanup_viu_cache() {
+    local cache_dir
+    cache_dir=$(get_viu_cache_dir)
+    
+    if [ -d "$cache_dir" ]; then
+        find "$cache_dir" -name "*.ansi" -type f -mtime +7 -delete 2>/dev/null || true
+    fi
+}
+
+# Download and display poster image (with VIU caching for ~4x speedup)
 display_poster() {
     local poster_source="$1"  # Can be a URL or a cached file path
     local width="${2:-20}"
@@ -134,10 +281,9 @@ display_poster() {
         return 1
     fi
 
-    # Check for Kitty terminal
+    # Check for Kitty terminal (native image protocol - no caching needed)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitty &> /dev/null; then
         if [ -n "$x_pos" ] && [ -n "$y_pos" ]; then
-            # Move cursor to position first
             tput cup "$y_pos" "$x_pos"
             kitty +kitten icat --align left --place "${width}x${height}@${x_pos}x${y_pos}" "$image_file" 2>/dev/null
         else
@@ -146,10 +292,33 @@ display_poster() {
         return 0
     fi
     
-    # Check if viu is available
+    # VIU with ANSI caching (check cache first for instant display)
     if check_viu >/dev/null 2>&1; then
+        # Generate cache key for this image + dimensions
+        local cache_key
+        cache_key=$(viu_cache_key "$image_file" "$width" "$height")
+        local cache_dir
+        cache_dir=$(get_viu_cache_dir)
+        local cached_ansi="${cache_dir}/${cache_key}.ansi"
+        
+        # Try to use cached render first (instant display!)
+        if [ -f "$cached_ansi" ] && [ -s "$cached_ansi" ]; then
+            display_cached_viu "$cached_ansi" "$x_pos" "$y_pos"
+            return 0
+        fi
+        
+        # Cache miss - pre-render and cache for next time
+        local new_cache
+        new_cache=$(prerender_poster_viu "$image_file" "$width" "$height" "$cache_key")
+        
+        if [ -n "$new_cache" ] && [ -f "$new_cache" ]; then
+            # Display the newly cached render
+            display_cached_viu "$new_cache" "$x_pos" "$y_pos"
+            return 0
+        fi
+        
+        # Fallback: direct viu render (shouldn't happen often)
         if [ -n "$x_pos" ] && [ -n "$y_pos" ]; then
-            # Move cursor to position
             tput cup "$y_pos" "$x_pos"
             viu -w "$width" -h "$height" "$image_file" 2>/dev/null
         else
@@ -778,80 +947,10 @@ fetch_google_poster() {
         return 1
     fi
     
-    # Use Python for robust scraping
+    # Use external Python script
     export GOOGLE_QUERY="$title $year movie poster"
     
-    python3 << 'PYEOF'
-import sys, re, urllib.request, urllib.parse, os, ssl
-
-def scrape_google():
-    query = os.environ.get('GOOGLE_QUERY', '')
-    if not query: return
-    
-    # Simple User-Agent
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    
-    try:
-        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}&tbm=isch"
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, context=ctx, timeout=5) as response:
-            html = response.read().decode('utf-8', errors='ignore')
-            
-        # Extract image URLs
-        # Google images usually puts images in: ["http...jpg", height, width]
-        # or simplified HTML: <img src="...">
-        
-        # Look for http/https image URLs ending in jpg/png/jpeg inside the source
-        # This is a heuristic.
-        
-        # Try finding typical "http...jpg" patterns in the script tags or img src
-        # Pattern for high-res images in js: "http.*?\.jpg"
-        
-        # Simple approach: find first img tag with http src that isn't a tiny icon/base64
-        # Google often serves thumbnails in base64 or encrypted urls.
-        
-        # Let's try DuckDuckGo first as it's cleaner? No, user asked for Google.
-        # Efficient Google Images scrape:
-        # Regex for large image url: "http[^"]+\.jpg"
-        
-        urls = re.findall(r'(https?://[^"]+?\.jpg)', html)
-        if not urls:
-             urls = re.findall(r'(https?://[^"]+?\.jpeg)', html)
-             
-        # Filter out google domains
-        valid_urls = [u for u in urls if 'google' not in u and 'gstatic' not in u]
-        
-        if valid_urls:
-            print(valid_urls[0])
-            return
-            
-        # Fallback to whatever img src we can find that looks real
-        img_srcs = re.findall(r'<img[^>]+src=["\'](https?://[^"\']+)["\']', html)
-        valid_srcs = [u for u in img_srcs if 'google' not in u and 'gstatic' not in u and len(u) > 50]
-        
-        if valid_srcs:
-            print(valid_srcs[0])
-            return
-            
-        # Last resort: Any non-google image
-        if img_srcs and len(img_srcs) > 1: # Skip first few which are logos
-             for src in img_srcs:
-                 if 'gstatic' not in src and 'google' not in src:
-                     print(src)
-                     return
-
-    except Exception as e:
-        pass
-
-if __name__ == "__main__":
-    scrape_google()
-PYEOF
+    python3 "$TERMFLIX_SCRIPTS_DIR/google_poster.py"
 }
 
 # Fetch poster from TMDB (TheMovieDB) with caching
@@ -1272,151 +1371,7 @@ search_yts() {
     fi
     
     export YTS_QUERY="$query"
-    
-    python3 << 'PYEOF'
-import sys, re, urllib.request, urllib.parse, os, ssl
-
-def scrape():
-    query = os.environ.get('YTS_QUERY', '')
-    if not query: return
-    
-    # Try multiple YTS domains
-    domains = [
-        'https://yts.mx', 'https://yts.rs', 'https://yts.lt', 
-        'https://yts.do', 'https://yts.ag', 'https://yts.am', 
-        'https://yts.pm', 'https://yts.hn'
-    ]
-    
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-    }
-    
-    # Create SSL context that ignores errors
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
-    
-    html = None
-    base_url = None
-    
-    for domain in domains:
-        try:
-            # Construct search URL
-            # Standard YTS search: /browse-movies/{query}/all/all/0/latest/0/all
-            # Or query param: /browse-movies?keyword={query}
-            url = f"{domain}/browse-movies/{urllib.parse.quote(query)}"
-            
-            req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
-                if response.status == 200:
-                    content = response.read().decode('utf-8', errors='ignore')
-                    if 'browse-movie-wrap' in content or 'browse-movie-link' in content:
-                        html = content
-                        base_url = domain
-                        break
-        except:
-            continue
-            
-    if not html:
-        return
-
-    # Extract movie links
-    # Pattern: <a href="https://yts.mx/movies/..." class="browse-movie-link">
-    # Or relative: <a href="/movies/..." ...>
-    links = re.findall(r'<a[^>]+href=["\'](.*?/movies/[^"\']+)["\'][^>]*class=["\'][^"\']*browse-movie-link', html)
-    if not links:
-        links = re.findall(r'<a[^>]+href=["\'](.*?/movies/[^"\']+)["\']', html)
-        
-    # Filter for actual movie pages (exclude simple navigation if mixed in)
-    movie_links = []
-    seen = set()
-    for link in links:
-        if '/movies/' in link and link not in seen:
-            if not link.startswith('http'):
-                link = base_url + link if link.startswith('/') else f"{base_url}/{link}"
-            movie_links.append(link)
-            seen.add(link)
-            
-    # Process top 10 results
-    count = 0
-    for link in movie_links[:10]:
-        try:
-            req = urllib.request.Request(link, headers=headers)
-            with urllib.request.urlopen(req, context=ctx, timeout=8) as response:
-                page = response.read().decode('utf-8', errors='ignore')
-                
-            # Title
-            title_m = re.search(r'<h1[^>]*>(.*?)</h1>', page)
-            if not title_m: continue
-            title = title_m.group(1).strip()
-            
-            # Year
-            year_m = re.search(r'<h2[^>]*>(\d{4})</h2>', page)
-            if not year_m:
-                year_m = re.search(r'class="year"[^>]*>(\d{4})', page)
-            year = year_m.group(1) if year_m else ""
-            year_str = f" ({year})" if year else ""
-            
-            # Poster (medium)
-            poster_m = re.search(r'<img[^>]+class="[^"]*hero-poster[^"]*"[^>]+src=["\'](.*?)["\']', page)
-            if not poster_m:
-                poster_m = re.search(r'<img[^>]+src=["\'](.*?)["\'][^>]+class="[^"]*hero-poster', page)
-            if not poster_m:
-                poster_m = re.search(r'<img[^>]+class="[^"]*movie-poster[^"]*"[^>]+src=["\'](.*?)["\']', page)
-                
-            poster = poster_m.group(1) if poster_m else "N/A"
-            if poster.startswith('/'): poster = base_url + poster
-            
-            # Torrents
-            # Look for 720p or 1080p magnets
-            # YTS usually has multiple qualities. We prioritize 1080p, then 720p.
-            # Magnets are usually in links with href="magnet:..."
-            
-            # Find all magnets with their quality label
-            # This is tricky with regex on full page. 
-            # Strategy: Find "modal-torrent" or similar blocks, or just scan all magnets and guess quality?
-            # YTS usually puts quality in text near the download button.
-            
-            # Let's extract all magnets first
-            magnets = re.findall(r'href=["\'](magnet:\?xt=urn:btih:[^"\']+)["\']', page)
-            
-            # If we find magnets, try to determine quality and size for the best one
-            # Ideally we want to output one line per quality or just the best one?
-            # Termflix API impl outputted one line per torrent. 
-            # But the loop below expects to output distinct items.
-            # Let's pick the best single torrent (1080p > 720p) to keep it simple and fast, 
-            # Or output list if we can map quality.
-            
-            # Better approach: Scan for torrent blocks
-            # <div class="modal-torrent"> ... <div class="modal-quality">1080p.BluRay</div> ... href="magnet..."
-            
-            # Fallback: Just take the first magnet (usually 720p or 1080p)
-            if magnets:
-                magnet = magnets[0]
-                # Try to find quality associated (rough check)
-                quality = "1080p" if "1080p" in page and "720p" not in page else "720p"
-                # Refine quality check if possible
-                if "2160p" in page: quality = "4K"
-                elif "1080p" in page: quality = "1080p"
-                
-                # Size
-                size = "N/A"
-                # Try to find size text like "1.5 GB"
-                size_m = re.search(r'(\d+(?:\.\d+)?\s+[KMGT]B)', page)
-                if size_m: size = size_m.group(1)
-                
-                # Output
-                # Format: YTS|Title (Year)|magnet|quality|size|seeds|poster
-                print(f"YTS|{title}{year_str}|{magnet}|{quality}|{size}|N/A|{poster}")
-                count += 1
-                
-        except:
-            continue
-
-if __name__ == "__main__":
-    scrape()
-PYEOF
+    python3 "$TERMFLIX_SCRIPTS_DIR/search_yts.py"
 }
 
 # Search using YTSRS (en.ytsrs.com) - web crawler approach
@@ -1518,168 +1473,9 @@ PYEOF
 
 
 
-# Group results by Title and Year
+# Group results by Title and Year using external Python script
 group_results() {
-    tee /tmp/termflix_last_input.txt | python3 << 'PYEOF' 2>/tmp/termflix_last_error.log
-import sys, re
-from collections import defaultdict
-
-def extract_year(name):
-    # Try 4 digits in parens (19xx-20xx)
-    match = re.search(r'\((19[2-9][0-9]|20[0-2][0-9])\)', name)
-    if match: return match.group(1)
-    
-    # Try just 4 digits 19xx-20xx surrounded by non-alnum or start/end
-    match = re.search(r'(?:^|[\W_])(19[2-9][0-9]|20[0-2][0-9])(?:$|[\W_])', name)
-    if match: return match.group(1)
-    
-    return ""
-
-def normalize_title(title, year):
-    # Replace separators with spaces
-    t = re.sub(r'[._\-\+]', ' ', title)
-    
-    if year:
-        # Remove the year from the title
-        t = t.replace(year, "")
-        
-    # Remove content in parens/brackets
-    t = re.sub(r'\(.*?\)', '', t)
-    t = re.sub(r'\[.*?\]', '', t)
-    
-    # Remove common quality tags to avoid them being part of title
-    tags = ['1080p', '720p', '480p', 'bluray', 'web-dl', 'webrip', 'hdr', 'hdrip', 'ts', 'tc', 'cam', 'rip', 'x264', 'x265', 'hevc', 'aac', 'yts', 'yify', 'rarbg', 'eztv']
-    for tag in tags:
-        t = re.sub(r'\b' + tag + r'\b', '', t, flags=re.IGNORECASE)
-
-    # Remove version tags like v2, v3
-    t = re.sub(r'\bv[0-9]+\b', '', t, flags=re.IGNORECASE)
-    
-    # Remove non-alphanumeric characters (keep spaces)
-    t = re.sub(r'[^a-zA-Z0-9 ]', '', t)
-    
-    # Collapse multiple spaces and strip
-    t = re.sub(r'\s+', ' ', t).strip()
-    return t.lower()
-
-
-def extract_seeds(text):
-    match = re.search(r'(\d+)', str(text))
-    val = int(match.group(1)) if match else 0
-    return val
-
-def print_combined(items, preferred_year=""):
-    if not items: return
-    
-    if len(items) == 1:
-        print(items[0]['original'])
-        return
-
-    # Pick best display name
-    best_name = items[0]['name']
-    
-    # Prefer name with the preferred year if available
-    if preferred_year:
-        for item in items:
-            if preferred_year in item['name']:
-                best_name = item['name']
-                break
-    else:
-        # Otherwise prefer names with any year
-        for item in items:
-            if re.search(r'\d{4}', item['name']):
-                best_name = item['name']
-                break
-                
-    sources = [i['source'] for i in items]
-    qualities = [i['quality'] for i in items]
-    sizes = [i['size'] for i in items]
-    seeds = [str(i['seeds']) for i in items]
-    magnets = [i['magnet'] for i in items]
-    
-    best_poster = "N/A"
-    for item in items:
-        if item['poster'] and item['poster'] != "N/A":
-            best_poster = item['poster']
-            break
-            
-    combined_line = f"COMBINED|{best_name}|{'^'.join(sources)}|{'^'.join(seeds)}|{'^'.join(qualities)}|{'^'.join(sizes)}|{'^'.join(magnets)}|{best_poster}"
-    print(combined_line)
-
-# Main Processing
-results = []
-try:
-    for line in sys.stdin:
-        line = line.strip()
-        if not line or '|' not in line: continue
-        results.append(line)
-except:
-    pass
-
-# First pass: Group by Normalized Title
-title_groups = defaultdict(list)
-
-for line in results:
-    parts = line.split('|')
-    if len(parts) < 6: continue
-    
-    source = parts[0]
-    name = parts[1]
-    magnet = parts[2]
-    quality = parts[3]
-    size = parts[4]
-    seeds_text = parts[5] if len(parts) > 5 else "0"
-    poster = parts[6] if len(parts) > 6 else "N/A"
-    
-    year = extract_year(name)
-    title = normalize_title(name, year)
-    
-    if not title: continue
-    
-    item = {
-        'original': line,
-        'source': source,
-        'name': name,
-        'magnet': magnet,
-        'quality': quality,
-        'size': size,
-        'seeds': extract_seeds(seeds_text),
-        'poster': poster,
-        'year': year
-    }
-    
-    title_groups[title].append(item)
-
-# Second pass: Analyze years within each title group
-for title, items in title_groups.items():
-    # Collect all non-empty years found in this group
-    known_years = set(i['year'] for i in items if i['year'])
-    
-    if len(known_years) == 0:
-        # No years found, assume all are same movie
-        print_combined(items)
-        
-    elif len(known_years) == 1:
-        # One valid year found (e.g. 1973).
-        # Assume items with NO year also belong to this movie (e.g. "Badlands")
-        single_year = list(known_years)[0]
-        print_combined(items, preferred_year=single_year)
-        
-    else:
-        # Multiple different years found (e.g. "Total Recall" 1990 vs 2012)
-        # We must split valid years into separate groups.
-        # But what about "unknown year" items?
-        # Safe strategy: Keep unknowns separate? Or try to guess?
-        # For safety/accuracy: Group unknowns together as "Unknown Year", and knowns by their year.
-        
-        by_year = defaultdict(list)
-        for i in items:
-            y = i['year'] if i['year'] else "unknown"
-            by_year[y].append(i)
-            
-        for y, sub_items in by_year.items():
-            print_combined(sub_items, preferred_year=(y if y != "unknown" else ""))
-PYEOF
+    tee /tmp/termflix_last_input.txt | python3 "$TERMFLIX_SCRIPTS_DIR/group_results.py" 2>/tmp/termflix_last_error.log
 }
 
 # Search using 1337x API - same as Stremio 1337x addon
@@ -1747,7 +1543,7 @@ search_eztv() {
     fi
 }
 
-# Scrape movies from YTSRS (en.ytsrs.com)
+# Scrape movies from YTSRS (en.ytsrs.com) using external Python script
 # Supports genre, quality, sort parameters
 get_ytsrs_movies() {
     local genre="${1:-}"
@@ -1755,108 +1551,13 @@ get_ytsrs_movies() {
     local sort="${3:-seeds}"
     local limit="${4:-20}"
     local page="${5:-1}"
-    
-    # Echo source identifier for display logic
-    # echo -e "${CYAN}[YTS]${RESET} Fetching movies..." >&2
 
     if ! command -v python3 &> /dev/null; then
         return 1
     fi
     
-    # Pass arguments to python script via environment variables or args
-    # leveraging the robust scraper logic used in search_ytsrs
     
-    python3 - "$sort" "$limit" "$page" "$genre" << 'PYEOF'
-import sys, re, json, urllib.parse, urllib.request, os
-
-def scrape_yts_movies(sort='date_added', order='desc', limit=20, page=1, genre=None, quality='1080p', keyword=None):
-    """Scrape movies from YTS website - uses working domains: yts.rs and yts.hn"""
-    domains = ['https://yts.mx', 'https://yts.ag', 'https://yts.am', 'https://yts.pm', 'https://yts.lt', 'https://yts.rs', 'https://yts.hn']
-    base_url = None
-    
-    # Test which domain works
-    for domain in domains:
-        try:
-            req = urllib.request.Request(f"{domain}/browse-movies", headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
-            with urllib.request.urlopen(req, timeout=5) as response:
-                if response.status == 200:
-                    base_url = domain
-                    break
-        except: continue
-    
-    if not base_url: base_url = 'https://yts.rs'
-    
-    # Build browse URL
-    url = f"{base_url}/browse-movies"
-    params = []
-    if sort: params.append(f"sort_by={sort}")
-    if page > 1: params.append(f"page={page}")
-    if genre: params.append(f"genre={urllib.parse.quote(genre)}")
-    
-    # Standard YTS params
-    params.append("order_by=desc")
-    
-    if params: url += "?" + "&".join(params)
-    
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            html = response.read().decode('utf-8', errors='ignore')
-    except: return []
-    
-    if not html: return []
-    
-    movie_links = re.findall(r'<a[^>]+href="/movies/([^"]+)"[^>]*class="[^"]*browse-movie-link[^"]*"[^>]*>', html)
-    if not movie_links:
-        movie_links = re.findall(r'<a[^>]+href="/movies/([^"]+)"[^>]*>', html)
-    
-    count = 0
-    for slug in movie_links[:limit]:
-        try:
-            movie_url = f"{base_url}/movies/{slug}"
-            req = urllib.request.Request(movie_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, timeout=10) as response:
-                movie_html = response.read().decode('utf-8', errors='ignore')
-            
-            title_match = re.search(r'<h1[^>]*>([^<]+)</h1>', movie_html)
-            if not title_match: continue
-            title = title_match.group(1).strip()
-            
-            year_match = re.search(r'<span[^>]*class="[^"]*year[^"]*"[^>]*>(\d{4})</span>', movie_html)
-            year = year_match.group(1) if year_match else None
-            
-            poster_match = re.search(r'<img[^>]+class="[^"]*movie-poster[^"]+"[^>]+src="([^"]+)"', movie_html)
-            poster = poster_match.group(1) if poster_match else 'N/A'
-            if poster.startswith('/'): poster = f"{base_url}{poster}"
-            
-            hash_match = re.search(r'magnet:\?xt=urn:btih:([a-fA-F0-9]{40})', movie_html)
-            if not hash_match: hash_match = re.search(r'data-hash="([a-fA-F0-9]{40})"', movie_html)
-            if not hash_match: continue
-            hash_val = hash_match.group(1)
-            
-            quality_match = re.search(r'<span[^>]*class="[^"]*quality[^"]*"[^>]*>([^<]+)</span>', movie_html, re.IGNORECASE)
-            quality = quality_match.group(1).strip() if quality_match else "1080p"
-            
-            size_match = re.search(r'<span[^>]*class="[^"]*size[^"]*"[^>]*>([^<]+)</span>', movie_html, re.IGNORECASE)
-            size = size_match.group(1).strip() if size_match else 'N/A'
-            
-            seeds_match = re.search(r'<span[^>]*class="[^"]*seeds[^"]*"[^>]*>(\d+)</span>', movie_html, re.IGNORECASE)
-            seeds = int(seeds_match.group(1)) if seeds_match else 0
-            
-            year_str = f" ({year})" if year else ""
-            extra = f"{seeds} seeds"
-            print(f"YTS|{title}{year_str}|magnet:?xt=urn:btih:{hash_val}|{quality}|{size}|{extra}|{poster}", flush=True)
-            count += 1
-        except: continue
-
-if __name__ == '__main__':
-    sort = sys.argv[1] if len(sys.argv) > 1 else 'date_added'
-    limit = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-    page = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-    genre = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] != "" else None
-    
-    scrape_yts_movies(sort=sort, limit=limit, page=page, genre=genre)
-PYEOF
+    python3 "$TERMFLIX_SCRIPTS_DIR/get_ytsrs_movies.py" "$sort" "$limit" "$page" "$genre"
     return 0
 }
 # Helper function to get source name from function name
