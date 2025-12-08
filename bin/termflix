@@ -23,15 +23,15 @@ while [ -L "$SCRIPT_SOURCE" ]; do
     [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-export TERMFLIX_SCRIPTS_DIR="${SCRIPT_DIR}/termflix_scripts"
+export TERMFLIX_SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 
 # Source termflix modules
-source "${SCRIPT_DIR}/termflix_modules/core.sh"
-source "${SCRIPT_DIR}/termflix_modules/ui.sh"
-source "${SCRIPT_DIR}/termflix_modules/posters.sh"
-source "${SCRIPT_DIR}/termflix_modules/search.sh"
-source "${SCRIPT_DIR}/termflix_modules/catalog.sh"
-source "${SCRIPT_DIR}/termflix_modules/torrent.sh"
+source "${SCRIPT_DIR}/modules/core.sh"
+source "${SCRIPT_DIR}/modules/ui.sh"
+source "${SCRIPT_DIR}/modules/posters.sh"
+source "${SCRIPT_DIR}/modules/search.sh"
+source "${SCRIPT_DIR}/modules/catalog.sh"
+source "${SCRIPT_DIR}/modules/torrent.sh"
 
 
 
