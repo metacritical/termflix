@@ -25,63 +25,17 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 export TERMFLIX_SCRIPTS_DIR="${SCRIPT_DIR}/termflix_scripts"
 
-# Charm-style dual spinner function for waiting/searching
-# Uses magenta + cyan spinners rotating in opposite directions
-show_spinner() {
-    local pid=$1
-    local message="${2:-Processing...}"
-    local chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-    local idx1=0
-    local idx2=0
-    local len=${#chars[@]}
-    while kill -0 "$pid" 2>/dev/null; do
-        # Dual spinner: magenta goes backward, cyan goes forward
-        printf "\r\033[1;38;5;213m%s\033[1;38;5;87m%s\033[0m %s" "${chars[$idx1]}" "${chars[$idx2]}" "$message"
-        idx1=$(( (idx1 - 1 + len) % len ))
-        idx2=$(( (idx2 + 1) % len ))
-        sleep 0.1
-    done
-    printf "\r\033[1;38;5;46m✓\033[0m %s\n" "$message"
-}
+# Source termflix modules
+source "${SCRIPT_DIR}/termflix_modules/core.sh"
+source "${SCRIPT_DIR}/termflix_modules/ui.sh"
+source "${SCRIPT_DIR}/termflix_modules/posters.sh"
+source "${SCRIPT_DIR}/termflix_modules/search.sh"
+source "${SCRIPT_DIR}/termflix_modules/catalog.sh"
+source "${SCRIPT_DIR}/termflix_modules/torrent.sh"
 
-# Progress bar with emojis
-show_progress() {
-    local current=$1
-    local total=$2
-    local label="${3:-Progress}"
-    local width=20
-    
-    # Ensure current doesn't exceed total
-    if [ "$current" -gt "$total" ]; then
-        current=$total
-    fi
-    
-    local filled=$((current * width / total))
-    if [ "$filled" -gt "$width" ]; then
-        filled=$width
-    fi
-    local empty=$((width - filled))
-    
-    # Build progress bar
-    local bar=""
-    local i=0
-    while [ $i -lt $filled ]; do
-        bar="${bar}🟩"
-        i=$((i + 1))
-    done
-    while [ $i -lt $width ]; do
-        bar="${bar}⬜"
-        i=$((i + 1))
-    done
-    
-    local percent=$((current * 100 / total))
-    if [ "$percent" -gt 100 ]; then
-        percent=100
-    fi
-    printf "\r${MAGENTA}%s:${RESET} %s %d%% (%d/%d) " "$label" "$bar" "$percent" "$current" "$total"
-}
 
-# Check for jq (needed for API parsing)
+
+# Check for jq - now in core.sh module (keeping for backward compat)
 check_jq() {
     if ! command -v jq &> /dev/null; then
         echo -e "${YELLOW}Warning:${RESET} jq not found. Some search features may be limited."
