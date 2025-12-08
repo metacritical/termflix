@@ -330,6 +330,240 @@ display_poster() {
     return 1
 }
 
+# Stremio-style sidebar picker for selecting torrent versions
+# Shows movie poster + info on left, scrollable torrent list on right
+# Args: movie_name poster_url sources_arr seeds_arr qualities_arr sizes_arr magnets_arr
+# Returns: selected magnet link via stdout, or empty if cancelled
+show_sidebar_picker() {
+    local movie_name="$1"
+    local poster_url="$2"
+    shift 2
+    
+    # Parse arrays from pipe-delimited strings
+    local -a sources=()
+    local -a seeds=()
+    local -a qualities=()
+    local -a sizes=()
+    local -a magnets=()
+    
+    IFS='^' read -ra sources <<< "$1"
+    IFS='^' read -ra seeds <<< "$2"
+    IFS='^' read -ra qualities <<< "$3"
+    IFS='^' read -ra sizes <<< "$4"
+    IFS='^' read -ra magnets <<< "$5"
+    
+    local num_items=${#sources[@]}
+    if [ "$num_items" -eq 0 ]; then
+        return 1
+    fi
+    
+    # Terminal dimensions
+    local term_cols=$(tput cols)
+    local term_rows=$(tput lines)
+    
+    # Layout: poster takes left 40%, sidebar takes right 60%
+    local poster_width=$((term_cols * 40 / 100))
+    local sidebar_start=$((poster_width + 2))
+    local sidebar_width=$((term_cols - sidebar_start - 1))
+    
+    # Poster height (use available rows minus header/footer)
+    local header_rows=3
+    local footer_rows=3
+    local content_rows=$((term_rows - header_rows - footer_rows))
+    local poster_height=$((content_rows - 6))  # Leave room for title/info
+    
+    # State
+    local selected=0
+    local scroll_offset=0
+    local visible_items=$((content_rows - 4))  # Header + divider + footer
+    if [ "$visible_items" -lt 3 ]; then visible_items=3; fi
+    
+    # Save terminal state and setup
+    tput smcup 2>/dev/null  # Save screen
+    tput civis 2>/dev/null  # Hide cursor
+    local stty_backup=$(stty -g 2>/dev/null)
+    stty -echo -icanon min 1 time 0 2>/dev/null
+    
+    # Clear and draw initial screen
+    clear
+    
+    local redraw=true
+    while true; do
+        if [ "$redraw" = true ]; then
+            # Clear screen
+            tput cup 0 0
+            
+            # ─── LEFT PANEL: Poster + Info ───
+            # Draw movie poster (if available)
+            if [[ -n "$poster_url" && "$poster_url" != "N/A" ]]; then
+                # Check if Kitty terminal (for faint background effect)
+                if [ -n "$KITTY_WINDOW_ID" ]; then
+                    # Kitty: Display as background with transparency
+                    kitty +kitten icat --place "${poster_width}x${poster_height}@0x$header_rows" \
+                        --scale-up --align left "$poster_url" 2>/dev/null &
+                    wait $! 2>/dev/null
+                elif command -v viu &>/dev/null; then
+                    # Normal terminal: Use viu for large poster
+                    local viu_output=$(viu -w "$poster_width" -h "$poster_height" "$poster_url" 2>/dev/null)
+                    local line_num=$header_rows
+                    while IFS= read -r line; do
+                        tput cup "$line_num" 0
+                        echo -ne "$line"
+                        line_num=$((line_num + 1))
+                    done <<< "$viu_output"
+                fi
+            fi
+            
+            # Movie title (below poster or at top if no poster)
+            local title_row=$((header_rows + poster_height + 1))
+            tput cup "$title_row" 0
+            # Truncate title to fit poster width
+            local display_title="${movie_name:0:$((poster_width - 2))}"
+            echo -ne "${BOLD}${MAGENTA}${display_title}${RESET}"
+            
+            # Extract year from title if present
+            local year=""
+            if [[ "$movie_name" =~ \(([0-9]{4})\) ]]; then
+                year="${BASH_REMATCH[1]}"
+            fi
+            
+            # Info line
+            tput cup $((title_row + 1)) 0
+            local info_text=""
+            if [ -n "$year" ]; then
+                info_text="${CYAN}$year${RESET}"
+            fi
+            info_text="${info_text} ${YELLOW}${num_items} sources${RESET}"
+            echo -ne "$info_text"
+            
+            # ─── RIGHT PANEL: Torrent List ───
+            # Sidebar header
+            tput cup $header_rows "$sidebar_start"
+            echo -ne "${BOLD}${PINK}Available Torrents${RESET}"
+            
+            # Divider
+            tput cup $((header_rows + 1)) "$sidebar_start"
+            local divider=""
+            for ((i=0; i<sidebar_width; i++)); do divider="${divider}─"; done
+            echo -ne "${CYAN}${divider}${RESET}"
+            
+            # Torrent list (scrollable)
+            local list_start_row=$((header_rows + 2))
+            for ((i=0; i<visible_items && i+scroll_offset<num_items; i++)); do
+                local idx=$((i + scroll_offset))
+                local row=$((list_start_row + i))
+                
+                tput cup "$row" "$sidebar_start"
+                # Clear the line first
+                printf "%*s" "$sidebar_width" ""
+                tput cup "$row" "$sidebar_start"
+                
+                local src="${sources[$idx]}"
+                local qty="${qualities[$idx]}"
+                local sd="${seeds[$idx]}"
+                local sz="${sizes[$idx]}"
+                
+                # Format: Quality  Seeds↓  Size  Source
+                local line_text=""
+                
+                # Source color
+                local src_color=""
+                case "$src" in
+                    YTS) src_color="${GREEN}" ;;
+                    TPB) src_color="${YELLOW}" ;;
+                    EZTV) src_color="${BLUE}" ;;
+                    1337x) src_color="${MAGENTA}" ;;
+                    *) src_color="${CYAN}" ;;
+                esac
+                
+                # Highlight selected row
+                if [ "$idx" -eq "$selected" ]; then
+                    # Selected: inverted colors with arrow
+                    echo -ne "${BOLD}▸ ${RESET}"
+                    echo -ne "\033[7m"  # Reverse video
+                    printf "%-8s %6s⬇ %10s %s" "$qty" "$sd" "$sz" "$src"
+                    echo -ne "\033[27m${RESET}"  # Reset reverse
+                else
+                    echo -ne "  "
+                    printf "${CYAN}%-8s${RESET} ${YELLOW}%6s⬇${RESET} %10s ${src_color}%s${RESET}" "$qty" "$sd" "$sz" "$src"
+                fi
+            done
+            
+            # Footer with navigation help
+            tput cup $((term_rows - 2)) "$sidebar_start"
+            echo -ne "${CYAN}↑↓${RESET} navigate • ${GREEN}enter${RESET} select • ${RED}q${RESET} quit"
+            
+            redraw=false
+        fi
+        
+        # Read keypress
+        local key
+        IFS= read -rsn1 key
+        
+        case "$key" in
+            $'\x1b')  # Escape sequence (arrow keys)
+                read -rsn2 -t 0.1 key2
+                case "$key2" in
+                    '[A')  # Up
+                        if [ "$selected" -gt 0 ]; then
+                            selected=$((selected - 1))
+                            # Scroll up if needed
+                            if [ "$selected" -lt "$scroll_offset" ]; then
+                                scroll_offset=$((scroll_offset - 1))
+                            fi
+                            redraw=true
+                        fi
+                        ;;
+                    '[B')  # Down
+                        if [ "$selected" -lt $((num_items - 1)) ]; then
+                            selected=$((selected + 1))
+                            # Scroll down if needed
+                            if [ "$selected" -ge $((scroll_offset + visible_items)) ]; then
+                                scroll_offset=$((scroll_offset + 1))
+                            fi
+                            redraw=true
+                        fi
+                        ;;
+                    *)  # Esc only (cancel)
+                        break
+                        ;;
+                esac
+                ;;
+            '')  # Enter key
+                # Return selected magnet
+                echo "${magnets[$selected]}"
+                break
+                ;;
+            'q'|'Q')  # Quit
+                break
+                ;;
+            'j')  # Vim down
+                if [ "$selected" -lt $((num_items - 1)) ]; then
+                    selected=$((selected + 1))
+                    if [ "$selected" -ge $((scroll_offset + visible_items)) ]; then
+                        scroll_offset=$((scroll_offset + 1))
+                    fi
+                    redraw=true
+                fi
+                ;;
+            'k')  # Vim up
+                if [ "$selected" -gt 0 ]; then
+                    selected=$((selected - 1))
+                    if [ "$selected" -lt "$scroll_offset" ]; then
+                        scroll_offset=$((scroll_offset - 1))
+                    fi
+                    redraw=true
+                fi
+                ;;
+        esac
+    done
+    
+    # Restore terminal
+    stty "$stty_backup" 2>/dev/null
+    tput cnorm 2>/dev/null  # Show cursor
+    tput rmcup 2>/dev/null  # Restore screen
+}
+
 # Draw a row of up to 3 items in a grid
 # Offline rendering: Pre-render images, then draw row-by-row with proper cursor positioning
 draw_grid_row() {
@@ -2591,70 +2825,27 @@ display_catalog() {
                         IFS='^' read -ra sizes_arr <<< "$c_sizes"
                         IFS='^' read -ra magnets_arr <<< "$c_magnets"
                         
-                        echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo -e "${CYAN}Multiple versions found for:${RESET} ${BOLD}${YELLOW}$c_name${RESET}"
-                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-                        local selected_idx=0
-                        if command -v gum &> /dev/null; then
-                             echo -e "${GREEN}Select a version:${RESET}"
-                             # Create a numbered list for gum
-                             local gum_opts=()
-                             for i in "${!sources_arr[@]}"; do
-                                 local src="${sources_arr[$i]}"
-                                 local qty="${qualities_arr[$i]}"
-                                 local sz="${sizes_arr[$i]}"
-                                 local sd="${seeds_arr[$i]}"
-                                 gum_opts+=("$((i+1)). [${src}] ${qty} - ${sz} (${sd} seeds)")
-                             done
-                             local choice=$(printf "%s\n" "${gum_opts[@]}" | gum choose --height=10 --cursor="➤ " --header="Available Versions" --header.foreground="212")
-                             if [ -n "$choice" ]; then
-                                 # Extract number from choice (format: "1. ...")
-                                 local choice_num=$(echo "$choice" | grep -oE '^([0-9]+)' | head -1)
-                                 if [ -n "$choice_num" ] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
-                                     selected_idx=$((choice_num - 1))
-                                 else
-                                     selection=""
-                                     continue
-                                 fi
-                             else
-                                 selection=""
-                                 continue
-                             fi
-                        else
-                            # Restoring standard terminal mode for input
-                            local stty_bak=$(stty -g)
-                            stty icanon echo
-                            echo -e "${GREEN}Available versions:${RESET}"
-                            for i in "${!sources_arr[@]}"; do
-                                local src="${sources_arr[$i]}"
-                                local qty="${qualities_arr[$i]}"
-                                local sz="${sizes_arr[$i]}"
-                                local sd="${seeds_arr[$i]}"
-                                
-                                # Color code sources
-                                local src_color=""
-                                case "$src" in
-                                    YTS) src_color="${GREEN}" ;;
-                                    TPB) src_color="${YELLOW}" ;;
-                                    EZTV) src_color="${BLUE}" ;;
-                                    1337x) src_color="${MAGENTA}" ;;
-                                    *) src_color="${CYAN}" ;;
-                                esac
-                                
-                                echo -e "  ${BOLD}$((i+1)))${RESET} ${src_color}[${src}]${RESET} ${CYAN}${qty}${RESET} - ${sz} (${YELLOW}${sd}${RESET} seeds)"
-                            done
-                            echo
-                            read -p "Enter choice [1-${#sources_arr[@]}]: " choice_num
-                            stty "$stty_bak"
-                            if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
-                                selected_idx=$((choice_num - 1))
-                            else
-                                selection=""
-                                continue
-                            fi
+                        # Use Stremio-style sidebar picker
+                        local selected_magnet=$(show_sidebar_picker "$c_name" "$c_poster" \
+                            "$c_sources" "$c_seeds" "$c_qualities" "$c_sizes" "$c_magnets")
+                        
+                        if [ -z "$selected_magnet" ]; then
+                            # User cancelled
+                            selection=""
+                            redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                            continue
                         fi
+                        
+                        # Find the selected index to get other metadata
+                        magnet="$selected_magnet"
+                        local selected_idx=0
+                        for i in "${!magnets_arr[@]}"; do
+                            if [ "${magnets_arr[$i]}" = "$selected_magnet" ]; then
+                                selected_idx=$i
+                                break
+                            fi
+                        done
                         source="${sources_arr[$selected_idx]}"
-                        magnet="${magnets_arr[$selected_idx]}"
                         quality="${qualities_arr[$selected_idx]}"
                         size="${sizes_arr[$selected_idx]}"
                         name="$c_name"
