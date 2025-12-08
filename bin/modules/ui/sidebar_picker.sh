@@ -23,17 +23,18 @@ SIDEBAR_PICKER_RESULT=""
 # Sets SIDEBAR_PICKER_RESULT to selected index (0-based)
 show_sidebar_picker() {
     local movie_name="$1"
-    local poster_path="$2"
+    local poster_source="$2"  # Can be URL or file path
     shift 2
     local -a torrents=("$@")
     
     local term_cols=$(tput cols)
     local term_rows=$(tput lines)
     
-    # Layout: 45% left (poster), 55% right (list)
-    local left_width=$((term_cols * 45 / 100))
+    # Layout: 40% left (poster), 60% right (list)
+    local left_width=$((term_cols * 40 / 100))
     local right_start=$((left_width + 2))
     local right_width=$((term_cols - right_start - 2))
+    local poster_height=$((term_rows - 8))
     
     local num_items=${#torrents[@]}
     SIDEBAR_PICKER_RESULT=""
@@ -47,23 +48,43 @@ show_sidebar_picker() {
         display_options+=("$display_line")
     done
     
-    # Enter alternate screen
-    tput smcup
+    # Clear screen and draw static layout
     clear
     
     # ─── LEFT PANEL: POSTER ───
-    if [[ -f "$poster_path" ]] && command -v viu &>/dev/null; then
-        tput cup 3 2
-        viu -w $((left_width - 4)) -h $((term_rows - 12)) "$poster_path" 2>/dev/null
-    else
-        # Draw placeholder
+    # Use display_poster function if available (handles VIU caching)
+    local poster_shown=false
+    if [[ -n "$poster_source" ]] && [[ "$poster_source" != "N/A" ]]; then
+        if declare -f display_poster &>/dev/null; then
+            # Use the cached display function from posters.sh
+            display_poster "$poster_source" $((left_width - 4)) $poster_height 2 3 2>/dev/null && poster_shown=true
+        elif command -v viu &>/dev/null; then
+            # Direct viu call as fallback
+            if [[ -f "$poster_source" ]]; then
+                tput cup 3 2
+                viu -w $((left_width - 4)) -h $poster_height "$poster_source" 2>/dev/null && poster_shown=true
+            elif [[ "$poster_source" =~ ^https?:// ]]; then
+                # Download and display
+                local temp_poster="${TMPDIR:-/tmp}/termflix_sidebar_$$.jpg"
+                curl -s --max-time 3 "$poster_source" -o "$temp_poster" 2>/dev/null
+                if [[ -f "$temp_poster" ]]; then
+                    tput cup 3 2
+                    viu -w $((left_width - 4)) -h $poster_height "$temp_poster" 2>/dev/null && poster_shown=true
+                    rm -f "$temp_poster" 2>/dev/null
+                fi
+            fi
+        fi
+    fi
+    
+    # Show placeholder if no poster
+    if [[ "$poster_shown" == "false" ]]; then
         local ph_row=$((term_rows / 2 - 2))
-        tput cup $ph_row 2
-        echo -e "${C_MUTED:-\033[38;5;241m}   🎬 No Poster${RESET:-\033[0m}"
+        tput cup $ph_row $((left_width / 2 - 8))
+        echo -e "${C_MUTED:-\033[38;5;241m}🎬 No Poster${RESET:-\033[0m}"
     fi
     
     # Movie title at bottom of left panel
-    local title_row=$((term_rows - 5))
+    local title_row=$((term_rows - 4))
     tput cup $title_row 2
     local truncated_name="${movie_name:0:$((left_width-4))}"
     echo -e "${C_GLOW:-\033[38;5;212m}${BOLD:-\033[1m}${truncated_name}${RESET:-\033[0m}"
@@ -80,7 +101,7 @@ show_sidebar_picker() {
     
     tput cup 2 $right_start
     echo -ne "${C_PURPLE:-\033[38;5;135m}"
-    printf '─%.0s' $(seq 1 $((right_width - 2)))
+    printf '─%.0s' $(seq 1 $((right_width)))
     echo -ne "${RESET:-\033[0m}"
     
     # ─── FOOTER ───
@@ -93,30 +114,27 @@ show_sidebar_picker() {
     tput cup $((footer_row + 1)) 2
     echo -ne "${C_SUBTLE:-\033[38;5;245m}${num_items} sources${RESET:-\033[0m}"
     
-    local hints="↑↓ navigate • enter select • esc back"
+    local hints="↑↓ navigate • enter select • ctrl+c back"
     local hints_col=$(( (term_cols - ${#hints}) / 2 ))
     tput cup $((footer_row + 1)) $hints_col
     echo -ne "${C_MUTED:-\033[38;5;241m}${hints}${RESET:-\033[0m}"
     
-    # ─── RIGHT PANEL: GUM SELECTOR ───
-    # Position cursor for gum
+    # ─── RIGHT PANEL: SELECTION ───
     tput cup 4 $right_start
     
-    # Use gum for selection
     local selected=""
     if command -v gum &>/dev/null; then
-        # Run gum choose for the selection
+        # Use gum choose for selection
         selected=$(printf '%s\n' "${display_options[@]}" | \
             gum choose \
                 --cursor.foreground 212 \
                 --selected.foreground 212 \
-                --height $((term_rows - 10)) \
+                --height $((term_rows - 8)) \
                 --cursor "➤ " \
                 --cursor-prefix "  " \
-                --unselected-prefix "  " 2>/dev/null)
+                --unselected-prefix "  ")
     else
         # Fallback: numbered selection
-        echo ""
         for i in "${!display_options[@]}"; do
             echo "  $((i+1))) ${display_options[$i]}"
         done
@@ -128,8 +146,8 @@ show_sidebar_picker() {
         fi
     fi
     
-    # Exit alternate screen
-    tput rmcup
+    # Clear screen after selection
+    clear
     
     if [[ -z "$selected" ]]; then
         return 1
