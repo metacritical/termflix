@@ -185,35 +185,43 @@ show_sidebar_picker() {
                 return 1
                 ;;
             $'\x1b')  # Escape key or escape sequences
-                read -rsn2 -t 0.1 seq
-                if [[ -z "$seq" ]]; then
+                # Read up to 3 more chars for full escape sequence (e.g., ESC [ A)
+                local seq=""
+                read -rsn1 -t 0.1 char1
+                if [[ -z "$char1" ]]; then
                     # ESC pressed alone - quit
                     _sidebar_cleanup
                     return 1
                 fi
+                seq="$char1"
+                read -rsn1 -t 0.05 char2
+                [[ -n "$char2" ]] && seq="${seq}${char2}"
+                read -rsn1 -t 0.05 char3
+                [[ -n "$char3" ]] && seq="${seq}${char3}"
+                
                 case "$seq" in
-                    '[A') # Up arrow
+                    '[A'|'OA') # Up arrow
                         if [[ $selected -gt 0 ]]; then
                             ((selected--))
                             [[ $selected -lt $scroll_offset ]] && ((scroll_offset--))
                             _draw_sidebar
                         fi
                         ;;
-                    '[B') # Down arrow
+                    '[B'|'OB') # Down arrow
                         if [[ $selected -lt $((num_items - 1)) ]]; then
                             ((selected++))
                             [[ $((selected - scroll_offset)) -ge $visible_items ]] && ((scroll_offset++))
                             _draw_sidebar
                         fi
                         ;;
-                    '[5') # Page Up
+                    '[5~') # Page Up
                         selected=$((selected - visible_items))
                         [[ $selected -lt 0 ]] && selected=0
                         scroll_offset=$((scroll_offset - visible_items))
                         [[ $scroll_offset -lt 0 ]] && scroll_offset=0
                         _draw_sidebar
                         ;;
-                    '[6') # Page Down
+                    '[6~') # Page Down
                         selected=$((selected + visible_items))
                         [[ $selected -ge $num_items ]] && selected=$((num_items - 1))
                         if [[ $((selected - scroll_offset)) -ge $visible_items ]]; then
