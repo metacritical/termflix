@@ -361,207 +361,159 @@ show_sidebar_picker() {
     local term_cols=$(tput cols)
     local term_rows=$(tput lines)
     
-    # Layout: poster takes left 40%, sidebar takes right 60%
-    local poster_width=$((term_cols * 40 / 100))
-    local sidebar_start=$((poster_width + 2))
+    # Layout: left panel 45%, right sidebar 55%
+    local left_width=$((term_cols * 45 / 100))
+    local sidebar_start=$((left_width + 1))
     local sidebar_width=$((term_cols - sidebar_start - 1))
-    
-    # Poster height (use available rows minus header/footer)
-    local header_rows=3
-    local footer_rows=3
-    local content_rows=$((term_rows - header_rows - footer_rows))
-    local poster_height=$((content_rows - 6))  # Leave room for title/info
     
     # State
     local selected=0
     local scroll_offset=0
-    local visible_items=$((content_rows - 4))  # Header + divider + footer
-    if [ "$visible_items" -lt 3 ]; then visible_items=3; fi
+    local visible_items=$((term_rows - 8))  # Leave room for header/footer
+    if [ "$visible_items" -lt 5 ]; then visible_items=5; fi
+    if [ "$visible_items" -gt "$num_items" ]; then visible_items=$num_items; fi
     
-    # Save terminal state and setup
+    # Save terminal state
+    local stty_backup=$(stty -g 2>/dev/null)
     tput smcup 2>/dev/null  # Save screen
     tput civis 2>/dev/null  # Hide cursor
-    local stty_backup=$(stty -g 2>/dev/null)
     stty -echo -icanon min 1 time 0 2>/dev/null
     
-    # Clear and draw initial screen
+    # Clear screen
     clear
     
-    local redraw=true
-    while true; do
-        if [ "$redraw" = true ]; then
-            # Clear screen
-            tput cup 0 0
-            
-            # ─── LEFT PANEL: Poster + Info ───
-            # Draw movie poster (if available)
-            if [[ -n "$poster_url" && "$poster_url" != "N/A" ]]; then
-                # Check if Kitty terminal (for faint background effect)
-                if [ -n "$KITTY_WINDOW_ID" ]; then
-                    # Kitty: Display as background with transparency
-                    kitty +kitten icat --place "${poster_width}x${poster_height}@0x$header_rows" \
-                        --scale-up --align left "$poster_url" 2>/dev/null &
-                    wait $! 2>/dev/null
-                elif command -v viu &>/dev/null; then
-                    # Normal terminal: Use viu for large poster
-                    local viu_output=$(viu -w "$poster_width" -h "$poster_height" "$poster_url" 2>/dev/null)
-                    local line_num=$header_rows
-                    while IFS= read -r line; do
-                        tput cup "$line_num" 0
-                        echo -ne "$line"
-                        line_num=$((line_num + 1))
-                    done <<< "$viu_output"
-                fi
-            fi
-            
-            # Movie title (below poster or at top if no poster)
-            local title_row=$((header_rows + poster_height + 1))
-            tput cup "$title_row" 0
-            # Truncate title to fit poster width
-            local display_title="${movie_name:0:$((poster_width - 2))}"
-            echo -ne "${BOLD}${MAGENTA}${display_title}${RESET}"
-            
-            # Extract year from title if present
-            local year=""
-            if [[ "$movie_name" =~ \(([0-9]{4})\) ]]; then
-                year="${BASH_REMATCH[1]}"
-            fi
-            
-            # Info line
-            tput cup $((title_row + 1)) 0
-            local info_text=""
-            if [ -n "$year" ]; then
-                info_text="${CYAN}$year${RESET}"
-            fi
-            info_text="${info_text} ${YELLOW}${num_items} sources${RESET}"
-            echo -ne "$info_text"
-            
-            # ─── RIGHT PANEL: Torrent List ───
-            # Sidebar header
-            tput cup $header_rows "$sidebar_start"
-            echo -ne "${BOLD}${PINK}Available Torrents${RESET}"
-            
-            # Divider
-            tput cup $((header_rows + 1)) "$sidebar_start"
-            local divider=""
-            for ((i=0; i<sidebar_width; i++)); do divider="${divider}─"; done
-            echo -ne "${CYAN}${divider}${RESET}"
-            
-            # Torrent list (scrollable)
-            local list_start_row=$((header_rows + 2))
-            for ((i=0; i<visible_items && i+scroll_offset<num_items; i++)); do
-                local idx=$((i + scroll_offset))
-                local row=$((list_start_row + i))
-                
-                tput cup "$row" "$sidebar_start"
-                # Clear the line first
-                printf "%*s" "$sidebar_width" ""
-                tput cup "$row" "$sidebar_start"
-                
-                local src="${sources[$idx]}"
-                local qty="${qualities[$idx]}"
-                local sd="${seeds[$idx]}"
-                local sz="${sizes[$idx]}"
-                
-                # Format: Quality  Seeds↓  Size  Source
-                local line_text=""
-                
-                # Source color
-                local src_color=""
-                case "$src" in
-                    YTS) src_color="${GREEN}" ;;
-                    TPB) src_color="${YELLOW}" ;;
-                    EZTV) src_color="${BLUE}" ;;
-                    1337x) src_color="${MAGENTA}" ;;
-                    *) src_color="${CYAN}" ;;
-                esac
-                
-                # Highlight selected row
-                if [ "$idx" -eq "$selected" ]; then
-                    # Selected: inverted colors with arrow
-                    echo -ne "${BOLD}▸ ${RESET}"
-                    echo -ne "\033[7m"  # Reverse video
-                    printf "%-8s %6s⬇ %10s %s" "$qty" "$sd" "$sz" "$src"
-                    echo -ne "\033[27m${RESET}"  # Reset reverse
-                else
-                    echo -ne "  "
-                    printf "${CYAN}%-8s${RESET} ${YELLOW}%6s⬇${RESET} %10s ${src_color}%s${RESET}" "$qty" "$sd" "$sz" "$src"
-                fi
-            done
-            
-            # Footer with navigation help
-            tput cup $((term_rows - 2)) "$sidebar_start"
-            echo -ne "${CYAN}↑↓${RESET} navigate • ${GREEN}enter${RESET} select • ${RED}q${RESET} quit"
-            
-            redraw=false
-        fi
+    # Draw function
+    _draw_sidebar() {
+        # ─── HEADER ───
+        tput cup 1 0
+        echo -ne "${BOLD}${MAGENTA}${movie_name}${RESET}"
         
-        # Read keypress
+        tput cup 2 0
+        echo -ne "${CYAN}${num_items} sources available${RESET}"
+        
+        # ─── DIVIDER ───
+        tput cup 4 0
+        local divider=""
+        for ((i=0; i<term_cols; i++)); do divider="${divider}─"; done
+        echo -ne "${CYAN}${divider}${RESET}"
+        
+        # ─── SIDEBAR HEADER ───
+        tput cup 4 "$sidebar_start"
+        echo -ne "${BOLD}${PINK}Available Torrents${RESET}"
+        
+        # ─── TORRENT LIST ───
+        local list_start_row=6
+        for ((i=0; i<visible_items && i+scroll_offset<num_items; i++)); do
+            local idx=$((i + scroll_offset))
+            local row=$((list_start_row + i))
+            
+            tput cup "$row" "$sidebar_start"
+            # Clear the line
+            printf "%*s" "$sidebar_width" ""
+            tput cup "$row" "$sidebar_start"
+            
+            local src="${sources[$idx]}"
+            local qty="${qualities[$idx]}"
+            local sd="${seeds[$idx]}"
+            local sz="${sizes[$idx]}"
+            
+            # Source color
+            local src_color=""
+            case "$src" in
+                YTS) src_color="${GREEN}" ;;
+                TPB) src_color="${YELLOW}" ;;
+                EZTV) src_color="${BLUE}" ;;
+                1337x) src_color="${MAGENTA}" ;;
+                *) src_color="${CYAN}" ;;
+            esac
+            
+            # Highlight selected row
+            if [ "$idx" -eq "$selected" ]; then
+                echo -ne "${BOLD}▸ \033[7m"  # Arrow + Reverse video
+                printf "%-8s %6s⬇ %10s %-8s" "$qty" "$sd" "$sz" "$src"
+                echo -ne "\033[27m${RESET}"
+            else
+                echo -ne "  "
+                printf "${CYAN}%-8s${RESET} ${YELLOW}%6s⬇${RESET} %10s ${src_color}%-8s${RESET}" "$qty" "$sd" "$sz" "$src"
+            fi
+        done
+        
+        # ─── FOOTER ───
+        tput cup $((term_rows - 2)) 0
+        echo -ne "${CYAN}↑↓${RESET} navigate • ${GREEN}enter${RESET} select • ${RED}q${RESET} quit"
+    }
+    
+    # Initial draw
+    _draw_sidebar
+    
+    # Main loop
+    while true; do
         local key
         IFS= read -rsn1 key
         
         case "$key" in
-            $'\x1b')  # Escape sequence (arrow keys)
+            $'\x1b')  # Escape sequence
                 read -rsn2 -t 0.1 key2
                 case "$key2" in
-                    '[A')  # Up
+                    '[A'|'[k')  # Up
                         if [ "$selected" -gt 0 ]; then
                             selected=$((selected - 1))
-                            # Scroll up if needed
                             if [ "$selected" -lt "$scroll_offset" ]; then
-                                scroll_offset=$((scroll_offset - 1))
+                                scroll_offset=$selected
                             fi
-                            redraw=true
+                            _draw_sidebar
                         fi
                         ;;
-                    '[B')  # Down
+                    '[B'|'[j')  # Down
                         if [ "$selected" -lt $((num_items - 1)) ]; then
                             selected=$((selected + 1))
-                            # Scroll down if needed
                             if [ "$selected" -ge $((scroll_offset + visible_items)) ]; then
-                                scroll_offset=$((scroll_offset + 1))
+                                scroll_offset=$((selected - visible_items + 1))
                             fi
-                            redraw=true
+                            _draw_sidebar
                         fi
                         ;;
-                    *)  # Esc only (cancel)
-                        break
+                    *)  # Esc only
+                        stty "$stty_backup" 2>/dev/null
+                        tput cnorm 2>/dev/null
+                        tput rmcup 2>/dev/null
+                        return 0
                         ;;
                 esac
                 ;;
-            '')  # Enter key
-                # Return selected magnet
+            '')  # Enter
+                stty "$stty_backup" 2>/dev/null
+                tput cnorm 2>/dev/null
+                tput rmcup 2>/dev/null
                 echo "${magnets[$selected]}"
-                break
+                return 0
                 ;;
-            'q'|'Q')  # Quit
-                break
+            'q'|'Q')
+                stty "$stty_backup" 2>/dev/null
+                tput cnorm 2>/dev/null
+                tput rmcup 2>/dev/null
+                return 0
                 ;;
             'j')  # Vim down
                 if [ "$selected" -lt $((num_items - 1)) ]; then
                     selected=$((selected + 1))
                     if [ "$selected" -ge $((scroll_offset + visible_items)) ]; then
-                        scroll_offset=$((scroll_offset + 1))
+                        scroll_offset=$((selected - visible_items + 1))
                     fi
-                    redraw=true
+                    _draw_sidebar
                 fi
                 ;;
             'k')  # Vim up
                 if [ "$selected" -gt 0 ]; then
                     selected=$((selected - 1))
                     if [ "$selected" -lt "$scroll_offset" ]; then
-                        scroll_offset=$((scroll_offset - 1))
+                        scroll_offset=$selected
                     fi
-                    redraw=true
+                    _draw_sidebar
                 fi
                 ;;
         esac
     done
-    
-    # Restore terminal
-    stty "$stty_backup" 2>/dev/null
-    tput cnorm 2>/dev/null  # Show cursor
-    tput rmcup 2>/dev/null  # Restore screen
 }
 
 # Draw a row of up to 3 items in a grid
