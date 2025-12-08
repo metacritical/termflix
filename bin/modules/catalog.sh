@@ -1223,19 +1223,33 @@ display_catalog() {
                         fi
                         
                         # Use Stremio-style sidebar picker
-                        local choice_idx
-                        if choice_idx=$(show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}"); then
-                            # User selected an option
-                            source="${sources_arr[$choice_idx]}"
-                            magnet="${magnets_arr[$choice_idx]}"
-                            quality="${qualities_arr[$choice_idx]}"
-                            size="${sizes_arr[$choice_idx]}"
-                            name="$c_name"
+                        local choice_idx=""
+                        local picker_result
+                        if picker_result=$(show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}" 2>/dev/null); then
+                            # Strip any non-numeric characters and get just the index
+                            choice_idx=$(echo "$picker_result" | tr -cd '0-9' | head -c 10)
                             
-                            # Clean up temp poster
-                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
+                            # Validate the index
+                            if [[ -n "$choice_idx" ]] && [[ "$choice_idx" =~ ^[0-9]+$ ]] && \
+                               [[ $choice_idx -ge 0 ]] && [[ $choice_idx -lt ${#sources_arr[@]} ]]; then
+                                # User selected a valid option
+                                source="${sources_arr[$choice_idx]}"
+                                magnet="${magnets_arr[$choice_idx]}"
+                                quality="${qualities_arr[$choice_idx]}"
+                                size="${sizes_arr[$choice_idx]}"
+                                name="$c_name"
+                                
+                                # Clean up temp poster
+                                [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
+                            else
+                                # Invalid index - treat as cancel
+                                [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
+                                selection=""
+                                redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                                continue
+                            fi
                         else
-                            # User cancelled
+                            # User cancelled or picker failed
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
