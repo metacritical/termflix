@@ -1243,6 +1243,7 @@ display_catalog() {
                                 # Invalid index - treat as cancel
                                 [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                                 selection=""
+                                tput reset 2>/dev/null || clear
                                 redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
                                 continue
                             fi
@@ -1250,6 +1251,7 @@ display_catalog() {
                             # User cancelled
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
+                            tput reset 2>/dev/null || clear
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
                             continue
                         fi
@@ -1281,6 +1283,7 @@ display_catalog() {
                             # User cancelled
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
+                            tput reset 2>/dev/null || clear
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
                             continue
                         fi
