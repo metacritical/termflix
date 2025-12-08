@@ -3471,9 +3471,44 @@ EOF
                     echo -e "${CYAN}This typically takes 8-30 seconds depending on tracker response.${RESET}"
                     echo ""
                     
+                    # Set up SIGINT trap to handle Ctrl+C gracefully
+                    _cleanup_transmission() {
+                        echo ""  # New line after spinner
+                        echo -e "${YELLOW}⚠ Interrupted by user${RESET}"
+                        
+                        # Kill transmission process
+                        if [ -n "$transmission_pid" ] && kill -0 "$transmission_pid" 2>/dev/null; then
+                            echo -e "${CYAN}Stopping transmission-cli...${RESET}"
+                            kill -TERM "$transmission_pid" 2>/dev/null
+                            sleep 1
+                            # Force kill if still running
+                            kill -0 "$transmission_pid" 2>/dev/null && kill -9 "$transmission_pid" 2>/dev/null
+                        fi
+                        
+                        # Restore original transmission config if we modified it
+                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
+                            cp "$config_backup" "$transmission_config" 2>/dev/null
+                            rm -f "$config_backup" 2>/dev/null
+                        fi
+                        
+                        # Clean up temp files
+                        rm -f "$transmission_output" 2>/dev/null
+                        rm -f "$temp_output" 2>/dev/null
+                        
+                        # Remove the trap
+                        trap - INT
+                        
+                        # Exit gracefully
+                        exit 130  # Standard exit code for SIGINT
+                    }
+                    
+                    # Register the trap
+                    trap '_cleanup_transmission' INT
+                    
                     # Wait a bit for transmission to recognize the torrent and start downloading
                     # Based on user testing: ~4s to recognize torrent, ~8s to show progress
                     echo -e "${CYAN}Waiting for transmission to initialize...${RESET}"
+                    echo -e "${YELLOW}Tip: Press ${BOLD}Ctrl+C${RESET}${YELLOW} to cancel${RESET}"
                     sleep 5
                     
                     # Wait for video file to appear - transmission-cli takes time to connect to peers
@@ -3543,6 +3578,9 @@ EOF
                         sleep 0.5
                         video_wait=$((video_wait + 1))
                     done
+                    
+                    # Remove SIGINT trap now that wait loop is complete
+                    trap - INT
                     
                     if [ -z "$video_file" ] || [ ! -f "$video_file" ]; then
                         echo ""
