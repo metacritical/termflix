@@ -3474,7 +3474,7 @@ EOF
                     # Set up SIGINT trap to handle Ctrl+C gracefully
                     _cleanup_transmission() {
                         echo ""  # New line after spinner
-                        echo -e "${YELLOW}⚠ Interrupted by user${RESET}"
+                        echo -e "${YELLOW}⚠ Cancelled by user${RESET}"
                         
                         # Kill transmission process
                         if [ -n "$transmission_pid" ] && kill -0 "$transmission_pid" 2>/dev/null; then
@@ -3495,11 +3495,13 @@ EOF
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
                         
-                        # Remove the trap
+                        # Remove the trap before returning
                         trap - INT
                         
-                        # Exit gracefully
-                        exit 130  # Standard exit code for SIGINT
+                        # Return to catalog instead of exiting
+                        echo -e "${CYAN}Returning to catalog...${RESET}"
+                        sleep 1
+                        return 1
                     }
                     
                     # Register the trap
