@@ -1157,7 +1157,109 @@ fetch_omdb_poster() {
     # Use TMDB only (no OMDB fallback)
     fetch_tmdb_poster "$1" "$2"
 }
-export -f get_omdb_api_key get_tmdb_api_key get_tmdb_read_token fetch_omdb_poster fetch_tmdb_poster fetch_google_poster
+
+# Enrich entries with missing posters by looking them up on TMDB
+# Input: array of result lines (passed via global variable name)
+# Modifies the array in place, updating N/A posters with TMDB URLs
+enrich_missing_posters() {
+    local -n results_ref=$1  # nameref to results array
+    local max_to_enrich=${2:-20}  # Limit to first N entries for speed
+    local enriched=0
+    local pids=()
+    local tmpdir=$(mktemp -d)
+    
+    # Extract title and year from entry name, fetch poster in background
+    for i in "${!results_ref[@]}"; do
+        [ "$enriched" -ge "$max_to_enrich" ] && break
+        
+        local entry="${results_ref[$i]}"
+        local poster_field=""
+        
+        # Get the poster field (last field in pipe-delimited format)
+        if [[ "$entry" =~ ^COMBINED\| ]]; then
+            # COMBINED|Name|Sources|Seeds|Qualities|Sizes|Magnets|Poster
+            poster_field=$(echo "$entry" | cut -d'|' -f8)
+        else
+            # Source|Name|Magnet|Quality|Size|Extra|Poster
+            poster_field=$(echo "$entry" | cut -d'|' -f7)
+        fi
+        
+        # Skip if already has poster
+        if [[ -n "$poster_field" && "$poster_field" != "N/A" && "$poster_field" != "" ]]; then
+            continue
+        fi
+        
+        # Extract name for TMDB lookup
+        local name=""
+        if [[ "$entry" =~ ^COMBINED\| ]]; then
+            name=$(echo "$entry" | cut -d'|' -f2)
+        else
+            name=$(echo "$entry" | cut -d'|' -f2)
+        fi
+        
+        # Extract year if present (e.g., "Movie Name (2025)")
+        local year=""
+        if [[ "$name" =~ \(([0-9]{4})\) ]]; then
+            year="${BASH_REMATCH[1]}"
+        fi
+        
+        # Clean title (remove year, quality tags, etc.)
+        local clean_title=$(echo "$name" | sed -E 's/\([0-9]{4}\)//g' | sed -E 's/\[[^\]]+\]//g' | sed -E 's/(1080p|720p|480p|HDRip|WEBRip|BluRay|HEVC|x264|x265).*//gi' | xargs)
+        
+        if [ -n "$clean_title" ]; then
+            # Fetch poster in background and save to temp file
+            (
+                local poster_url=$(fetch_tmdb_poster "$clean_title" "$year" 2>/dev/null)
+                if [[ -n "$poster_url" && "$poster_url" != "N/A" ]]; then
+                    echo "$poster_url" > "$tmpdir/poster_$i"
+                fi
+            ) &
+            pids+=($!)
+            enriched=$((enriched + 1))
+        fi
+    done
+    
+    # Wait for all fetches to complete (with timeout)
+    local wait_count=0
+    while [ $wait_count -lt 20 ]; do  # 10 second timeout
+        local all_done=true
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then
+                all_done=false
+                break
+            fi
+        done
+        [ "$all_done" = true ] && break
+        sleep 0.5
+        wait_count=$((wait_count + 1))
+    done
+    
+    # Kill remaining background processes
+    for pid in "${pids[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    wait "${pids[@]}" 2>/dev/null || true
+    
+    # Update entries with fetched posters
+    for i in "${!results_ref[@]}"; do
+        if [ -f "$tmpdir/poster_$i" ]; then
+            local new_poster=$(cat "$tmpdir/poster_$i")
+            local entry="${results_ref[$i]}"
+            
+            # Replace the N/A poster with the fetched URL
+            if [[ "$entry" =~ ^COMBINED\| ]]; then
+                # Replace last field (poster)
+                results_ref[$i]=$(echo "$entry" | sed "s/|N/A$/|$new_poster/" | sed "s/|$/|$new_poster/")
+            else
+                results_ref[$i]=$(echo "$entry" | sed "s/|N/A$/|$new_poster/" | sed "s/|$/|$new_poster/")
+            fi
+        fi
+    done
+    
+    rm -rf "$tmpdir" 2>/dev/null
+}
+
+export -f get_omdb_api_key get_tmdb_api_key get_tmdb_read_token fetch_omdb_poster fetch_tmdb_poster fetch_google_poster enrich_missing_posters
 
 # Colors - Charm/Charmbracelet style palette
 # Inspired by Charm CLI tools (gum, bubbletea, lipgloss)
@@ -2315,7 +2417,14 @@ display_catalog() {
         rm -f "$group_input"
         printf "\r${GREEN}✓ Grouped ${#all_results[@]} results${RESET}                    \n"
         
-        # Save GROUPED results to cache (after grouping)
+        # Enrich entries with missing posters from TMDB
+        if [ ${#all_results[@]} -gt 0 ]; then
+            printf "${CYAN}Fetching posters from TMDB...${RESET}"
+            enrich_missing_posters all_results 20  # Enrich up to 20 entries per page
+            printf "\r${GREEN}✓ Enriched posters${RESET}                    \n"
+        fi
+        
+        # Save GROUPED results to cache (after grouping and enrichment)
         if [ ${#all_results[@]} -gt 0 ]; then
             printf "%s\n" "${all_results[@]}" > "$cache_file" 2>/dev/null
         fi
