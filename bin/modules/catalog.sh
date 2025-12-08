@@ -1200,51 +1200,43 @@ display_catalog() {
                         IFS='^' read -ra sizes_arr <<< "$c_sizes"
                         IFS='^' read -ra magnets_arr <<< "$c_magnets"
                         
-                        # Display simple numbered list for version selection
-                        echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo -e "${CYAN}Multiple versions found for:${RESET} ${BOLD}${YELLOW}$c_name${RESET}"
-                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
                         
+                        # Build torrent list for sidebar picker
+                        # Format: source|quality|seeds|size|magnet
+                        local -a torrent_options=()
                         for i in "${!sources_arr[@]}"; do
                             local src="${sources_arr[$i]}"
                             local qty="${qualities_arr[$i]}"
                             local sz="${sizes_arr[$i]}"
                             local sd="${seeds_arr[$i]}"
-                            
-                            # Color code sources
-                            local src_color=""
-                            case "$src" in
-                                YTS) src_color="${GREEN}" ;;
-                                TPB) src_color="${YELLOW}" ;;
-                                EZTV) src_color="${BLUE}" ;;
-                                1337x) src_color="${MAGENTA}" ;;
-                                *) src_color="${CYAN}" ;;
-                            esac
-                            
-                            echo -e "  ${BOLD}$((i+1)))${RESET} ${src_color}[${src}]${RESET} ${CYAN}${qty}${RESET} - ${sz} (${YELLOW}${sd}${RESET} seeds)"
+                            local mg="${magnets_arr[$i]}"
+                            torrent_options+=("${src}|${qty}|${sd}|${sz}|${mg}")
                         done
-                        echo
                         
-                        # Get user input
-                        local choice_num
-                        read -p "Enter choice [1-${#sources_arr[@]}] or 'q' to cancel: " choice_num
-                        
-                        if [[ "$choice_num" == "q" ]] || [[ "$choice_num" == "Q" ]]; then
-                            selection=""
-                            redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                            continue
+                        # Get poster path if available
+                        local poster_file=""
+                        if [[ -n "$c_poster" ]] && [[ "$c_poster" != "N/A" ]]; then
+                            # Download poster to temp file for display
+                            local temp_poster="${TMPDIR:-/tmp}/termflix_poster_$$.jpg"
+                            curl -s --max-time 5 "$c_poster" -o "$temp_poster" 2>/dev/null
+                            [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
                         fi
                         
-                        if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
-                            local selected_idx=$((choice_num - 1))
-                            source="${sources_arr[$selected_idx]}"
-                            magnet="${magnets_arr[$selected_idx]}"
-                            quality="${qualities_arr[$selected_idx]}"
-                            size="${sizes_arr[$selected_idx]}"
+                        # Use Stremio-style sidebar picker
+                        local choice_idx
+                        if choice_idx=$(show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}"); then
+                            # User selected an option
+                            source="${sources_arr[$choice_idx]}"
+                            magnet="${magnets_arr[$choice_idx]}"
+                            quality="${qualities_arr[$choice_idx]}"
+                            size="${sizes_arr[$choice_idx]}"
                             name="$c_name"
+                            
+                            # Clean up temp poster
+                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                         else
-                            echo -e "${RED}Invalid choice${RESET}"
-                            sleep 1
+                            # User cancelled
+                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
                             continue
