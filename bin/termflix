@@ -2765,7 +2765,7 @@ display_catalog() {
                     
                     # Check if item is COMBINED
                     if [[ "$source" == "COMBINED" ]]; then
-                        IFS='|' read -r _ c_name c_sources c_seeds c_qualities c_sizes c_magnets _ <<< "$selected_result"
+                        IFS='|' read -r _ c_name c_sources c_seeds c_qualities c_sizes c_magnets c_poster <<< "$selected_result"
                         local sources_arr=() 
                         local seeds_arr=()
                         local qualities_arr=()
