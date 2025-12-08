@@ -1221,12 +1221,11 @@ display_catalog() {
                             [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
                         fi
                         
-                        # Use Stremio-style sidebar picker
-                        local choice_idx=""
-                        local picker_result
-                        if picker_result=$(show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}" 2>/dev/null); then
-                            # Strip any non-numeric characters and get just the index
-                            choice_idx=$(echo "$picker_result" | tr -cd '0-9' | head -c 10)
+                        # Use Stremio-style sidebar picker (call directly, not in subshell)
+                        SIDEBAR_PICKER_RESULT=""
+                        if show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}"; then
+                            # Get result from global variable
+                            local choice_idx="$SIDEBAR_PICKER_RESULT"
                             
                             # Validate the index
                             if [[ -n "$choice_idx" ]] && [[ "$choice_idx" =~ ^[0-9]+$ ]] && \
@@ -1248,7 +1247,7 @@ display_catalog() {
                                 continue
                             fi
                         else
-                            # User cancelled or picker failed
+                            # User cancelled
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
@@ -1273,9 +1272,9 @@ display_catalog() {
                             [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
                         fi
                         
-                        # Use Stremio-style sidebar picker
-                        local picker_result
-                        if picker_result=$(show_sidebar_picker "$name" "$poster_file" "${torrent_options[@]}" 2>/dev/null); then
+                        # Use Stremio-style sidebar picker (call directly, not in subshell)
+                        SIDEBAR_PICKER_RESULT=""
+                        if show_sidebar_picker "$name" "$poster_file" "${torrent_options[@]}"; then
                             # User confirmed - keep existing source/magnet/etc
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                         else

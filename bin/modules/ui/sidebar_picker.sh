@@ -12,10 +12,14 @@ _TERMFLIX_SIDEBAR_LOADED=1
 # SIDEBAR PICKER
 # ═══════════════════════════════════════════════════════════════
 
+# Global result variable (set after show_sidebar_picker returns)
+SIDEBAR_PICKER_RESULT=""
+
 # Show Stremio-style sidebar picker for torrent selection
 # Args: movie_name poster_path torrent1 torrent2 ...
 # Torrents format: source|quality|seeds|size|magnet
-# Returns: selected index via stdout, or 1 on cancel
+# Returns: 0 on selection, 1 on cancel
+# Sets SIDEBAR_PICKER_RESULT to selected index (0-based)
 show_sidebar_picker() {
     local movie_name="$1"
     local poster_path="$2"
@@ -173,7 +177,7 @@ show_sidebar_picker() {
                 ;;
             '')  # Enter - select
                 _sidebar_cleanup
-                echo "$selected"
+                SIDEBAR_PICKER_RESULT="$selected"
                 return 0
                 ;;
             q|Q)  # Quit
