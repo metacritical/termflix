@@ -572,8 +572,14 @@ draw_grid_row() {
             IFS='^' read -ra combined_qualities <<< "$c_qualities"
             IFS='^' read -ra combined_sizes <<< "$c_sizes"
             
-            # Build source tags (e.g., [TPB] [YTS])
+            # Build source tags (e.g., [TPB] [YTS]) - deduplicate sources
+            declare -A seen_sources=()
             for src in "${combined_sources[@]}"; do
+                # Skip if we've already seen this source
+                if [[ -n "${seen_sources[$src]}" ]]; then
+                    continue
+                fi
+                seen_sources[$src]=1
                 case "$src" in
                     YTS) source_tags="${source_tags}[${GREEN}YTS${RESET}] " ;;
                     TPB) source_tags="${source_tags}[${YELLOW}TPB${RESET}] " ;;
@@ -582,6 +588,7 @@ draw_grid_row() {
                     *) source_tags="${source_tags}[${CYAN}${src}${RESET}] " ;;
                 esac
             done
+            unset seen_sources
             source_tags=$(echo "$source_tags" | sed 's/[[:space:]]*$//')  # Trim trailing space
             
             # Calculate max seeds
