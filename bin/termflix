@@ -15,19 +15,23 @@ cleanup_on_exit() {
 }
 trap cleanup_on_exit EXIT INT TERM
 
-# Spinner function for waiting/searching
+# Charm-style dual spinner function for waiting/searching
+# Uses magenta + cyan spinners rotating in opposite directions
 show_spinner() {
     local pid=$1
     local message="${2:-Processing...}"
-    local spinstr='|/-\'
-    local delay=0.1
+    local chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+    local idx1=0
+    local idx2=0
+    local len=${#chars[@]}
     while kill -0 "$pid" 2>/dev/null; do
-        local temp=${spinstr#?}
-        printf "\r${CYAN}%s${RESET} [%c]" "$message" "$spinstr"
-        local spinstr=$temp${spinstr%"$temp"}
-        sleep $delay
+        # Dual spinner: magenta goes backward, cyan goes forward
+        printf "\r\033[1;38;5;213m%s\033[1;38;5;87m%s\033[0m %s" "${chars[$idx1]}" "${chars[$idx2]}" "$message"
+        idx1=$(( (idx1 - 1 + len) % len ))
+        idx2=$(( (idx2 + 1) % len ))
+        sleep 0.1
     done
-    printf "\r${GREEN}%s${RESET} [✓]\n" "$message"
+    printf "\r\033[1;38;5;46m✓\033[0m %s\n" "$message"
 }
 
 # Progress bar with emojis
@@ -1049,14 +1053,23 @@ fetch_omdb_poster() {
 }
 export -f get_omdb_api_key get_tmdb_api_key get_tmdb_read_token fetch_omdb_poster fetch_tmdb_poster fetch_google_poster
 
-# Colors
+# Colors - Charm/Charmbracelet style palette
+# Inspired by Charm CLI tools (gum, bubbletea, lipgloss)
 RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
+GREEN='\033[1;38;5;46m'       # Bright luminous green (like Charm selection highlight)
+YELLOW='\033[1;38;5;220m'     # Warm yellow/gold
+BLUE='\033[1;38;5;81m'        # Light blue (like Charm keywords)
+CYAN='\033[1;38;5;87m'        # Bright cyan
+MAGENTA='\033[1;38;5;213m'    # Vibrant magenta/pink (Charm accent - like ////// separators)
+PURPLE='\033[1;38;5;135m'     # Medium purple (Charm border color)
+PINK='\033[1;38;5;219m'       # Soft pink for secondary accents
 BOLD='\033[1m'
 RESET='\033[0m'
+
+# Charm-style spinner configuration (unified across all spinners)
+CHARM_SPINNER_CHARS=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+CHARM_SPINNER_1_COLOR="$MAGENTA"   # First spinner - vibrant magenta
+CHARM_SPINNER_2_COLOR="$CYAN"      # Second spinner - bright cyan
 
 # Get or set player preference
 get_player_preference() {
@@ -1251,7 +1264,7 @@ show_help() {
 search_yts() {
     local query="$1"
     
-    echo -e "${CYAN}[YTS]${RESET} Searching movies..." >&2
+    echo -e "${MAGENTA}[${PINK}YTS${MAGENTA}]${RESET} Searching movies..." >&2
     
     if ! command -v python3 &> /dev/null; then
         echo -e "${YELLOW}Warning:${RESET} python3 required for YTS scraping" >&2
@@ -1410,7 +1423,7 @@ PYEOF
 search_ytsrs() {
     local query="$1"
     
-    echo -e "${CYAN}[YTS]${RESET} Searching movies..." >&2
+    echo -e "${MAGENTA}[${PINK}YTS${MAGENTA}]${RESET} Searching movies..." >&2
     
     if ! command -v python3 &> /dev/null; then
         return 1
@@ -1673,7 +1686,7 @@ PYEOF
 search_1337x() {
     local query="$1"
     
-    echo -e "${CYAN}[1337x]${RESET} Searching..." >&2
+    echo -e "${MAGENTA}[${PINK}1337x${MAGENTA}]${RESET} Searching..." >&2
     
     # Use 1337x unofficial API (similar to what Stremio uses)
     local search_url="https://1337x.to/search/${query// /+/}/1/"
@@ -1699,7 +1712,7 @@ search_1337x() {
 search_tpb() {
     local query="$1"
     
-    echo -e "${CYAN}[ThePirateBay]${RESET} Searching..." >&2
+    echo -e "${MAGENTA}[${PINK}ThePirateBay${MAGENTA}]${RESET} Searching..." >&2
     
     # TPB has an official API
     local api_url="https://apibay.org/q.php?q=${query// /%20}&cat=0"
@@ -1717,7 +1730,7 @@ search_tpb() {
 search_eztv() {
     local query="$1"
     
-    echo -e "${CYAN}[EZTV]${RESET} Searching TV shows..." >&2
+    echo -e "${MAGENTA}[${PINK}EZTV${MAGENTA}]${RESET} Searching TV shows..." >&2
     
     local api_url="https://eztv.re/api/get-torrents?imdb_id=&limit=20&page=1&query_string=${query// /+}"
     
@@ -2505,13 +2518,13 @@ display_catalog() {
                     fi
                 done
                 [ "$any_running" = false ] && break
-                # First spinner goes backward, second goes forward
-                printf "\r${CYAN}${spinner_chars[$spinner_idx1]}${spinner_chars[$spinner_idx2]} Fetching from ${source_name}...${RESET}"
+                # Charm-style dual spinner: magenta goes backward, cyan goes forward
+                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Fetching from ${PINK}${source_name}${RESET}..."
                 spinner_idx1=$(( (spinner_idx1 - 1 + ${#spinner_chars[@]}) % ${#spinner_chars[@]} ))
                 spinner_idx2=$(( (spinner_idx2 + 1) % ${#spinner_chars[@]} ))
                 sleep 0.1
             done
-            printf "\r${GREEN}✓ Fetched from ${source_name}${RESET}                    \n"
+            printf "\r${GREEN}✓${RESET} Fetched from ${PINK}${source_name}${RESET}                    \n"
         ) &
         local spinner_pid=$!
         
@@ -3760,16 +3773,14 @@ EOF
                             fi
                         fi
                         
-                        local spin_idx=$((video_wait % 4))
-                        case $spin_idx in
-                            0) local spin_char='|' ;;
-                            1) local spin_char='/' ;;
-                            2) local spin_char='-' ;;
-                            3) local spin_char='\' ;;
-                        esac
-                        # Show progress with elapsed time (every 0.5 seconds = 2 iterations per second)
+                        # Charm-style dual spinner
+                        local charm_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+                        local charm_len=${#charm_chars[@]}
+                        local idx1=$(( (charm_len - (video_wait % charm_len)) % charm_len ))
+                        local idx2=$(( video_wait % charm_len ))
+                        # Show progress with elapsed time
                         local elapsed_secs=$((video_wait / 2))
-                        printf "\r${CYAN}Waiting for video file...${RESET} [%c] (%ds)" "$spin_char" "$elapsed_secs"
+                        printf "\r${MAGENTA}${charm_chars[$idx1]}${CYAN}${charm_chars[$idx2]}${RESET} Waiting for video file... ${PURPLE}[${CYAN}%ds${PURPLE}]${RESET}" "$elapsed_secs"
                         
                         # Check if transmission process is still running
                             if ! kill -0 "$transmission_pid" 2>/dev/null; then
@@ -4258,15 +4269,12 @@ EOF
                     break
                 fi
             fi
-            # Show spinner
-            local spin_idx=$((waited % 4))
-            case $spin_idx in
-                0) local spin_char='|' ;;
-                1) local spin_char='/' ;;
-                2) local spin_char='-' ;;
-                3) local spin_char='\' ;;
-            esac
-            printf "\r${CYAN}Waiting for torrent path...${RESET} [%c]" "$spin_char"
+            # Charm-style dual spinner
+            local charm_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+            local charm_len=${#charm_chars[@]}
+            local idx1=$(( (charm_len - (waited % charm_len)) % charm_len ))
+            local idx2=$(( waited % charm_len ))
+            printf "\r${MAGENTA}${charm_chars[$idx1]}${CYAN}${charm_chars[$idx2]}${RESET} Waiting for torrent path..."
             
             sleep 0.2
             waited=$((waited + 1))
@@ -4332,14 +4340,13 @@ EOF
         local all_files=$(find "$torrent_path" -type f 2>/dev/null)
         if [ -z "$all_files" ]; then
             # No files yet, wait longer
-            local spin_idx=$((video_wait % 4))
-            case $spin_idx in
-                0) local spin_char='|' ;;
-                1) local spin_char='/' ;;
-                2) local spin_char='-' ;;
-                3) local spin_char='\' ;;
-            esac
-            printf "\r${CYAN}Waiting for files to download...${RESET} [%c] ($((video_wait / 5))s)" "$spin_char"
+            # Charm-style dual spinner
+            local charm_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+            local charm_len=${#charm_chars[@]}
+            local idx1=$(( (charm_len - (video_wait % charm_len)) % charm_len ))
+            local idx2=$(( video_wait % charm_len ))
+            local wait_secs=$((video_wait / 5))
+            printf "\r${MAGENTA}${charm_chars[$idx1]}${CYAN}${charm_chars[$idx2]}${RESET} Waiting for files to download... ${PURPLE}[${CYAN}%ds${PURPLE}]${RESET}" "$wait_secs"
             sleep 0.2
             video_wait=$((video_wait + 1))
             continue
@@ -4378,15 +4385,13 @@ EOF
             fi
         fi
         
-        # Show spinner
-        local spin_idx=$((video_wait % 4))
-        case $spin_idx in
-            0) local spin_char='|' ;;
-            1) local spin_char='/' ;;
-            2) local spin_char='-' ;;
-            3) local spin_char='\' ;;
-        esac
-        printf "\r${CYAN}Searching for video file...${RESET} [%c] ($((video_wait / 5))s)" "$spin_char"
+        # Charm-style dual spinner
+        local charm_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+        local charm_len=${#charm_chars[@]}
+        local idx1=$(( (charm_len - (video_wait % charm_len)) % charm_len ))
+        local idx2=$(( video_wait % charm_len ))
+        local search_secs=$((video_wait / 5))
+        printf "\r${MAGENTA}${charm_chars[$idx1]}${CYAN}${charm_chars[$idx2]}${RESET} Searching for video file... ${PURPLE}[${CYAN}%ds${PURPLE}]${RESET}" "$search_secs"
         
         sleep 0.2
         video_wait=$((video_wait + 1))
