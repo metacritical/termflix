@@ -35,6 +35,7 @@ show_sidebar_picker() {
     local right_start=$((left_width + 2))
     local right_width=$((term_cols - right_start - 2))
     local poster_height=$((term_rows - 8))
+    local poster_width=$((left_width - 4))
     
     local num_items=${#torrents[@]}
     SIDEBAR_PICKER_RESULT=""
@@ -48,38 +49,42 @@ show_sidebar_picker() {
         display_options+=("$display_line")
     done
     
-    # Clear screen and draw static layout
+    # Clear screen
     clear
     
     # ─── LEFT PANEL: POSTER ───
-    # Use display_poster function if available (handles VIU caching)
     local poster_shown=false
+    local poster_file=""
+    
+    # Get poster file (download if URL)
     if [[ -n "$poster_source" ]] && [[ "$poster_source" != "N/A" ]]; then
-        if declare -f display_poster &>/dev/null; then
-            # Use the cached display function from posters.sh
-            display_poster "$poster_source" $((left_width - 4)) $poster_height 2 3 2>/dev/null && poster_shown=true
+        if [[ -f "$poster_source" ]]; then
+            poster_file="$poster_source"
+        elif [[ "$poster_source" =~ ^https?:// ]]; then
+            # Download poster
+            local temp_poster="${TMPDIR:-/tmp}/termflix_sidebar_$$.jpg"
+            curl -s --max-time 3 "$poster_source" -o "$temp_poster" 2>/dev/null
+            [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
+        fi
+    fi
+    
+    # Display poster using best available method
+    if [[ -n "$poster_file" ]] && [[ -f "$poster_file" ]]; then
+        # Check for Kitty terminal (native image protocol - best quality)
+        if [[ "$TERM" == "xterm-kitty" ]] || [[ -n "$KITTY_WINDOW_ID" ]]; then
+            tput cup 2 2
+            kitty +kitten icat --align left --place "${poster_width}x${poster_height}@2x3" "$poster_file" 2>/dev/null && poster_shown=true
         elif command -v viu &>/dev/null; then
-            # Direct viu call as fallback
-            if [[ -f "$poster_source" ]]; then
-                tput cup 3 2
-                viu -w $((left_width - 4)) -h $poster_height "$poster_source" 2>/dev/null && poster_shown=true
-            elif [[ "$poster_source" =~ ^https?:// ]]; then
-                # Download and display
-                local temp_poster="${TMPDIR:-/tmp}/termflix_sidebar_$$.jpg"
-                curl -s --max-time 3 "$poster_source" -o "$temp_poster" 2>/dev/null
-                if [[ -f "$temp_poster" ]]; then
-                    tput cup 3 2
-                    viu -w $((left_width - 4)) -h $poster_height "$temp_poster" 2>/dev/null && poster_shown=true
-                    rm -f "$temp_poster" 2>/dev/null
-                fi
-            fi
+            # VIU fallback
+            tput cup 2 2
+            viu -w "$poster_width" -h "$poster_height" "$poster_file" 2>/dev/null && poster_shown=true
         fi
     fi
     
     # Show placeholder if no poster
     if [[ "$poster_shown" == "false" ]]; then
         local ph_row=$((term_rows / 2 - 2))
-        tput cup $ph_row $((left_width / 2 - 8))
+        tput cup $ph_row $((left_width / 2 - 6))
         echo -e "${C_MUTED:-\033[38;5;241m}🎬 No Poster${RESET:-\033[0m}"
     fi
     
@@ -119,32 +124,49 @@ show_sidebar_picker() {
     tput cup $((footer_row + 1)) $hints_col
     echo -ne "${C_MUTED:-\033[38;5;241m}${hints}${RESET:-\033[0m}"
     
-    # ─── RIGHT PANEL: SELECTION ───
+    # ─── RIGHT PANEL: SELECTION (positioned after divider) ───
+    # Move cursor to right panel area
     tput cup 4 $right_start
     
     local selected=""
     if command -v gum &>/dev/null; then
-        # Use gum choose for selection
-        selected=$(printf '%s\n' "${display_options[@]}" | \
+        # Create options file for gum (avoids positioning issues)
+        local options_file=$(mktemp)
+        printf '%s\n' "${display_options[@]}" > "$options_file"
+        
+        # Run gum in a subshell positioned on the right
+        # We need to capture selection without messing up the layout
+        selected=$(cat "$options_file" | \
             gum choose \
                 --cursor.foreground 212 \
                 --selected.foreground 212 \
                 --height $((term_rows - 8)) \
                 --cursor "➤ " \
                 --cursor-prefix "  " \
-                --unselected-prefix "  ")
+                --unselected-prefix "  " 2>/dev/null)
+        
+        rm -f "$options_file" 2>/dev/null
     else
         # Fallback: numbered selection
         for i in "${!display_options[@]}"; do
+            tput cup $((4 + i)) $right_start
             echo "  $((i+1))) ${display_options[$i]}"
         done
-        echo ""
+        tput cup $((4 + num_items + 1)) $right_start
         echo -n "Choice [1-${num_items}]: "
         read -r choice
         if [[ "$choice" =~ ^[0-9]+$ ]] && [[ $choice -ge 1 ]] && [[ $choice -le $num_items ]]; then
             selected="${display_options[$((choice-1))]}"
         fi
     fi
+    
+    # Clean up kitty images
+    if [[ "$TERM" == "xterm-kitty" ]] || [[ -n "$KITTY_WINDOW_ID" ]]; then
+        kitty +kitten icat --clear 2>/dev/null
+    fi
+    
+    # Clean up temp poster if we downloaded it
+    [[ "$poster_file" == "${TMPDIR:-/tmp}/termflix_sidebar_"* ]] && rm -f "$poster_file" 2>/dev/null
     
     # Clear screen after selection
     clear
