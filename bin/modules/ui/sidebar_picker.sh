@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Termflix Sidebar Picker Module
-# Stremio-style two-column layout: poster left, selector right
+# Stremio-style two-column layout: poster left, gum selector right
 #
 
 # Prevent multiple sourcing
@@ -15,7 +15,7 @@ _TERMFLIX_SIDEBAR_LOADED=1
 # Global result variable (set after show_sidebar_picker returns)
 SIDEBAR_PICKER_RESULT=""
 
-# Show Stremio-style torrent selection picker
+# Show Stremio-style sidebar picker for torrent selection
 # Two-column layout: poster on left, torrent list on right
 # Args: movie_name poster_path torrent1 torrent2 ...
 # Torrents format: source|quality|seeds|size|magnet
@@ -27,134 +27,123 @@ show_sidebar_picker() {
     shift 2
     local -a torrents=("$@")
     
+    local term_cols=$(tput cols)
+    local term_rows=$(tput lines)
+    
+    # Layout: 45% left (poster), 55% right (list)
+    local left_width=$((term_cols * 45 / 100))
+    local right_start=$((left_width + 2))
+    local right_width=$((term_cols - right_start - 2))
+    
     local num_items=${#torrents[@]}
     SIDEBAR_PICKER_RESULT=""
     
-    # Get terminal dimensions
-    local term_cols=$(tput cols)
-    local term_rows=$(tput lines)
-    local left_width=$((term_cols * 40 / 100))
-    local right_width=$((term_cols * 55 / 100))
-    local poster_height=$((term_rows - 10))
-    
-    # Build display options for gum
+    # Build display options
     local -a display_options=()
     
     for i in "${!torrents[@]}"; do
-        # Parse torrent: source|quality|seeds|size|magnet
         IFS='|' read -r src quality seeds size magnet <<< "${torrents[$i]}"
-        
-        # Format display line
         local display_line="${seeds:-0} seeds │ ${quality:-N/A} │ ${size:-N/A} │ ${src:-Unknown}"
         display_options+=("$display_line")
     done
     
-    # Check if gum is available
+    # Enter alternate screen
+    tput smcup
+    clear
+    
+    # ─── LEFT PANEL: POSTER ───
+    if [[ -f "$poster_path" ]] && command -v viu &>/dev/null; then
+        tput cup 3 2
+        viu -w $((left_width - 4)) -h $((term_rows - 12)) "$poster_path" 2>/dev/null
+    else
+        # Draw placeholder
+        local ph_row=$((term_rows / 2 - 2))
+        tput cup $ph_row 2
+        echo -e "${C_MUTED:-\033[38;5;241m}   🎬 No Poster${RESET:-\033[0m}"
+    fi
+    
+    # Movie title at bottom of left panel
+    local title_row=$((term_rows - 5))
+    tput cup $title_row 2
+    local truncated_name="${movie_name:0:$((left_width-4))}"
+    echo -e "${C_GLOW:-\033[38;5;212m}${BOLD:-\033[1m}${truncated_name}${RESET:-\033[0m}"
+    
+    # ─── DIVIDER ───
+    for ((r=1; r<term_rows-2; r++)); do
+        tput cup $r $left_width
+        echo -ne "${C_PURPLE:-\033[38;5;135m}│${RESET:-\033[0m}"
+    done
+    
+    # ─── RIGHT PANEL HEADER ───
+    tput cup 1 $right_start
+    echo -e "${BOLD:-\033[1m}${C_GLOW:-\033[38;5;212m}Available Torrents${RESET:-\033[0m}"
+    
+    tput cup 2 $right_start
+    echo -ne "${C_PURPLE:-\033[38;5;135m}"
+    printf '─%.0s' $(seq 1 $((right_width - 2)))
+    echo -ne "${RESET:-\033[0m}"
+    
+    # ─── FOOTER ───
+    local footer_row=$((term_rows - 2))
+    tput cup $footer_row 0
+    echo -ne "${C_PURPLE:-\033[38;5;135m}"
+    printf '─%.0s' $(seq 1 $term_cols)
+    echo -ne "${RESET:-\033[0m}"
+    
+    tput cup $((footer_row + 1)) 2
+    echo -ne "${C_SUBTLE:-\033[38;5;245m}${num_items} sources${RESET:-\033[0m}"
+    
+    local hints="↑↓ navigate • enter select • esc back"
+    local hints_col=$(( (term_cols - ${#hints}) / 2 ))
+    tput cup $((footer_row + 1)) $hints_col
+    echo -ne "${C_MUTED:-\033[38;5;241m}${hints}${RESET:-\033[0m}"
+    
+    # ─── RIGHT PANEL: GUM SELECTOR ───
+    # Position cursor for gum
+    tput cup 4 $right_start
+    
+    # Use gum for selection
+    local selected=""
     if command -v gum &>/dev/null; then
-        # ═══════════════════════════════════════════════════════════
-        # GUM-BASED TWO-COLUMN LAYOUT
-        # ═══════════════════════════════════════════════════════════
-        
-        clear
-        
-        # Create left panel content (poster + movie title)
-        local left_panel_file=$(mktemp)
-        local right_panel_file=$(mktemp)
-        
-        # Generate left panel (poster area)
-        {
-            echo ""
-            if [[ -f "$poster_path" ]] && command -v viu &>/dev/null; then
-                viu -w $((left_width - 4)) -h $((poster_height - 4)) "$poster_path" 2>/dev/null
-            else
-                # Placeholder for no poster
-                for ((i=0; i<poster_height/2-2; i++)); do echo ""; done
-                gum style --width $((left_width - 4)) --align center "🎬 No Poster"
-            fi
-            echo ""
-            # Movie title at bottom
-            echo "$movie_name" | head -c $((left_width - 4))
-        } > "$left_panel_file"
-        
-        # Style the left panel with border
-        local styled_left
-        styled_left=$(gum style \
-            --border rounded \
-            --border-foreground 135 \
-            --width $left_width \
-            --height $((term_rows - 4)) \
-            --padding "0 1" \
-            "$(cat "$left_panel_file")")
-        
-        # Print left panel (it will stay visible)
-        echo "$styled_left"
-        
-        # Position cursor for right panel
-        tput cup 0 $((left_width + 2))
-        
-        # Show the gum selector in a styled box
-        local header
-        header=$(gum style --foreground 135 --bold "Available Torrents")
-        
-        # Show selection with gum choose
-        local selected
+        # Run gum choose for the selection
         selected=$(printf '%s\n' "${display_options[@]}" | \
             gum choose \
-                --header "$header" \
                 --cursor.foreground 212 \
                 --selected.foreground 212 \
-                --height $((term_rows - 8)) \
+                --height $((term_rows - 10)) \
                 --cursor "➤ " \
                 --cursor-prefix "  " \
-                --unselected-prefix "  ")
-        
-        # Cleanup temp files
-        rm -f "$left_panel_file" "$right_panel_file" 2>/dev/null
-        
-        if [[ -z "$selected" ]]; then
-            # User cancelled (Ctrl+C or ESC)
-            return 1
-        fi
-        
-        # Find the index of selected option
-        for i in "${!display_options[@]}"; do
-            if [[ "${display_options[$i]}" == "$selected" ]]; then
-                SIDEBAR_PICKER_RESULT="$i"
-                return 0
-            fi
-        done
-        
-        return 1
+                --unselected-prefix "  " 2>/dev/null)
     else
-        # ═══════════════════════════════════════════════════════════
-        # FALLBACK: Simple numbered selection (no gum)
-        # ═══════════════════════════════════════════════════════════
-        
-        clear
-        echo -e "\n${C_GLOW:-\033[38;5;212m}${BOLD:-\033[1m}$movie_name${RESET:-\033[0m}"
-        echo -e "${C_PURPLE:-\033[38;5;135m}────────────────────────────────────────${RESET:-\033[0m}\n"
-        
-        echo -e "${C_SUBTLE:-\033[38;5;245m}Available torrents:${RESET:-\033[0m}\n"
-        
-        for i in "${!display_options[@]}"; do
-            echo -e "  ${C_GLOW:-\033[38;5;212m}$((i+1)))${RESET:-\033[0m} ${display_options[$i]}"
-        done
-        
+        # Fallback: numbered selection
         echo ""
-        echo -n "Enter choice [1-${num_items}] or 'q' to cancel: "
+        for i in "${!display_options[@]}"; do
+            echo "  $((i+1))) ${display_options[$i]}"
+        done
+        echo ""
+        echo -n "Choice [1-${num_items}]: "
         read -r choice
-        
-        if [[ "$choice" == "q" ]] || [[ "$choice" == "Q" ]]; then
-            return 1
-        fi
-        
         if [[ "$choice" =~ ^[0-9]+$ ]] && [[ $choice -ge 1 ]] && [[ $choice -le $num_items ]]; then
-            SIDEBAR_PICKER_RESULT=$((choice - 1))
-            return 0
+            selected="${display_options[$((choice-1))]}"
         fi
-        
+    fi
+    
+    # Exit alternate screen
+    tput rmcup
+    
+    if [[ -z "$selected" ]]; then
         return 1
     fi
+    
+    # Find the index of selected option
+    for i in "${!display_options[@]}"; do
+        if [[ "${display_options[$i]}" == "$selected" ]]; then
+            SIDEBAR_PICKER_RESULT="$i"
+            return 0
+        fi
+    done
+    
+    return 1
 }
 
 # ═══════════════════════════════════════════════════════════════
