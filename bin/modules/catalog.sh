@@ -1200,7 +1200,6 @@ display_catalog() {
                         IFS='^' read -ra sizes_arr <<< "$c_sizes"
                         IFS='^' read -ra magnets_arr <<< "$c_magnets"
                         
-                        
                         # Build torrent list for sidebar picker
                         # Format: source|quality|seeds|size|magnet
                         local -a torrent_options=()
@@ -1250,6 +1249,37 @@ display_catalog() {
                             fi
                         else
                             # User cancelled or picker failed
+                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
+                            selection=""
+                            redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
+                            continue
+                        fi
+                    else
+                        # Single source entry - also show sidebar picker with single option
+                        # Build single torrent option
+                        local -a torrent_options=()
+                        # Parse: source|name|magnet|quality|size|extra|poster_url
+                        local seeds="N/A"
+                        if [[ -n "$extra" ]] && [[ "$extra" =~ [0-9]+ ]]; then
+                            seeds="$extra"
+                        fi
+                        torrent_options+=("${source}|${quality}|${seeds}|${size}|${magnet}")
+                        
+                        # Get poster path if available
+                        local poster_file=""
+                        if [[ -n "$poster_url" ]] && [[ "$poster_url" != "N/A" ]]; then
+                            local temp_poster="${TMPDIR:-/tmp}/termflix_poster_$$.jpg"
+                            curl -s --max-time 5 "$poster_url" -o "$temp_poster" 2>/dev/null
+                            [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
+                        fi
+                        
+                        # Use Stremio-style sidebar picker
+                        local picker_result
+                        if picker_result=$(show_sidebar_picker "$name" "$poster_file" "${torrent_options[@]}" 2>/dev/null); then
+                            # User confirmed - keep existing source/magnet/etc
+                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
+                        else
+                            # User cancelled
                             [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
                             selection=""
                             redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
