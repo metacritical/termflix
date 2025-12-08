@@ -97,7 +97,9 @@ def print_combined(items, preferred_year=""):
             best_poster = item['poster']
             break
             
-    combined_line = f"COMBINED|{best_name}|{'^'.join(sources)}|{'^'.join(seeds)}|{'^'.join(qualities)}|{'^'.join(sizes)}|{'^'.join(magnets)}|{best_poster}"
+    # Format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
+    # (Note: bash expects qualities before seeds)
+    combined_line = f"COMBINED|{best_name}|{'^'.join(sources)}|{'^'.join(qualities)}|{'^'.join(seeds)}|{'^'.join(sizes)}|{'^'.join(magnets)}|{best_poster}"
     print(combined_line)
 
 
