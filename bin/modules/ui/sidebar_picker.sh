@@ -149,7 +149,7 @@ show_sidebar_picker() {
         echo -ne "${C_SUBTLE:-\033[38;5;245m}${num_items} sources${RESET:-\033[0m}"
         
         # Navigation hints (centered)
-        local hints="↑↓ navigate  •  enter select  •  q quit"
+        local hints="j/k or ↑↓: navigate  •  enter: select  •  esc/q: back"
         local hints_col=$(( (term_cols - ${#hints}) / 2 ))
         tput cup $((footer_row + 2)) $hints_col
         echo -ne "${C_MUTED:-\033[38;5;241m}${hints}${RESET:-\033[0m}"
@@ -184,8 +184,13 @@ show_sidebar_picker() {
                 _sidebar_cleanup
                 return 1
                 ;;
-            $'\x1b')  # Escape sequences
+            $'\x1b')  # Escape key or escape sequences
                 read -rsn2 -t 0.1 seq
+                if [[ -z "$seq" ]]; then
+                    # ESC pressed alone - quit
+                    _sidebar_cleanup
+                    return 1
+                fi
                 case "$seq" in
                     '[A') # Up arrow
                         if [[ $selected -gt 0 ]]; then
@@ -217,6 +222,22 @@ show_sidebar_picker() {
                         _draw_sidebar
                         ;;
                 esac
+                ;;
+            # Ctrl+n (next) - Emacs style
+            $'\x0e')
+                if [[ $selected -lt $((num_items - 1)) ]]; then
+                    ((selected++))
+                    [[ $((selected - scroll_offset)) -ge $visible_items ]] && ((scroll_offset++))
+                    _draw_sidebar
+                fi
+                ;;
+            # Ctrl+p (previous) - Emacs style
+            $'\x10')
+                if [[ $selected -gt 0 ]]; then
+                    ((selected--))
+                    [[ $selected -lt $scroll_offset ]] && ((scroll_offset--))
+                    _draw_sidebar
+                fi
                 ;;
         esac
     done
