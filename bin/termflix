@@ -25,7 +25,18 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 export TERMFLIX_SCRIPTS_DIR="${SCRIPT_DIR}/scripts"
 
-# Source termflix modules
+# Source termflix modules - NEW MODULAR STRUCTURE
+# Core modules (load first - colors, config, errors, deps)
+source "${SCRIPT_DIR}/modules/core/colors.sh"
+source "${SCRIPT_DIR}/modules/core/errors.sh"
+source "${SCRIPT_DIR}/modules/core/config.sh"
+source "${SCRIPT_DIR}/modules/core/deps.sh"
+
+# UI modules
+source "${SCRIPT_DIR}/modules/ui/status.sh"
+source "${SCRIPT_DIR}/modules/ui/sidebar_picker.sh"
+
+# Legacy modules (to be refactored into new structure)
 source "${SCRIPT_DIR}/modules/core.sh"
 source "${SCRIPT_DIR}/modules/ui.sh"
 source "${SCRIPT_DIR}/modules/posters.sh"
@@ -33,6 +44,8 @@ source "${SCRIPT_DIR}/modules/search.sh"
 source "${SCRIPT_DIR}/modules/catalog.sh"
 source "${SCRIPT_DIR}/modules/torrent.sh"
 
+# Set up signal handlers from errors.sh
+setup_signal_handlers
 
 
 # Check for jq - now in core.sh module (keeping for backward compat)

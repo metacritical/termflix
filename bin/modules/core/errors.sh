@@ -13,13 +13,14 @@ _TERMFLIX_ERRORS_LOADED=1
 # ═══════════════════════════════════════════════════════════════
 
 # Cleanup functions to run on exit
-declare -g -a TERMFLIX_CLEANUP_FUNCS=()
+# Global arrays (bash 3.x compatible)
+TERMFLIX_CLEANUP_FUNCS=()
 
 # Child PIDs to kill on exit
-declare -g -a TERMFLIX_CHILD_PIDS=()
+TERMFLIX_CHILD_PIDS=()
 
 # Terminal state backup
-declare -g TERMFLIX_STTY_BACKUP=""
+TERMFLIX_STTY_BACKUP=""
 
 # ═══════════════════════════════════════════════════════════════
 # REGISTRATION FUNCTIONS
