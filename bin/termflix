@@ -1839,7 +1839,9 @@ redraw_catalog_page() {
         
         # Read back into array
         if [ -n "$group_output" ]; then
-             mapfile -t grouped_results <<< "$group_output"
+             while IFS= read -r line || [ -n "$line" ]; do
+                 grouped_results+=("$line")
+             done <<< "$group_output"
              all_results=("${grouped_results[@]}")
              total=${#all_results[@]}
         fi
@@ -2298,7 +2300,9 @@ display_catalog() {
         printf "%s\n" "${all_results[@]}" > "$group_input"
         local group_output=$(cat "$group_input" | group_results 2>/dev/null)
         if [ -n "$group_output" ]; then
-             mapfile -t grouped_results <<< "$group_output"
+             while IFS= read -r line || [ -n "$line" ]; do
+                 grouped_results+=("$line")
+             done <<< "$group_output"
              all_results=("${grouped_results[@]}")
         fi
         rm -f "$group_input"
@@ -2720,7 +2724,9 @@ search_torrent() {
         printf "%s\n" "${all_results[@]}" > "$group_input"
         local group_output=$(cat "$group_input" | group_results)
         if [ -n "$group_output" ]; then
-             mapfile -t grouped_results <<< "$group_output"
+             while IFS= read -r line || [ -n "$line" ]; do
+                 grouped_results+=("$line")
+             done <<< "$group_output"
              all_results=("${grouped_results[@]}")
         fi
         rm -f "$group_input"
