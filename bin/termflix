@@ -1779,24 +1779,12 @@ search_1337x() {
     
     echo -e "${MAGENTA}[${PINK}1337x${MAGENTA}]${RESET} Searching..." >&2
     
-    # Use 1337x unofficial API (similar to what Stremio uses)
-    local search_url="https://1337x.to/search/${query// /+/}/1/"
-    
-    if command -v curl &> /dev/null; then
-        # Try to parse 1337x HTML (they don't have official API)
-        local html=$(curl -s -L --max-time 5 --connect-timeout 3 -H "User-Agent: Mozilla/5.0" "$search_url" 2>/dev/null)
-        
-        if [ -n "$html" ]; then
-            # Extract torrent links and names (BSD grep compatible)
-            echo "$html" | grep -o '<a href="/torrent/[^"]*">[^<]*</a>' | head -10 | while read -r line; do
-                local name=$(echo "$line" | sed -E 's/.*>([^<]*)<.*/\1/')
-                local id=$(echo "$line" | sed -E 's|.*/torrent/([^/]+)/.*|\1|')
-                if [ -n "$id" ] && [ -n "$name" ] && [ "$id" != "href" ]; then
-                    echo "1337x|$name|https://1337x.to/torrent/$id|N/A|N/A"
-                fi
-            done
-        fi
+    if ! command -v python3 &> /dev/null; then
+        return 1
     fi
+    
+    export SEARCH_QUERY="$query"
+    python3 "$TERMFLIX_SCRIPTS_DIR/search_1337x.py" 2>/tmp/termflix_last_error.log
 }
 
 # Search using ThePirateBay API - same as Stremio TPB addon
@@ -1805,16 +1793,12 @@ search_tpb() {
     
     echo -e "${MAGENTA}[${PINK}ThePirateBay${MAGENTA}]${RESET} Searching..." >&2
     
-    # TPB has an official API
-    local api_url="https://apibay.org/q.php?q=${query// /%20}&cat=0"
-    
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s --max-time 5 --connect-timeout 3 "$api_url" 2>/dev/null)
-        
-        if [ -n "$response" ]; then
-            echo "$response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
-        fi
+    if ! command -v python3 &> /dev/null; then
+        return 1
     fi
+    
+    export SEARCH_QUERY="$query"
+    python3 "$TERMFLIX_SCRIPTS_DIR/search_tpb.py" 2>/tmp/termflix_last_error.log
 }
 
 # Search using EZTV API (TV shows) - same as Stremio EZTV addon
@@ -1823,19 +1807,12 @@ search_eztv() {
     
     echo -e "${MAGENTA}[${PINK}EZTV${MAGENTA}]${RESET} Searching TV shows..." >&2
     
-    local api_url="https://eztv.re/api/get-torrents?imdb_id=&limit=20&page=1&query_string=${query// /+}"
-    
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s --max-time 5 --connect-timeout 3 "$api_url" 2>/dev/null)
-        
-        if [ -n "$response" ]; then
-            local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
-            
-            if [ "$count" -gt 0 ] 2>/dev/null; then
-                echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB"' 2>/dev/null | head -10
-            fi
-        fi
+    if ! command -v python3 &> /dev/null; then
+        return 1
     fi
+    
+    export SEARCH_QUERY="$query"
+    python3 "$TERMFLIX_SCRIPTS_DIR/search_eztv.py" 2>/tmp/termflix_last_error.log
 }
 
 # Scrape movies from YTSRS (en.ytsrs.com) using external Python script
