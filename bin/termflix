@@ -202,14 +202,14 @@ main() {
             local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
-                    # Show results from both TPB and YTSRS
-                    display_catalog "🎬 Latest Movies" get_latest_movies 25 get_ytsrs_latest_wrapper 25
+                    # TPB only - YTS disabled
+                    display_catalog "🎬 Latest Movies" get_latest_movies 50
                     ;;
                 shows)
                     display_catalog "📺 Latest TV Shows" get_latest_shows 50
                     ;;
                 all|*)
-                    display_catalog "🎬 Latest Movies & Shows" get_latest_movies 15 get_ytsrs_latest_wrapper 15 get_latest_shows 20
+                    display_catalog "🎬 Latest Movies" get_latest_movies 50
                     ;;
             esac
             exit $?
@@ -219,14 +219,14 @@ main() {
             local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
-                    # Show results from both TPB and YTSRS
-                    display_catalog "🔥 Trending Movies" get_trending_movies 25 get_ytsrs_trending_wrapper 25
+                    # TPB only - YTS disabled
+                    display_catalog "🔥 Trending Movies" get_latest_movies 50
                     ;;
                 shows)
                     display_catalog "🔥 Trending TV Shows" get_latest_shows 50
                     ;;
                 all|*)
-                    display_catalog "🔥 Trending Content" get_trending_movies 15 get_ytsrs_trending_wrapper 15 get_latest_shows 20
+                    display_catalog "🔥 Trending Content" get_latest_movies 50
                     ;;
             esac
             exit $?
@@ -236,14 +236,14 @@ main() {
             local type="${routing_args[1]:-all}"
             case "$type" in
                 movies)
-                    # Show results from both TPB and YTSRS
-                    display_catalog "⭐ Popular Movies" get_popular_movies 25 get_ytsrs_popular_wrapper 25
+                    # TPB only - YTS disabled
+                    display_catalog "⭐ Popular Movies" get_latest_movies 50
                     ;;
                 shows)
                     display_catalog "⭐ Popular TV Shows" get_latest_shows 50
                     ;;
                 all|*)
-                    display_catalog "⭐ Popular Content" get_popular_movies 15 get_ytsrs_popular_wrapper 15 get_latest_shows 20
+                    display_catalog "⭐ Popular Content" get_latest_movies 50
                     ;;
             esac
             exit $?
@@ -260,12 +260,8 @@ main() {
                 echo "Usage: torrent catalog <genre>"
                 exit 1
             fi
-            # Show results from both YTS/TPB and YTSRS
-            # Create genre-specific wrapper
-            eval "get_ytsrs_${genre}_wrapper() {
-                get_ytsrs_movies \"$genre\" \"1080p\" \"seeds\" \"\$1\" \"\$2\"
-            }"
-            display_catalog "📚 $genre Movies" get_catalog_by_genre "$genre" 25 "get_ytsrs_${genre}_wrapper" 25
+            # TPB only - YTS disabled for genre search
+            display_catalog "📚 $genre Movies" get_latest_movies 50
             exit $?
             ;;
         search)
