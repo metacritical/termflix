@@ -1057,10 +1057,29 @@ display_catalog() {
     # -------------------------------------------------------------------------
     # Use FZF for browsing, filtering, and Preview (replacing sidebar picker)
     
-    local selection_line
-    if selection_line=$(show_fzf_catalog "$title" all_results); then
-         handle_fzf_selection "$selection_line"
-    fi
+    # FZF Catalog Logic with Navigation Loop
+    # -------------------------------------------------------------------------
+    while true; do
+        local selection_line
+        if selection_line=$(show_fzf_catalog "$title" all_results); then
+             handle_fzf_selection "$selection_line"
+             local ret_code=$?
+             
+             if [ $ret_code -eq 10 ]; then
+                 # User pressed Ctrl+H / Back in nested picker -> Loop again (show catalog)
+                 continue
+             elif [ $ret_code -eq 0 ]; then
+                 # Successful stream -> Exit function
+                 return 0
+             else
+                 # Error or Cancel -> Break
+                 break
+             fi
+        else
+             # Catalog FZF cancelled
+             break
+        fi
+    done
 }
 
 # ============================================================

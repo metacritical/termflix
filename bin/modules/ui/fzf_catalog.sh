@@ -116,14 +116,23 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
+        --expect=ctrl-l,ctrl-o,enter \
         --exit-0 2>/dev/null)
         
     # 5. Handle Result
     if [[ -n "$selection" ]]; then
+        # Parse output: first line is key, second is selection
+        local key
+        local selected_line
+        { read -r key; read -r selected_line; } <<< "$selection"
+        
+        # If no selection line (e.g. only key was output), return fail
+        [[ -z "$selected_line" ]] && return 1
+
         # Extract the actual data (everything after first |)
-        IFS='|' read -r _ index rest <<< "$selection"
-        echo "$index|$rest"
-        return 0
+         IFS='|' read -r _ index rest <<< "$selected_line"
+         echo "$key|$index|$rest"
+         return 0
     else
         return 1
     fi
@@ -134,10 +143,10 @@ handle_fzf_selection() {
     
     [[ -z "$selection_line" ]] && return 1
 
-    # First extract index and the actual result data
-    # selection_line format: "index|result_data..."
-    local index rest_data
-    IFS='|' read -r index rest_data <<< "$selection_line"
+    # First extract key, index and the actual result data
+    # selection_line format: "key|index|result_data..."
+    local key index rest_data
+    IFS='|' read -r key index rest_data <<< "$selection_line"
     
     # Now parse rest_data which starts with source
     local source name magnet quality size seeds poster
@@ -145,9 +154,9 @@ handle_fzf_selection() {
 
      # Check if item is COMBINED (multiple sources)
      if [[ "$source" == "COMBINED" ]]; then
-         # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
-         local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster
-         IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster <<< "$rest_data"
+         # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
+         local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot
+         IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot <<< "$rest_data"
          
          # Split into arrays
          IFS='^' read -ra sources_arr <<< "$c_sources"
@@ -159,52 +168,51 @@ handle_fzf_selection() {
          name="$c_name"
          poster="$c_poster"
          
-         # If multiple magnets, show picker
-         if [[ ${#magnets_arr[@]} -gt 1 ]]; then
-             # Build options for FZF
-             local options=""
-             for i in "${!magnets_arr[@]}"; do
-                 local src="${sources_arr[$i]:-Unknown}"
-                 local qual="${qualities_arr[$i]:-N/A}"
-                 local sz="${sizes_arr[$i]:-N/A}"
-                 local sd="${seeds_arr[$i]:-0}"
-                 options+="$((i+1)). [$src] $qual - $sz - $sd seeds"$'\n'
-             done
-             
-             # Show magnet picker FZF
-             local pick
-             pick=$(printf "%s" "$options" | fzf \
+         # Prepare version options for "Right Pane" FZF
+         local options=""
+         for i in "${!magnets_arr[@]}"; do
+             local src="${sources_arr[$i]:-Unknown}"
+             local qual="${qualities_arr[$i]:-N/A}"
+             local sz="${sizes_arr[$i]:-N/A}"
+             local sd="${seeds_arr[$i]:-0}"
+             # Colorized lines for FZF
+             # Format: index|Display String
+             local d_src="[${src}]"
+             local d_line="$((i+1)). ${d_src} ${qual} - ${sz} - ${sd} seeds"
+             options+="${i}|${d_line}"$'\n'
+         done
+         
+         # Launch "Right Pane" Version Picker
+         # Only if multiple magnets OR user explicitly navigated (though Combined usually has multiple)
+         if [[ ${#magnets_arr[@]} -ge 1 ]]; then
+             local ver_pick
+             ver_pick=$(printf "%s" "$options" | fzf \
                  --ansi \
-                 --height=40% \
+                 --delimiter='|' \
+                 --with-nth=2.. \
+                 --height=50% \
                  --layout=reverse \
                  --border=rounded \
-                 --prompt="🧲 Pick source: " \
-                 --header="$c_name" \
+                 --prompt="▶ Pick Version: " \
+                 --header="Movie: ${c_name} (Ctrl+H to go back)" \
                  --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                  --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                  --color=prompt:#50fa7b,pointer:#ff79c6 \
+                 --bind='ctrl-h:abort,ctrl-o:abort' \
                  2>/dev/null)
              
-             if [[ -z "$pick" ]]; then
-                 return 1  # User cancelled
+             if [[ -z "$ver_pick" ]]; then
+                 return 10  # Signal BACK to caller
              fi
              
-             # Extract index from selection (first number)
+             # Extract index from hidden first field
              local pick_idx
-             pick_idx=$(echo "$pick" | grep -oE '^[0-9]+' | head -1)
-             pick_idx=$((pick_idx - 1))  # Convert to 0-indexed
+             pick_idx=$(echo "$ver_pick" | cut -d'|' -f1)
              
              # Get selected values
              magnet="${magnets_arr[$pick_idx]}"
              source="${sources_arr[$pick_idx]}"
              quality="${qualities_arr[$pick_idx]}"
-             size="${sizes_arr[$pick_idx]}"
-         else
-             # Single magnet, use it directly
-             magnet="${magnets_arr[0]}"
-             source="${sources_arr[0]}"
-             quality="${qualities_arr[0]}"
-             size="${sizes_arr[0]}"
          fi
      fi
      
