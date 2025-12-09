@@ -91,7 +91,7 @@ get_source_name() {
     local func_name="$1"
     case "$func_name" in
         get_latest_movies|get_trending_movies|get_popular_movies|get_catalog_by_genre)
-            echo "YTS"
+            echo "TPB"  # Now using TPB as primary source
             ;;
         get_latest_shows)
             echo "EZTV"
