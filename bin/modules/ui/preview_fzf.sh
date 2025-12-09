@@ -179,8 +179,6 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         if command -v viu &>/dev/null; then
             viu -w 20 -h 15 "$poster_path" 2>/dev/null
-        elif [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-            kitten icat --transfer-mode=memory --stdin=no --place "20x15@0x0" "$poster_path" < /dev/null 2>/dev/null
         elif command -v chafa &>/dev/null; then
             chafa --symbols=block --size="20x15" "$poster_path" 2>/dev/null
         fi
