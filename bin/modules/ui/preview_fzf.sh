@@ -175,12 +175,12 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
         curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
     fi
 
-    # Display Image
+    # Display Image (prioritize chafa for stability)
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        if command -v viu &>/dev/null; then
-            viu -w 20 -h 15 "$poster_path" 2>/dev/null
-        elif command -v chafa &>/dev/null; then
+        if command -v chafa &>/dev/null; then
             chafa --symbols=block --size="20x15" "$poster_path" 2>/dev/null
+        elif command -v viu &>/dev/null; then
+             viu -w 20 -h 15 "$poster_path" 2>/dev/null
         fi
     fi
 fi

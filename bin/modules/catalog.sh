@@ -132,7 +132,8 @@ draw_grid_row() {
                     # For kitty, render once on first row only
                     if [[ "$row" -eq 0 ]]; then
                         local image_file="${image_files[$i]}"
-                        kitty +kitten icat --align left --place "${img_width}x${img_height}@${x_pos}x$((start_row + 1))" "$image_file" 2>/dev/null
+                        # DISABLED: This causes Kitty protocol errors to leak into FZF
+                        # kitty +kitten icat --align left --place "${img_width}x${img_height}@${x_pos}x$((start_row + 1))" "$image_file" 2>/dev/null
                     fi
                 else
                     # For viu: Read specific row from pre-rendered file and draw at correct position
