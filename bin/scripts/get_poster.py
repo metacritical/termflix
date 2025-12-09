@@ -133,6 +133,12 @@ def main():
     if poster:
         print(poster)
         return
+    
+    # Explicitly print null if nothing found, to be handled by bash
+    print("null")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        pass

@@ -241,9 +241,10 @@ fetch_google_poster() {
 # TMDB POSTER ENRICHMENT
 # ============================================================
 
-# Enrich catalog entries with missing posters from TMDB
+# Enrich catalog entries with missing posters from TMDB/YTS/OMDb/Google (priority chain)
 enrich_missing_posters() {
     local cached_results_var="$1"
+    local max_enrich="${2:-20}"  # Limit enrichments per call
     
     eval "local -a items=(\"\${${cached_results_var}[@]}\")"
     
@@ -260,18 +261,29 @@ enrich_missing_posters() {
         return 0
     fi
     
-    # Show spinner while enriching
+    # Use get_poster.py which has priority: TMDB → YTS → OMDb → Google
+    local poster_script="${TERMFLIX_SCRIPTS_DIR}/get_poster.py"
+    
+    # Parallel enrichment with limit
     {
+        local enriched=0
         for i in "${!items[@]}"; do
+            [ "$enriched" -ge "$max_enrich" ] && break
+            
             local item="${items[$i]}"
             IFS='|' read -r source name magnet quality size extra poster_url <<< "$item"
             
             if [[ "$poster_url" == "N/A" ]] || [[ -z "$poster_url" ]]; then
                 local new_poster
-                new_poster=$(fetch_google_poster "$name" 2>/dev/null)
+                if [[ -f "$poster_script" ]]; then
+                    new_poster=$(timeout 5s python3 "$poster_script" "$name" 2>/dev/null)
+                else
+                    new_poster=$(fetch_google_poster "$name" 2>/dev/null)
+                fi
                 
-                if [[ -n "$new_poster" ]] && [[ "$new_poster" != "N/A" ]]; then
+                if [[ -n "$new_poster" ]] && [[ "$new_poster" != "N/A" ]] && [[ "$new_poster" != "null" ]]; then
                     items[$i]="${source}|${name}|${magnet}|${quality}|${size}|${extra}|${new_poster}"
+                    enriched=$((enriched + 1))
                 fi
             fi
         done

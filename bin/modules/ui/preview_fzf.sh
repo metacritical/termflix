@@ -1,137 +1,238 @@
 #!/usr/bin/env bash
 #
-# Termflix FZF Preview Script
-# Renders details and images for the selected torrent item in the FZF preview window
+# Termflix FZF Preview Script - Stremio Style
+# Renders comprehensive movie details with poster, description, and magnet picker
 #
 
 # --- 1. Parse Input ---
-# The input line comes from FZF: "{Index}|{Source}|{Title}|{Quality}|{Size}|{PosterURL}|{Details...}"
+# FZF passes {3..} which is everything from field 3 onward
+# Format received: "Source|Title|RestOfData..."
 input_line="$1"
+[[ -z "$input_line" ]] && exit 0
 
-# Extract fields (assuming pipe delimiter)
-IFS='|' read -r index source title magnet quality size extra poster_url <<< "$input_line"
+# Resolve Script Directory (always resolve, needed for module paths)
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+# Follow symlinks if any
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR_TMP="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
+done
+# Always set SCRIPT_DIR after resolving symlinks
+SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 
-# If input is empty (e.g. header), exit
-[[ -z "$title" ]] && exit 0
+if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
+    TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../../scripts" 2>/dev/null && pwd)"
+fi
 
-# --- 2. Styling Helpers ---
+# --- 2. Styling ---
 RESET='\033[0m'
 BOLD='\033[1m'
+DIM='\033[2m'
 MAGENTA='\033[38;5;213m'
-PURPLE='\033[38;5;135m'
 GREEN='\033[38;5;46m'
 CYAN='\033[38;5;87m'
 YELLOW='\033[38;5;220m'
 BLUE='\033[38;5;81m'
 GRAY='\033[38;5;241m'
+ORANGE='\033[38;5;208m'
 
-# Source Color
-src_color="$CYAN"
-case "$source" in
-    "YTS")   src_color="$GREEN" ;;
-    "TPB")   src_color="$YELLOW" ;;
-    "EZTV")  src_color="$BLUE" ;;
-    "1337x") src_color="$MAGENTA" ;;
-esac
+# --- 3. Parse Entry ---
+IFS='|' read -r source title rest <<< "$input_line"
 
-# --- 3. Render Text Details ---
+# Display title header
 echo -e "${BOLD}${MAGENTA}${title}${RESET}"
-echo -e "${GRAY}----------------------------------------${RESET}"
-echo -e "${BOLD}Source:${RESET}  ${src_color}${source}${RESET}"
-echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality:-N/A}${RESET}"
-echo -e "${BOLD}Size:${RESET}    ${YELLOW}${size:-N/A}${RESET}"
-if [[ "$extra" != "N/A" ]]; then
-    echo -e "${BOLD}Seeds:${RESET}   ${GREEN}${extra}${RESET}"
-fi
-echo -e "${GRAY}----------------------------------------${RESET}"
+echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
-# --- 4. Lazy Poster Fetching ---
-# If URL is missing, try to find it via Google/TMDB
-if [[ -z "$poster_url" || "$poster_url" == "N/A" ]]; then
-    # Create valid hash using Python (cross-platform)
-    filename_hash=$(echo -n "$title" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())")
-    url_cache_dir="${HOME}/.cache/termflix/urls"
-    url_cache_file="${url_cache_dir}/${filename_hash}"
-    mkdir -p "$url_cache_dir"
+# --- 4. Handle COMBINED vs Regular Entries ---
+if [[ "$source" == "COMBINED" ]]; then
+    # Parse COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster
+    IFS='|' read -r sources qualities seeds sizes magnets poster_url <<< "$rest"
     
-    if [[ -f "$url_cache_file" ]]; then
-        poster_url=$(cat "$url_cache_file")
-    else
-        # Only attempt fetch if we have the script
-        if [[ -f "$TERMFLIX_SCRIPTS_DIR/get_poster.py" ]]; then
-             echo -e "${GRAY}Fetching poster metadata...${RESET}"
-             # Run with timeout
-             fetched_url=$(timeout 3s python3 "$TERMFLIX_SCRIPTS_DIR/get_poster.py" "$title" 2>/dev/null)
-             if [[ -n "$fetched_url" && "$fetched_url" != "null" ]]; then
-                 poster_url="$fetched_url"
-                 echo "$poster_url" > "$url_cache_file"
-                 # Clear "Fetching..." line
-                 echo -e "\033[1A\033[K" 
-             else
-                 echo -e "${GRAY}[Poster not found]${RESET}"
-                 echo "N/A" > "$url_cache_file"
-             fi
+    # Split into arrays
+    IFS='^' read -ra sources_arr <<< "$sources"
+    IFS='^' read -ra qualities_arr <<< "$qualities"
+    IFS='^' read -ra seeds_arr <<< "$seeds"
+    IFS='^' read -ra sizes_arr <<< "$sizes"
+    IFS='^' read -ra magnets_arr <<< "$magnets"
+    
+    # Deduplicate sources
+    unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
+    
+    # Display unique sources
+    source_badges=""
+    for src in "${unique_sources[@]}"; do
+        source_badges+="[${src}]"
+    done
+    echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}"
+    
+    # Deduplicate and format qualities/sizes  
+    # Use a simpler approach compatible with older bash
+    seen_quals=()
+    sizes_display=""
+    for i in "${!qualities_arr[@]}"; do
+        qual="${qualities_arr[$i]}"
+        sz="${sizes_arr[$i]}"
+        
+        # Check if we've seen this quality before
+        if [[ ! " ${seen_quals[@]} " =~ " ${qual} " ]]; then
+            seen_quals+=("$qual")
+            [[ -n "$sizes_display" ]] && sizes_display+=", "
+            sizes_display+="${qual} (${sz})"
         fi
+    done
+    
+    echo -e "${BOLD}Available:${RESET} ${CYAN}${sizes_display}${RESET}"
+    
+else
+    # Regular entry: Source|Title|Magnet|Quality|Size|Seeds|Poster
+    IFS='|' read -r magnet quality size seeds poster_url <<< "$rest"
+    
+    echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET}"
+    echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
+fi
+
+echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+echo
+
+# --- 5. Fetch Movie Description (OMDB → TMDB → Google fallback) ---
+OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
+TMDB_MODULE="${SCRIPT_DIR}/../api/tmdb.sh"
+GOOGLE_SCRIPT="${SCRIPT_DIR}/../../scripts/google_poster.py"
+description=""
+
+# Clean title: remove quality tags, codecs, release info
+# Example: "Zootopia 2 2025 1080p TS EN-RGB" -> "Zootopia 2" with year "2025"
+movie_year=""
+clean_title="$title"
+
+# Extract year (4 digits that look like a year 19xx or 20xx)
+if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
+    movie_year="${BASH_REMATCH[1]}"
+fi
+
+# Remove quality and codec tags
+clean_title=$(echo "$title" | sed -E '
+    s/[[:space:]]*(19|20)[0-9]{2}[[:space:]]*/ /g;
+    s/[[:space:]]*(1080p|720p|480p|2160p|4K|UHD)//gi;
+    s/[[:space:]]*(HDRip|BRRip|BluRay|WEBRip|HDTV|DVDRip|CAM|TS|TC|HDCAM|WEB-DL|WEBDL)//gi;
+    s/[[:space:]]*(HEVC|x264|x265|H264|H265|AVC|AAC|DTS|AC3)//gi;
+    s/[[:space:]]*(EN-RGB|BONE|YIFY|SPARKS|RARBG|ETRG)//gi;
+    s/[[:space:]]+/ /g;
+    s/^[[:space:]]+//;
+    s/[[:space:]]+$//
+')
+
+# --- Priority 1: OMDB ---
+if [[ -z "$description" && -f "$OMDB_MODULE" ]]; then
+    source "$OMDB_MODULE"
+    if omdb_configured; then
+        description=$(fetch_omdb_description "$clean_title" "$movie_year" 2>/dev/null)
     fi
 fi
 
-# --- 5. Render Image ---
-# Verify we have a poster URL
+# --- Priority 2: TMDB (fallback) ---
+if [[ -z "$description" && -f "$TMDB_MODULE" ]]; then
+    source "$TMDB_MODULE"
+    if tmdb_configured; then
+        description=$(fetch_movie_description "$clean_title" "$movie_year" 2>/dev/null)
+    fi
+fi
+
+# --- Priority 3: Google scraping (last resort) ---
+if [[ -z "$description" && -f "$GOOGLE_SCRIPT" ]]; then
+    # Google scraping would go here - placeholder for now
+    description=""
+fi
+
+# Fallback message if no API configured or no results
+if [[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]]; then
+    description="No description available."
+fi
+
+# --- 6. Display Poster + Description Side-by-Side ---
+# Fetch and display poster
 if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
-    
-    # Define cache path
     cache_dir="${HOME}/.cache/termflix/posters"
     mkdir -p "$cache_dir"
     
-    # Hash the URL
-    filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())")
+    filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
     poster_path="${cache_dir}/${filename_hash}.jpg"
     
     # Download if not cached
     if [[ ! -f "$poster_path" ]]; then
-        echo -e "${GRAY}Downloading poster...${RESET}"
-        curl -sL --max-time 3 "$poster_url" -o "$poster_path"
-        # Clear "Downloading..." line
-        echo -e "\r\033[K"
+        curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
     fi
 
-    # Display Image if file exists
-    if [[ -f "$poster_path" ]]; then
-        
-        # Calculate Dimensions
-        local width=${FZF_PREVIEW_COLUMNS:-40}
-        local height=${FZF_PREVIEW_LINES:-20}
-        ((height-=10))
-        [[ $height -lt 5 ]] && height=5
-        
-        # Priority 1: Kitty ICAT (if in Kitty terminal)
-        if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-             # FZF preview requires robust placement.
-             # Standard icat works if FZF doesn't overwrite it immediately.
-             # Using 'place' is safer for positioning.
-             # But 'kitten icat' prints to stdout.
-             kitten icat --transfer-mode=memory --stdin=no --place "${width}x${height}@0x0" "$poster_path" < /dev/null
-             
-        # Priority 2: VIU (User Preferred)
-        elif command -v viu &>/dev/null; then
-             # Viu needs explicit size or it autodetects.
-             # Pass width/height via flags? Viu -w -h
-             viu -w "$width" -h "$height" "$poster_path"
-             
-        # Priority 3: Chafa (Robust Fallback)
+    # Display Image
+    if [[ -f "$poster_path" && -s "$poster_path" ]]; then
+        if command -v viu &>/dev/null; then
+            viu -w 20 -h 15 "$poster_path"
+        elif [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+            kitten icat --transfer-mode=memory --stdin=no --place "20x15@0x0" "$poster_path" < /dev/null
         elif command -v chafa &>/dev/null; then
-             chafa --symbols=block --size="${width}x${height}" "$poster_path"
-             
-        else
-            echo -e "${GRAY}[Install 'viu', 'kitten', or 'chafa' to see images]${RESET}"
+            chafa --symbols=block --size="20x15" "$poster_path"
         fi
-    else
-        echo -e "${GRAY}[Poster Download Failed]${RESET}"
-    fi
-else
-    # Only show this if we really couldn't find one
-    if [[ "$poster_url" == "N/A" ]]; then
-        echo -e "${GRAY}[No Poster Metadata]${RESET}"
     fi
 fi
+
+echo
+echo -e "${DIM}${description}${RESET}"
+echo
+
+# --- 7. Magnet Picker Menu ---
+if [[ "$source" == "COMBINED" ]]; then
+    echo -e "${BOLD}${CYAN}Available Versions:${RESET}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    
+    # Deduplicate by magnet hash (bash 3 compatible)
+    seen_hashes=""
+    unique_indices=()
+    
+    for i in "${!magnets_arr[@]}"; do
+        mag="${magnets_arr[$i]}"
+        # Extract hash from magnet link
+        hash=$(echo "$mag" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | tr '[:upper:]' '[:lower:]')
+        
+        # Check if we've seen this hash (simple string grep)
+        if [[ -n "$hash" ]] && [[ ! "$seen_hashes" =~ $hash ]]; then
+            seen_hashes+="$hash "
+            unique_indices+=("$i")
+        fi
+    done
+    
+    # Display only unique entries
+    for i in "${unique_indices[@]}"; do
+        src="${sources_arr[$i]}"
+        qual="${qualities_arr[$i]}"
+        seed="${seeds_arr[$i]}"
+        sz="${sizes_arr[$i]}"
+        
+        # Source color
+        src_color="$CYAN"
+        case "$src" in
+            "YTS")   src_color="$GREEN" ;;
+            "TPB")   src_color="$YELLOW" ;;
+            "EZTV")  src_color="$BLUE" ;;
+            "1337x") src_color="$MAGENTA" ;;
+        esac
+        
+        # Source name
+        src_name=""
+        case "$src" in
+            "YTS")   src_name="YTS.mx" ;;
+            "TPB")   src_name="ThePirateBay" ;;
+            "EZTV")  src_name="EZTV.re" ;;
+            "1337x") src_name="1337x.to" ;;
+        esac
+        
+        echo -e "  ${ORANGE}🧲${RESET} ${src_color}[${src}]${RESET} ${CYAN}${qual}${RESET} - ${YELLOW}${sz}${RESET} - ${GREEN}👥 ${seed} seeds${RESET} ${DIM}- ${src_name}${RESET}"
+    done
+else
+    echo -e "${BOLD}${GREEN}Ready to stream:${RESET}"
+    echo -e "  ${ORANGE}🧲${RESET} ${GREEN}[${source}]${RESET} ${CYAN}${quality}${RESET} - ${YELLOW}${size}${RESET} - ${GREEN}👥 ${seeds} seeds${RESET}"
+fi
+
+echo

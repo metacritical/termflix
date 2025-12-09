@@ -244,12 +244,23 @@ display_catalog_page_gum() {
                 display_name_left="${display_name_left}..."
             fi
 
-            # Format source tags for left item
+            # Format source tags for left item with proper seed/size handling
             local source_tags_left=""
+            local seeds_left=""
+            local quality_left_clean=""
+            local size_left_val=""
+
             if [[ "$source_left" == "COMBINED" ]]; then
-                IFS='|' read -r _ c_name_left c_sources_left c_seeds_left c_qualities_left c_sizes_left c_magnets_left c_poster_left <<< "$result_left"
+                IFS='|' read -r _ c_name_left c_sources_left c_seeds_left_raw c_qualities_left c_sizes_left_raw c_magnets_left c_poster_left <<< "$result_left"
                 local sources_arr_left=()
+                local seeds_arr_left=()
+                local qualities_arr_left=()
+                local sizes_arr_left=()
                 IFS='^' read -ra sources_arr_left <<< "$c_sources_left"
+                IFS='^' read -ra seeds_arr_left <<< "$c_seeds_left_raw"
+                IFS='^' read -ra qualities_arr_left <<< "$c_qualities_left"
+                IFS='^' read -ra sizes_arr_left <<< "$c_sizes_left_raw"
+
                 for src in "${sources_arr_left[@]}"; do
                     case "$src" in
                         YTS) source_tags_left="${source_tags_left}[${GREEN}YTS${RESET}] " ;;
@@ -262,6 +273,37 @@ display_catalog_page_gum() {
                 source_tags_left=$(echo "$source_tags_left" | sed 's/[[:space:]]*$//')
                 name_left="$c_name_left"
                 poster_url_left="$c_poster_left"
+
+                # Calculate max seeds from all sources
+                local max_seeds=0
+                for seed_str in "${seeds_arr_left[@]}"; do
+                    local seed_val=$(echo "$seed_str" | grep -oE '[0-9]+' | head -1)
+                    if [ -n "$seed_val" ] && [ "$seed_val" -gt "$max_seeds" ] 2>/dev/null; then
+                        max_seeds=$seed_val
+                    fi
+                done
+                seeds_left="$max_seeds"
+
+                # Use best quality
+                quality_left_clean=""
+                for q in "${qualities_arr_left[@]}"; do
+                    if [[ "$q" =~ 1080 ]]; then
+                        quality_left_clean="1080p"
+                        break
+                    elif [[ "$q" =~ 720 ]] && [ -z "$quality_left_clean" ]; then
+                        quality_left_clean="720p"
+                    elif [ -z "$quality_left_clean" ] && [ -n "$q" ] && [ "$q" != "N/A" ]; then
+                        quality_left_clean="$q"
+                    fi
+                done
+                if [ -z "$quality_left_clean" ]; then
+                    quality_left_clean="N/A"
+                fi
+
+                # Use first size as representative
+                if [ ${#sizes_arr_left[@]} -gt 0 ]; then
+                    size_left_val="${sizes_arr_left[0]}"
+                fi
             else
                 local source_color_left="$CYAN"
                 case "$source_left" in
@@ -271,6 +313,29 @@ display_catalog_page_gum() {
                     1337x) source_color_left="$MAGENTA" ;;
                 esac
                 source_tags_left="${source_color_left}[$source_left]${RESET}"
+
+                # Extract seeds from extra or quality field for single sources (especially TPB)
+                if [[ -n "$extra_left" ]] && [[ "$extra_left" =~ [0-9]+ ]]; then
+                    seeds_left=$(echo "$extra_left" | grep -oE '[0-9]+' | head -1)
+                elif [[ -n "$quality_left" ]] && [[ "$quality_left" =~ [0-9]+[[:space:]]*seeds ]]; then
+                    seeds_left=$(echo "$quality_left" | grep -oE '[0-9]+' | head -1)
+                    # Clean quality field if it contains seed info
+                    quality_left_clean=$(echo "$quality_left" | sed 's/[0-9]\+[[:space:]]*seeds.*//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    if [ -z "$quality_left_clean" ] || [ "$quality_left_clean" = "N/A" ]; then
+                        quality_left_clean="N/A"
+                    fi
+                fi
+
+                # Use provided quality if not already cleaned
+                if [ -z "$quality_left_clean" ]; then
+                    quality_left_clean=$(echo -n "$quality_left" | sed 's/[0-9]\+ seeds//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                    if [ -z "$quality_left_clean" ] || [ "$quality_left_clean" = "N/A" ]; then
+                        quality_left_clean="N/A"
+                    fi
+                fi
+
+                # Use provided size
+                size_left_val="$size_left"
             fi
 
             # Right column item
@@ -279,6 +344,9 @@ display_catalog_page_gum() {
             local source_tags_right=""
             local name_right=""
             local poster_url_right=""
+            local seeds_right=""
+            local quality_right_clean=""
+            local size_right_val=""
 
             if [ $((i+1)) -lt $end_idx ] && [ $((i+1)) -lt ${#all_results[@]} ]; then
                 result_right="${all_results[$((i+1))]}"
@@ -289,11 +357,18 @@ display_catalog_page_gum() {
                     display_name_right="${display_name_right}..."
                 fi
 
-                # Format source tags for right item
+                # Format source tags for right item with proper seed/size handling
                 if [[ "$source_right" == "COMBINED" ]]; then
-                    IFS='|' read -r _ c_name_right c_sources_right c_seeds_right c_qualities_right c_sizes_right c_magnets_right c_poster_right <<< "$result_right"
+                    IFS='|' read -r _ c_name_right c_sources_right c_seeds_right_raw c_qualities_right c_sizes_right_raw c_magnets_right c_poster_right <<< "$result_right"
                     local sources_arr_right=()
+                    local seeds_arr_right=()
+                    local qualities_arr_right=()
+                    local sizes_arr_right=()
                     IFS='^' read -ra sources_arr_right <<< "$c_sources_right"
+                    IFS='^' read -ra seeds_arr_right <<< "$c_seeds_right_raw"
+                    IFS='^' read -ra qualities_arr_right <<< "$c_qualities_right"
+                    IFS='^' read -ra sizes_arr_right <<< "$c_sizes_right_raw"
+
                     for src in "${sources_arr_right[@]}"; do
                         case "$src" in
                             YTS) source_tags_right="${source_tags_right}[${GREEN}YTS${RESET}] " ;;
@@ -306,6 +381,37 @@ display_catalog_page_gum() {
                     source_tags_right=$(echo "$source_tags_right" | sed 's/[[:space:]]*$//')
                     name_right="$c_name_right"
                     poster_url_right="$c_poster_right"
+
+                    # Calculate max seeds from all sources
+                    local max_seeds_right=0
+                    for seed_str in "${seeds_arr_right[@]}"; do
+                        local seed_val=$(echo "$seed_str" | grep -oE '[0-9]+' | head -1)
+                        if [ -n "$seed_val" ] && [ "$seed_val" -gt "$max_seeds_right" ] 2>/dev/null; then
+                            max_seeds_right=$seed_val
+                        fi
+                    done
+                    seeds_right="$max_seeds_right"
+
+                    # Use best quality
+                    quality_right_clean=""
+                    for q in "${qualities_arr_right[@]}"; do
+                        if [[ "$q" =~ 1080 ]]; then
+                            quality_right_clean="1080p"
+                            break
+                        elif [[ "$q" =~ 720 ]] && [ -z "$quality_right_clean" ]; then
+                            quality_right_clean="720p"
+                        elif [ -z "$quality_right_clean" ] && [ -n "$q" ] && [ "$q" != "N/A" ]; then
+                            quality_right_clean="$q"
+                        fi
+                    done
+                    if [ -z "$quality_right_clean" ]; then
+                        quality_right_clean="N/A"
+                    fi
+
+                    # Use first size as representative
+                    if [ ${#sizes_arr_right[@]} -gt 0 ]; then
+                        size_right_val="${sizes_arr_right[0]}"
+                    fi
                 else
                     local source_color_right="$CYAN"
                     case "$source_right" in
@@ -315,19 +421,42 @@ display_catalog_page_gum() {
                         1337x) source_color_right="$MAGENTA" ;;
                     esac
                     source_tags_right="${source_color_right}[$source_right]${RESET}"
+
+                    # Extract seeds from extra or quality field for single sources (especially TPB)
+                    if [[ -n "$extra_right" ]] && [[ "$extra_right" =~ [0-9]+ ]]; then
+                        seeds_right=$(echo "$extra_right" | grep -oE '[0-9]+' | head -1)
+                    elif [[ -n "$quality_right" ]] && [[ "$quality_right" =~ [0-9]+[[:space:]]*seeds ]]; then
+                        seeds_right=$(echo "$quality_right" | grep -oE '[0-9]+' | head -1)
+                        # Clean quality field if it contains seed info
+                        quality_right_clean=$(echo "$quality_right" | sed 's/[0-9]\+[[:space:]]*seeds.*//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                        if [ -z "$quality_right_clean" ] || [ "$quality_right_clean" = "N/A" ]; then
+                            quality_right_clean="N/A"
+                        fi
+                    fi
+
+                    # Use provided quality if not already cleaned
+                    if [ -z "$quality_right_clean" ]; then
+                        quality_right_clean=$(echo -n "$quality_right" | sed 's/[0-9]\+ seeds//g' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                        if [ -z "$quality_right_clean" ] || [ "$quality_right_clean" = "N/A" ]; then
+                            quality_right_clean="N/A"
+                        fi
+                    fi
+
+                    # Use provided size
+                    size_right_val="$size_right"
                 fi
             fi
 
             # Display two items side by side with potential images
             local left_item="${BOLD}$((i+1)). ${display_name_left}${RESET}\n${source_tags_left}"
-            if [[ -n "$quality_left" ]] && [[ "$quality_left" != "N/A" ]]; then
-                left_item="${left_item} ${CYAN}${quality_left}${RESET}"
+            if [[ -n "$quality_left_clean" ]] && [[ "$quality_left_clean" != "N/A" ]]; then
+                left_item="${left_item} ${CYAN}${quality_left_clean}${RESET}"
             fi
-            if [[ -n "$size_left" ]] && [[ "$size_left" != "N/A" ]]; then
-                left_item="${left_item} | ${size_left}"
+            if [[ -n "$size_left_val" ]] && [[ "$size_left_val" != "N/A" ]]; then
+                left_item="${left_item} | ${size_left_val}"
             fi
-            if [[ -n "$extra_left" ]] && [[ "$extra_left" != "N/A" ]]; then
-                left_item="${left_item} | ${extra_left}"
+            if [[ -n "$seeds_left" ]] && [ "$seeds_left" -gt 0 ]; then
+                left_item="${left_item} | ${YELLOW}${seeds_left} Seeds${RESET}"
             fi
 
             # Prepare right item info
@@ -335,14 +464,14 @@ display_catalog_page_gum() {
             if [ -n "$result_right" ]; then
                 local right_num=$((i+2))
                 right_item="${BOLD}${right_num}. ${display_name_right}${RESET}\n${source_tags_right}"
-                if [[ -n "$quality_right" ]] && [[ "$quality_right" != "N/A" ]]; then
-                    right_item="${right_item} ${CYAN}${quality_right}${RESET}"
+                if [[ -n "$quality_right_clean" ]] && [[ "$quality_right_clean" != "N/A" ]]; then
+                    right_item="${right_item} ${CYAN}${quality_right_clean}${RESET}"
                 fi
-                if [[ -n "$size_right" ]] && [[ "$size_right" != "N/A" ]]; then
-                    right_item="${right_item} | ${size_right}"
+                if [[ -n "$size_right_val" ]] && [[ "$size_right_val" != "N/A" ]]; then
+                    right_item="${right_item} | ${size_right_val}"
                 fi
-                if [[ -n "$extra_right" ]] && [[ "$extra_right" != "N/A" ]]; then
-                    right_item="${right_item} | ${extra_right}"
+                if [[ -n "$seeds_right" ]] && [ "$seeds_right" -gt 0 ]; then
+                    right_item="${right_item} | ${YELLOW}${seeds_right} Seeds${RESET}"
                 fi
             fi
 
@@ -541,19 +670,99 @@ display_catalog_page_gum() {
                     name="$c_name"
                 fi
 
+                # Check if item is COMBINED to show inline picker
+                local final_magnet="$magnet"
+                local final_source="$source"
+                local final_quality="$quality"
+                local final_size="$size"
+
+                if [[ "$source" == "COMBINED" ]]; then
+                    # Format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
+                    IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster <<< "$selected_result"
+                    local sources_arr=()
+                    local seeds_arr=()
+                    local qualities_arr=()
+                    local sizes_arr=()
+                    local magnets_arr=()
+                    IFS='^' read -ra sources_arr <<< "$c_sources"
+                    IFS='^' read -ra seeds_arr <<< "$c_seeds"
+                    IFS='^' read -ra qualities_arr <<< "$c_qualities"
+                    IFS='^' read -ra sizes_arr <<< "$c_sizes"
+                    IFS='^' read -ra magnets_arr <<< "$c_magnets"
+
+                    # Show inline picker using gum
+                    echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${CYAN}Multiple versions found for:${RESET} ${BOLD}${YELLOW}$c_name${RESET}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+
+                    # Build options for gum
+                    local gum_options=()
+                    for idx in "${!sources_arr[@]}"; do
+                        local src="${sources_arr[$idx]}"
+                        local qty="${qualities_arr[$idx]}"
+                        local sz="${sizes_arr[$idx]}"
+                        local sd="${seeds_arr[$idx]}"
+                        local option_text="$idx) [${src}] ${qty} - ${sz} (${sd} seeds)"
+                        gum_options+=("$option_text")
+                    done
+
+                    # Use gum to select
+                    if command -v gum &> /dev/null; then
+                        local choice=$(printf '%s\n' "${gum_options[@]}" | gum choose --header="Select a version:")
+                        if [ -n "$choice" ]; then
+                            # Extract index from choice (format: "0) [YTS] 1080p - 2.1GB (1245 seeds)")
+                            local selected_idx=$(echo "$choice" | cut -d')' -f1)
+                            if [[ "$selected_idx" =~ ^[0-9]+$ ]] && [ "$selected_idx" -ge 0 ] && [ "$selected_idx" -lt "${#sources_arr[@]}" ]; then
+                                final_source="${sources_arr[$selected_idx]}"
+                                final_magnet="${magnets_arr[$selected_idx]}"
+                                final_quality="${qualities_arr[$selected_idx]}"
+                                final_size="${sizes_arr[$selected_idx]}"
+                            else
+                                # Invalid selection, return to catalog
+                                echo -e "${YELLOW}Invalid selection. Returning to catalog.${RESET}"
+                                return 1
+                            fi
+                        else
+                            # User cancelled, return to catalog
+                            echo -e "${YELLOW}Selection cancelled. Returning to catalog.${RESET}"
+                            return 1
+                        fi
+                    else
+                        # Fallback to manual selection
+                        for idx in "${!sources_arr[@]}"; do
+                            local src="${sources_arr[$idx]}"
+                            local qty="${qualities_arr[$idx]}"
+                            local sz="${sizes_arr[$idx]}"
+                            local sd="${seeds_arr[$idx]}"
+                            echo "$idx) [${src}] ${qty} - ${sz} (${sd} seeds)"
+                        done
+                        echo -n "Select (0-$((${#sources_arr[@]} - 1))): "
+                        read -r choice_idx
+                        if [[ "$choice_idx" =~ ^[0-9]+$ ]] && [ "$choice_idx" -ge 0 ] && [ "$choice_idx" -lt "${#sources_arr[@]}" ]; then
+                            final_source="${sources_arr[$choice_idx]}"
+                            final_magnet="${magnets_arr[$choice_idx]}"
+                            final_quality="${qualities_arr[$choice_idx]}"
+                            final_size="${sizes_arr[$choice_idx]}"
+                        else
+                            echo -e "${YELLOW}Invalid selection. Returning to catalog.${RESET}"
+                            return 1
+                        fi
+                    fi
+                fi
+
                 # Validate and stream
-                magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                if [ -z "$magnet" ] || [[ ! "$magnet" =~ ^magnet: ]]; then
+                final_magnet=$(echo "$final_magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [ -z "$final_magnet" ] || [[ ! "$final_magnet" =~ ^magnet: ]]; then
                     echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
                     return 1
                 fi
 
                 echo
-                echo -e "${GREEN}Streaming:${RESET} $name"
+                echo -e "${GREEN}Streaming:${RESET} $name [${final_source}]"
                 echo
 
                 # Stream the selected torrent
-                stream_torrent "$magnet" "" false false
+                stream_torrent "$final_magnet" "" false false
             else
                 echo -e "${RED}Invalid selection${RESET}"
                 display_catalog_page_gum "$title" "$cached_results_var" "$page" "$per_page" "$total"
@@ -615,19 +824,99 @@ display_catalog_page_gum() {
                     name="$c_name"
                 fi
 
+                # Check if item is COMBINED to show inline picker
+                local final_magnet="$magnet"
+                local final_source="$source"
+                local final_quality="$quality"
+                local final_size="$size"
+
+                if [[ "$source" == "COMBINED" ]]; then
+                    # Format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
+                    IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster <<< "$selected_result"
+                    local sources_arr=()
+                    local seeds_arr=()
+                    local qualities_arr=()
+                    local sizes_arr=()
+                    local magnets_arr=()
+                    IFS='^' read -ra sources_arr <<< "$c_sources"
+                    IFS='^' read -ra seeds_arr <<< "$c_seeds"
+                    IFS='^' read -ra qualities_arr <<< "$c_qualities"
+                    IFS='^' read -ra sizes_arr <<< "$c_sizes"
+                    IFS='^' read -ra magnets_arr <<< "$c_magnets"
+
+                    # Show inline picker using gum
+                    echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                    echo -e "${CYAN}Multiple versions found for:${RESET} ${BOLD}${YELLOW}$c_name${RESET}"
+                    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+
+                    # Build options for gum
+                    local gum_options=()
+                    for idx in "${!sources_arr[@]}"; do
+                        local src="${sources_arr[$idx]}"
+                        local qty="${qualities_arr[$idx]}"
+                        local sz="${sizes_arr[$idx]}"
+                        local sd="${seeds_arr[$idx]}"
+                        local option_text="$idx) [${src}] ${qty} - ${sz} (${sd} seeds)"
+                        gum_options+=("$option_text")
+                    done
+
+                    # Use gum to select
+                    if command -v gum &> /dev/null; then
+                        local choice=$(printf '%s\n' "${gum_options[@]}" | gum choose --header="Select a version:")
+                        if [ -n "$choice" ]; then
+                            # Extract index from choice (format: "0) [YTS] 1080p - 2.1GB (1245 seeds)")
+                            local selected_idx=$(echo "$choice" | cut -d')' -f1)
+                            if [[ "$selected_idx" =~ ^[0-9]+$ ]] && [ "$selected_idx" -ge 0 ] && [ "$selected_idx" -lt "${#sources_arr[@]}" ]; then
+                                final_source="${sources_arr[$selected_idx]}"
+                                final_magnet="${magnets_arr[$selected_idx]}"
+                                final_quality="${qualities_arr[$selected_idx]}"
+                                final_size="${sizes_arr[$selected_idx]}"
+                            else
+                                # Invalid selection, return to catalog
+                                echo -e "${YELLOW}Invalid selection. Returning to catalog.${RESET}"
+                                return 1
+                            fi
+                        else
+                            # User cancelled, return to catalog
+                            echo -e "${YELLOW}Selection cancelled. Returning to catalog.${RESET}"
+                            return 1
+                        fi
+                    else
+                        # Fallback to manual selection
+                        for idx in "${!sources_arr[@]}"; do
+                            local src="${sources_arr[$idx]}"
+                            local qty="${qualities_arr[$idx]}"
+                            local sz="${sizes_arr[$idx]}"
+                            local sd="${seeds_arr[$idx]}"
+                            echo "$idx) [${src}] ${qty} - ${sz} (${sd} seeds)"
+                        done
+                        echo -n "Select (0-$((${#sources_arr[@]} - 1))): "
+                        read -r choice_idx
+                        if [[ "$choice_idx" =~ ^[0-9]+$ ]] && [ "$choice_idx" -ge 0 ] && [ "$choice_idx" -lt "${#sources_arr[@]}" ]; then
+                            final_source="${sources_arr[$choice_idx]}"
+                            final_magnet="${magnets_arr[$choice_idx]}"
+                            final_quality="${qualities_arr[$choice_idx]}"
+                            final_size="${sizes_arr[$choice_idx]}"
+                        else
+                            echo -e "${YELLOW}Invalid selection. Returning to catalog.${RESET}"
+                            return 1
+                        fi
+                    fi
+                fi
+
                 # Validate and stream
-                magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                if [ -z "$magnet" ] || [[ ! "$magnet" =~ ^magnet: ]]; then
+                final_magnet=$(echo "$final_magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                if [ -z "$final_magnet" ] || [[ ! "$final_magnet" =~ ^magnet: ]]; then
                     echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
                     return 1
                 fi
 
                 echo
-                echo -e "${GREEN}Streaming:${RESET} $name"
+                echo -e "${GREEN}Streaming:${RESET} $name [${final_source}]"
                 echo
 
                 # Stream the selected torrent
-                stream_torrent "$magnet" "" false false
+                stream_torrent "$final_magnet" "" false false
             else
                 echo -e "${RED}Invalid selection${RESET}"
                 display_catalog_page_gum "$title" "$cached_results_var" "$page" "$per_page" "$total"

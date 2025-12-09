@@ -281,11 +281,11 @@ main() {
             ;;
     esac
     
-    # If we get here and no source, default to "latest all"
+    # If we get here and no source, default to "latest movies"
     if [ -z "$source" ] && [ "$list_only" = false ] && [ "$search_mode" = false ]; then
-        # Default behavior: show latest movies and shows
+        # Default behavior: show latest movies
         check_jq
-        display_catalog "🎬 Latest Movies & Shows" get_latest_movies 15 get_ytsrs_latest_wrapper 15 get_latest_shows 20
+        display_catalog "🎬 Latest Movies" get_latest_movies 25 get_ytsrs_latest_wrapper 25
         exit $?
     fi
     

@@ -46,21 +46,42 @@ clear_spinner() {
 # PROGRESS BARS
 # ═══════════════════════════════════════════════════════════════
 
-# Show progress bar
-# Usage: show_progress_bar 50 100 30  (50/100, width 30)
+# Show progress bar with optional gradient and speed/ETA
+# Usage: show_progress_bar 50 100 30 "1.2 MB/s" "3:24"
 show_progress_bar() {
     local current="$1"
     local total="$2"
     local width="${3:-30}"
+    local speed="${4:-}"
+    local eta="${5:-}"
     
     local percent=$((current * 100 / total))
     local filled=$((current * width / total))
     local empty=$((width - filled))
     
+    # Gradient colors: magenta -> pink -> cyan
+    local GRAD_START='\033[38;5;213m'  # Magenta
+    local GRAD_MID='\033[38;5;219m'    # Pink
+    local GRAD_END='\033[38;5;87m'     # Cyan
+    
     printf "\r${C_PURPLE:-\033[38;5;135m}[${RESET:-\033[0m}"
-    printf "${C_GLOW:-\033[38;5;212m}%${filled}s${RESET:-\033[0m}" | tr ' ' '█'
+    
+    # Draw gradient bar
+    local third=$((filled / 3))
+    local remaining=$((filled - third * 2))
+    [[ $third -gt 0 ]] && printf "${GRAD_START}%${third}s${RESET:-\033[0m}" | tr ' ' '█'
+    [[ $third -gt 0 ]] && printf "${GRAD_MID}%${third}s${RESET:-\033[0m}" | tr ' ' '█'
+    [[ $remaining -gt 0 ]] && printf "${GRAD_END}%${remaining}s${RESET:-\033[0m}" | tr ' ' '█'
+    
+    # Empty portion
     printf "${C_MUTED:-\033[38;5;241m}%${empty}s${RESET:-\033[0m}" | tr ' ' '░'
     printf "${C_PURPLE:-\033[38;5;135m}]${RESET:-\033[0m} ${C_SUBTLE:-\033[38;5;245m}%3d%%${RESET:-\033[0m}" "$percent"
+    
+    # Speed and ETA display
+    if [[ -n "$speed" ]]; then
+        printf " ${C_GLOW:-\033[38;5;212m}%s${RESET:-\033[0m}" "$speed"
+        [[ -n "$eta" ]] && printf " • ${C_MUTED:-\033[38;5;241m}%s${RESET:-\033[0m}" "$eta"
+    fi
 }
 
 # Complete progress bar with message
@@ -122,15 +143,26 @@ render_status_bar() {
     tput rc
 }
 
-# Render navigation hints in status bar
+# Render navigation hints in status bar with colored keys
 render_nav_hints() {
-    local hints="${1:-↑↓ navigate  •  enter select  •  q quit}"
     local term_lines=$(tput lines)
     local term_cols=$(tput cols)
-    local hints_col=$(( (term_cols - ${#hints}) / 2 ))
+    
+    # Color definitions for key hints
+    local KEY_PINK='\033[38;5;212m'     # Action keys (j/k)
+    local KEY_GREEN='\033[38;5;46m'     # Confirm key (Enter)
+    local KEY_GRAY='\033[38;5;241m'     # Exit key (q)
+    local SEP='\033[38;5;245m'          # Separator (•)
+    
+    # Styled hints
+    local hints="${KEY_PINK}j${RESET:-\033[0m}/${KEY_PINK}k${RESET:-\033[0m} ${SEP}move${RESET:-\033[0m}  ${SEP}•${RESET:-\033[0m}  ${KEY_GREEN}enter${RESET:-\033[0m} ${SEP}select${RESET:-\033[0m}  ${SEP}•${RESET:-\033[0m}  ${KEY_GRAY}q${RESET:-\033[0m} ${SEP}quit${RESET:-\033[0m}"
+    
+    # Calculate center position (account for ANSI codes in length)
+    local visible_len=26  # Approximate visible length without ANSI
+    local hints_col=$(( (term_cols - visible_len) / 2 ))
     
     tput cup $((term_lines - 1)) $hints_col
-    echo -ne "\033[48;5;235m${C_MUTED:-\033[38;5;241m}${hints}${RESET:-\033[0m}\033[0m"
+    echo -ne "\033[48;5;235m${hints}\033[0m"
 }
 
 # ═══════════════════════════════════════════════════════════════
