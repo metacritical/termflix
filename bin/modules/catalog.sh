@@ -409,7 +409,7 @@ draw_grid_row() {
             local clean_title=$(echo "$name" | sed -E 's/\./ /g' | sed -E 's/ \([0-9]{4}\).*//' | sed 's/\[.*\]//g' | xargs)
             
             # Check cache for rating and genre (using TMDB cache)
-            local cache_dir=$(get_termflix_cache_dir)/tmdb
+            local cache_dir=$(get_cache_dir)/tmdb
             local cache_key=$(echo "${clean_title}_${year}" | tr -cd '[:alnum:]')
             local cache_file="$cache_dir/${cache_key}.json"
             
@@ -671,19 +671,19 @@ redraw_catalog_page() {
                         temp_files[$i]="$temp_file"
                         fetch_indices+=($i)
                         (
-                            local new_poster=$(fetch_tmdb_poster "$clean_title" "$year")
+                            local new_poster=$(fetch_google_poster "$clean_title" "$year")
                             echo "$new_poster" > "$temp_file"
                         ) &
                         pids+=($!)
                     fi
                 else
-                    local cache_dir=$(get_termflix_cache_dir)/tmdb
+                    local cache_dir=$(get_cache_dir)/tmdb
                     local cache_key=$(echo "${clean_title}_${year}" | tr -cd '[:alnum:]')
                     local cache_file="$cache_dir/${cache_key}.json"
                     
                     if [ ! -f "$cache_file" ] && [ -n "$clean_title" ]; then
                         (
-                            fetch_tmdb_poster "$clean_title" "$year" > /dev/null 2>&1
+                            fetch_google_poster "$clean_title" "$year" > /dev/null 2>&1
                         ) &
                         pids+=($!)
                     fi
@@ -811,12 +811,21 @@ redraw_catalog_page() {
 }
 
 # Display catalog results in columns with pagination
+# Usage: display_catalog <title> [gum] [function args...]
+# If 'gum' is passed as the second parameter, use gum-based display
 display_catalog() {
     local title="$1"
+    local use_gum=false
     local all_results=()
     local page="${CATALOG_PAGE:-1}"
     local per_page=20
     shift
+
+    # Check if 'gum' is the next argument
+    if [ "$1" = "gum" ]; then
+        use_gum=true
+        shift
+    fi
     
     # Store original arguments for pagination navigation
     local original_args=("$@")
@@ -828,7 +837,7 @@ display_catalog() {
     
     # Generate cache key from function names and arguments
     local cache_key=$(generate_cache_key "$title" "${original_args[@]}")
-    local cache_dir=$(get_termflix_cache_dir)
+    local cache_dir=$(get_cache_dir)
     local cache_file="$cache_dir/catalog_${cache_key}.txt"
     
     # Check if cache is valid (less than 1 hour old)
@@ -838,7 +847,7 @@ display_catalog() {
          rm -f "$cache_file"
     fi
 
-    if is_cache_valid "$cache_file"; then
+    if is_cache_valid "$cache_file" 1200; then
         echo -e "${CYAN}Loading from cache...${RESET}"
         # Read results from cache
         local result_count=0
@@ -1037,348 +1046,226 @@ display_catalog() {
             printf "%s\n" "${all_results[@]}" > "$cache_file" 2>/dev/null
         fi
     fi
-    
-    # Calculate pagination
-    local total="${#all_results[@]}"
-    local total_pages=$(( (total + per_page - 1) / per_page ))
-    
-    # Store cached results in a variable name for redraw function
-    local cached_results_var="cached_results_$$"
-    eval "declare -a ${cached_results_var}=()"
-    for result in "${all_results[@]}"; do
-        eval "${cached_results_var}+=(\"\$result\")"
-    done
-    
-    # Display initial page using redraw function
-    redraw_catalog_page "$title" "$cached_results_var" "$page" "$per_page" "$total"
-    
-    # Interactive selection with pagination using keypress detection
-    if [ -t 0 ]; then
-        
-        # Navigation loop with keypress detection
-        local current_page=$page
-        local selection=""
-        local number_input=""
-        
-        while true; do
-            # Display navigation instructions right after the last row
-            # redraw_catalog_page already positioned the cursor correctly (after last row + 2 blank lines)
-            # So we can just display navigation directly - no need to reposition cursor
-            
-            if [ $total_pages -gt 1 ]; then
-                echo -e "${CYAN}Navigation:${RESET}"
-                echo -e "  ${GREEN}n${RESET} - Next page (press key, no Enter needed)"
-                echo -e "  ${GREEN}p${RESET} - Previous page (press key, no Enter needed)"
-                echo -e "  ${GREEN}1-${total}${RESET} - Select torrent (type number, press Enter)"
-                echo -e "  ${GREEN}q${RESET} or ${GREEN}Esc${RESET} - Cancel/Quit"
-                echo
-            else
-                echo -e "${CYAN}Navigation:${RESET}"
-                echo -e "  ${GREEN}1-${total}${RESET} - Select torrent (type number, press Enter)"
-                echo -e "  ${GREEN}q${RESET} or ${GREEN}Esc${RESET} - Cancel/Quit"
-                echo
-            fi
-            
-            # Setup terminal for keypress detection
-            local old_stty
-            old_stty=$(stty -g 2>/dev/null) || true
-            stty -icanon -echo 2>/dev/null || true
-            
-            # Read a single keypress
-            local key
-            if IFS= read -rsn1 key 2>/dev/null; then
-                # Handle escape sequences (arrow keys, etc.)
-                if [ "$key" = $'\033' ]; then
-                    read -rsn1 -t 0.1 key 2>/dev/null || true
-                    if [ "$key" = "[" ]; then
-                        read -rsn1 -t 0.1 key 2>/dev/null || true
-                        # Arrow keys - ignore for now, could add later
-                    else
-                        # ESC key - cancel
-                        key="q"
-                    fi
-                fi
-            else
-                # No input or error
-                key=""
-            fi
-            
-            # Restore terminal settings
-            [ -n "$old_stty" ] && stty "$old_stty" 2>/dev/null || true
-            
-            # Handle keypress
-            case "$key" in
-                n|N)
-                    if [ $current_page -lt $total_pages ]; then
-                        current_page=$((current_page + 1))
-                        # Redraw page from cache (no re-fetch)
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        continue
-                    else
-                        echo -e "${YELLOW}Already on last page.${RESET}"
-                        sleep 0.5
-                        # Redraw to clear message
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                    fi
-                    ;;
-                p|P)
-                    if [ $current_page -gt 1 ]; then
-                        current_page=$((current_page - 1))
-                        # Redraw page from cache (no re-fetch)
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        continue
-                    else
-                        echo -e "${YELLOW}Already on first page.${RESET}"
-                        sleep 0.5
-                        # Redraw to clear message
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                    fi
-                    ;;
-                q|Q|$'\033')
-                    echo "Cancelled."
-                    unset CATALOG_PAGE
-                    cleanup_posters
-                    return
-                    ;;
-                [0-9])
-                    # Start collecting number input
-                    number_input="$key"
-                    # Read remaining digits (if any) with normal input mode
-                    local old_stty2
-                    old_stty2=$(stty -g 2>/dev/null) || true
-                    stty icanon echo 2>/dev/null || true
-                    echo -ne "${YELLOW}Enter selection: ${number_input}${RESET}"
-                    while IFS= read -rsn1 -t 1 key2 2>/dev/null; do
-                        if [[ "$key2" =~ [0-9] ]]; then
-                            number_input="${number_input}${key2}"
-                            echo -ne "$key2"
-                        elif [ "$key2" = "" ] || [ "$key2" = $'\n' ] || [ "$key2" = $'\r' ]; then
-                            # Enter pressed
-                            break
-                        elif [ "$key2" = $'\177' ] || [ "$key2" = $'\b' ]; then
-                            # Backspace
-                            if [ ${#number_input} -gt 1 ]; then
-                                number_input="${number_input%?}"
-                                echo -ne "\b \b"
-                            fi
-                        else
-                            break
-                        fi
-                    done
-                    [ -n "$old_stty2" ] && stty "$old_stty2" 2>/dev/null || true
-                    echo
-                    
-                    selection="$number_input"
-                    number_input=""
-                    ;;
-                *)
-                    # Ignore other keys
-                    continue
-                    ;;
-            esac
-            
-            # Handle numeric selection
-            if [ -n "$selection" ] && [[ "$selection" =~ ^[0-9]+$ ]]; then
-                if [ "$selection" -ge 1 ] && [ "$selection" -le "$total" ] 2>/dev/null; then
-                    local selected_result
-                    eval "selected_result=\"\${${cached_results_var}[$((selection - 1))]}\""
 
-                    IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
-                    
-                    # Check if item is COMBINED
-                    if [[ "$source" == "COMBINED" ]]; then
-                        # Format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
-                        IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster <<< "$selected_result"
-                        local sources_arr=() 
-                        local seeds_arr=()
-                        local qualities_arr=()
-                        local sizes_arr=()
-                        local magnets_arr=()
-                        IFS='^' read -ra sources_arr <<< "$c_sources"
-                        IFS='^' read -ra seeds_arr <<< "$c_seeds"
-                        IFS='^' read -ra qualities_arr <<< "$c_qualities"
-                        IFS='^' read -ra sizes_arr <<< "$c_sizes"
-                        IFS='^' read -ra magnets_arr <<< "$c_magnets"
-                        
-                        # Build torrent list for sidebar picker
-                        # Format: source|quality|seeds|size|magnet
-                        local -a torrent_options=()
-                        for i in "${!sources_arr[@]}"; do
-                            local src="${sources_arr[$i]}"
-                            local qty="${qualities_arr[$i]}"
-                            local sz="${sizes_arr[$i]}"
-                            local sd="${seeds_arr[$i]}"
-                            local mg="${magnets_arr[$i]}"
-                            torrent_options+=("${src}|${qty}|${sd}|${sz}|${mg}")
-                        done
-                        
-                        # Get poster path if available
-                        local poster_file=""
-                        if [[ -n "$c_poster" ]] && [[ "$c_poster" != "N/A" ]]; then
-                            # Download poster to temp file for display
-                            local temp_poster="${TMPDIR:-/tmp}/termflix_poster_$$.jpg"
-                            curl -s --max-time 5 "$c_poster" -o "$temp_poster" 2>/dev/null
-                            [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
-                        fi
-                        
-                        # Use Stremio-style sidebar picker (call directly, not in subshell)
-                        SIDEBAR_PICKER_RESULT=""
-                        if show_sidebar_picker "$c_name" "$poster_file" "${torrent_options[@]}"; then
-                            # Get result from global variable
-                            local choice_idx="$SIDEBAR_PICKER_RESULT"
-                            
-                            # Validate the index
-                            if [[ -n "$choice_idx" ]] && [[ "$choice_idx" =~ ^[0-9]+$ ]] && \
-                               [[ $choice_idx -ge 0 ]] && [[ $choice_idx -lt ${#sources_arr[@]} ]]; then
-                                # User selected a valid option
-                                source="${sources_arr[$choice_idx]}"
-                                magnet="${magnets_arr[$choice_idx]}"
-                                quality="${qualities_arr[$choice_idx]}"
-                                size="${sizes_arr[$choice_idx]}"
-                                name="$c_name"
-                                
-                                # Clean up temp poster
-                                [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
-                            else
-                                # Invalid index - treat as cancel
-                                [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
-                                selection=""
-                                tput reset 2>/dev/null || clear
-                                redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                                continue
-                            fi
-                        else
-                            # User cancelled
-                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
-                            selection=""
-                            tput reset 2>/dev/null || clear
-                            redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                            continue
-                        fi
-                    else
-                        # Single source entry - also show sidebar picker with single option
-                        # Build single torrent option
-                        local -a torrent_options=()
-                        # Parse: source|name|magnet|quality|size|extra|poster_url
-                        local seeds="N/A"
-                        if [[ -n "$extra" ]] && [[ "$extra" =~ [0-9]+ ]]; then
-                            seeds="$extra"
-                        fi
-                        torrent_options+=("${source}|${quality}|${seeds}|${size}|${magnet}")
-                        
-                        # Get poster path if available
-                        local poster_file=""
-                        if [[ -n "$poster_url" ]] && [[ "$poster_url" != "N/A" ]]; then
-                            local temp_poster="${TMPDIR:-/tmp}/termflix_poster_$$.jpg"
-                            curl -s --max-time 5 "$poster_url" -o "$temp_poster" 2>/dev/null
-                            [[ -f "$temp_poster" ]] && poster_file="$temp_poster"
-                        fi
-                        
-                        # Use Stremio-style sidebar picker (call directly, not in subshell)
-                        SIDEBAR_PICKER_RESULT=""
-                        if show_sidebar_picker "$name" "$poster_file" "${torrent_options[@]}"; then
-                            # User confirmed - keep existing source/magnet/etc
-                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
-                        else
-                            # User cancelled
-                            [[ -n "$poster_file" ]] && rm -f "$poster_file" 2>/dev/null
-                            selection=""
-                            tput reset 2>/dev/null || clear
-                            redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                            continue
-                        fi
-                    fi
-                    
-                    # Validate magnet link
-                    magnet=$(echo "$magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
-                    if [ -z "$magnet" ] || [[ ! "$magnet" =~ ^magnet: ]]; then
-                        echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
-                        echo -e "${YELLOW}Debug info:${RESET}"
-                        echo "  Source: $source"
-                        echo "  Name: $name"
-                        echo "  Magnet: '$magnet'"
-                        sleep 2
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        selection=""
-                        continue
-                    fi
-                    
-                    # Debug output
-                    if [ "$TORRENT_DEBUG" = true ]; then
-                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo -e "${CYAN}DEBUG MODE${RESET}"
-                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo -e "${YELLOW}Selected torrent:${RESET}"
-                        echo "  Index: $selection"
-                        echo "  Source: $source"
-                        echo "  Name: $name"
-                        echo "  Quality: $quality"
-                        echo "  Size: $size"
-                        echo -e "${YELLOW}Magnet link:${RESET}"
-                        echo "  $magnet"
-                        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-                        echo
-                    fi
-                    
-                    echo
-                    echo -e "${GREEN}Streaming:${RESET} $name"
-                    echo
-                    
-                    # Check dependencies before streaming
-                    if [ -z "$TORRENT_TOOL" ]; then
-                        check_deps
-                    fi
-                    
-                    # Stream the selected torrent (subtitles auto-detected)
-                    stream_torrent "$magnet" "" false false
-                    local exit_code=$?
-                    
-                    # Exit code 2 means player closed normally - return to catalog
-                    if [ $exit_code -eq 2 ]; then
-                        # Player closed, return to catalog view
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        selection=""
-                        continue
-                    elif [ $exit_code -ne 0 ]; then
-                        # Other error occurred
-                        echo
-                        echo -e "${YELLOW}Playback failed.${RESET}"
-                        echo -e "${YELLOW}Would you like to search for alternative versions of \"$name\"? (y/n)${RESET} "
-                        read -r answer
-                        if [[ "$answer" =~ ^[Yy]$ ]]; then
-                            # Clean up name for search
-                            local search_query=$(echo "$name" | tr '.' ' ')
-                            search_query=$(echo "$search_query" | sed -E 's/ (1080p|720p|4k|2160p|WEB-DL|BluRay|HDRip|x265|HEVC).*//i')
-                            search_query=$(echo "$search_query" | sed -E 's/ \([0-9]{4}\)//')
-                            
-                            echo -e "${CYAN}Searching for: $search_query${RESET}"
-                            search_torrent "$search_query"
-                        fi
-                        # Redraw catalog after search or if user said no
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        selection=""
-                        continue
-                    else
-                        # Player exited normally (exit code 0) - also return to catalog
-                        redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                        selection=""
-                        continue
-                    fi
-                    
-                    # Exit navigation loop after selection
-                    break
-                else
-                    echo -e "${YELLOW}Invalid selection. Please enter a number between 1 and $total.${RESET}"
-                    sleep 1
-                    redraw_catalog_page "$title" "$cached_results_var" "$current_page" "$per_page" "$total"
-                    selection=""
-                fi
-            fi
-        done
-        
-        # Cleanup
-        unset CATALOG_PAGE
-        eval "unset ${cached_results_var}"
-        cleanup_posters
+    # Use gum interface if requested
+    if [ "$use_gum" = true ]; then
+        display_catalog_gum "$title" "${original_args[@]}"
+        return $?
+    fi
+
+    # FZF Catalog Logic
+    # -------------------------------------------------------------------------
+    # Use FZF for browsing, filtering, and Preview (replacing sidebar picker)
+    
+    local selection_line
+    if selection_line=$(show_fzf_catalog "$title" all_results); then
+         handle_fzf_selection "$selection_line"
     fi
 }
+
+# ============================================================
+# CATALOG FETCHING LOGIC
+# ============================================================
+
+# Get latest movies from YTS (like Stremio catalog)
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_latest_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=date_added&order_by=desc&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        # Try with timeout - YTS API may be slow or down
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                # Get movies and their torrents - same structure as YTS-Streaming
+                # Include poster URL (medium_cover_image)
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.date_uploaded // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB if YTS fails (YTS API is often down)
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay..." >&2
+    # TPB doesn't have pagination in precompiled, so we fetch more and paginate client-side
+    local tpb_url="https://apibay.org/precompiled/data_top100_207.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available and let display_catalog handle pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Latest"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get trending movies from YTS
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_trending_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=download_count&order_by=desc&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.download_count // 0)|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB trending
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay trending..." >&2
+    local tpb_url="https://apibay.org/precompiled/data_top100_201.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available for pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Trending"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get popular movies from YTS
+# Uses same approach as YTS-Streaming app
+# Supports pagination via page parameter
+get_popular_movies() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    # Build URL the same way as YTS-Streaming app (with pagination)
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?limit=${limit}&sort_by=rating&order_by=desc&minimum_rating=7&page=${page}"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 3 --connect-timeout 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ] && [ "$response" != "" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year)) - ⭐\(.rating // "N/A")|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.rating // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
+                
+                if [ -n "$results" ]; then
+                    echo "$results"
+                    return 0
+                fi
+            fi
+        fi
+    fi
+    
+    # Fallback to TPB popular
+    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay popular..." >&2
+    local tpb_url="https://apibay.org/precompiled/data_top100_205.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            # Fetch all available for pagination
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Popular"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get latest TV shows from EZTV
+# Supports pagination via page parameter
+get_latest_shows() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    local api_url="https://eztv.re/api/get-torrents?limit=$limit&page=$page"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local response=$(curl -s --max-time 5 "$api_url" 2>/dev/null)
+        local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
+        
+        if [ "$count" -gt 0 ] 2>/dev/null; then
+            echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB|\(.date_released_unix // 0)"' 2>/dev/null
+        fi
+    fi
+}
+
+# Get catalog by genre
+# Uses same approach as YTS-Streaming app
+get_catalog_by_genre() {
+    local genre="$1"
+    local limit="${2:-20}"
+    
+    # Map common genre names to YTS genre IDs (same as YTS-Streaming)
+    local genre_id=""
+    case "$(echo "$genre" | tr '[:upper:]' '[:lower:]')" in
+        action) genre_id="Action" ;;
+        adventure) genre_id="Adventure" ;;
+        animation) genre_id="Animation" ;;
+        comedy) genre_id="Comedy" ;;
+        crime) genre_id="Crime" ;;
+        documentary) genre_id="Documentary" ;;
+        drama) genre_id="Drama" ;;
+        family) genre_id="Family" ;;
+        fantasy) genre_id="Fantasy" ;;
+        horror) genre_id="Horror" ;;
+        mystery) genre_id="Mystery" ;;
+        romance) genre_id="Romance" ;;
+        sci-fi|scifi|science-fiction) genre_id="Sci-Fi" ;;
+        thriller) genre_id="Thriller" ;;
+        war) genre_id="War" ;;
+        western) genre_id="Western" ;;
+        *) genre_id="$genre" ;;
+    esac
+    
+    # Build URL the same way as YTS-Streaming app
+    local base_url="https://yts.mx/api/v2/list_movies.json"
+    local api_url="${base_url}?genre=${genre_id}&limit=${limit}&sort_by=date_added&order_by=desc"
+    
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        # Add User-Agent header like browsers do
+        local response=$(curl -s --max-time 10 --retry 1 --retry-delay 2 \
+            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
+            -H "Accept: application/json" \
+            "$api_url" 2>/dev/null)
+        
+        if [ -n "$response" ]; then
+            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
+            
+            if [ "$status" = "ok" ]; then
+                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.genres | join(", "))|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
+            fi
+        fi
+    fi
+}
+
+# Export catalog fetching functions
+export -f get_latest_movies get_trending_movies get_popular_movies get_latest_shows get_catalog_by_genre

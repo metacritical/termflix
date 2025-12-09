@@ -15,7 +15,12 @@ import ssl
 
 def scrape_google():
     """Scrape Google Images for movie poster."""
-    query = os.environ.get('GOOGLE_QUERY', '')
+    query = ""
+    if len(sys.argv) > 1:
+        query = sys.argv[1]
+    else:
+        query = os.environ.get('GOOGLE_QUERY', '')
+
     if not query:
         return
     
