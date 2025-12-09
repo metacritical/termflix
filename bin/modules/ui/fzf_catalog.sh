@@ -186,18 +186,24 @@ handle_fzf_selection() {
          # Only if multiple magnets OR user explicitly navigated (though Combined usually has multiple)
          if [[ ${#magnets_arr[@]} -ge 1 ]]; then
              local ver_pick
+             local preview_cmd="${SCRIPT_DIR}/modules/ui/preview_fzf.sh \"${rest_data//\"/\\\"}\""
+             
              ver_pick=$(printf "%s" "$options" | fzf \
                  --ansi \
                  --delimiter='|' \
                  --with-nth=2.. \
-                 --height=50% \
+                 --height=100% \
                  --layout=reverse \
-                 --border=rounded \
+                 --border=none \
+                 --margin=0 \
+                 --padding=1 \
                  --prompt="▶ Pick Version: " \
-                 --header="Movie: ${c_name} (Ctrl+H to go back)" \
+                 --header="Use Up/Down to select, Enter to stream (Ctrl+H to back)" \
                  --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                  --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                  --color=prompt:#50fa7b,pointer:#ff79c6 \
+                 --preview "$preview_cmd" \
+                 --preview-window=left:50%:wrap \
                  --bind='ctrl-h:abort,ctrl-o:abort' \
                  2>/dev/null)
              
