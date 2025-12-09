@@ -1068,31 +1068,39 @@ display_catalog() {
 # ============================================================
 
 # Get latest movies from TPB (primary source)
-# Uses precompiled top 100 HD movies
+# Uses Python script for enriched catalog with all torrents per movie
 get_latest_movies() {
-    local limit="${1:-50}"
+    local limit="${1:-20}"
     local page="${2:-1}"
     
-    # TPB precompiled top 100 HD movies
-    local tpb_url="https://apibay.org/precompiled/data_top100_207.json"
+    # Get API keys from config
+    local omdb_key=$(config_get "OMDB_API_KEY" "")
+    local tmdb_key=$(config_get "TMDB_API_KEY" "")
     
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local tpb_response=$(curl -s --max-time 10 "$tpb_url" 2>/dev/null)
+    # Use Python script for enriched catalog
+    # Script is at bin/scripts/, catalog.sh is at bin/modules/
+    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_tpb_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../scripts/fetch_tpb_catalog.py"
+    
+    if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
+        # Fetch enriched catalog as JSON and convert to COMBINED format
+        local convert_script="${script_path%/*}/convert_tpb_catalog.py"
         
-        if [ -n "$tpb_response" ] && [ "$tpb_response" != "[]" ]; then
-            # Parse TPB response - include IMDB ID for OMDB metadata
-            # Format: TPB|Name|Magnet|Quality|Size|Seeds|IMDB|Poster(placeholder)
-            echo "$tpb_response" | jq -r '
-                .[]? | 
-                select(.info_hash != null and .info_hash != "") | 
-                "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\((.size / 1024 / 1024 | floor))MB|\(.imdb // "")|\(.imdb // "N/A")"
-            ' 2>/dev/null
-            return 0
-        fi
+        OMDB_API_KEY="$omdb_key" TMDB_API_KEY="$tmdb_key" python3 "$script_path" "$limit" 2>/dev/null | \
+            python3 "$convert_script" 2>/dev/null
+        
+        return 0
     fi
     
-    echo ""
-    return 1
+    # Fallback to simple TPB fetch
+    local tpb_url="https://apibay.org/precompiled/data_top100_207.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        curl -s --max-time 10 "$tpb_url" 2>/dev/null | jq -r '
+            .[]? | 
+            select(.info_hash != null and .info_hash != "") | 
+            "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\((.size / 1024 / 1024 | floor))MB|\(.imdb // "N/A")"
+        ' 2>/dev/null
+    fi
 }
 
 # Get trending movies from YTS

@@ -47,8 +47,8 @@ echo
 
 # --- 4. Handle COMBINED vs Regular Entries ---
 if [[ "$source" == "COMBINED" ]]; then
-    # Parse COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster
-    IFS='|' read -r sources qualities seeds sizes magnets poster_url <<< "$rest"
+    # Parse NEW COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
+    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating plot_text <<< "$rest"
     
     # Split into arrays
     IFS='^' read -ra sources_arr <<< "$sources"
@@ -60,15 +60,20 @@ if [[ "$source" == "COMBINED" ]]; then
     # Deduplicate sources
     unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
     
-    # Display unique sources
+    # Display unique sources with IMDB rating
     source_badges=""
     for src in "${unique_sources[@]}"; do
         source_badges+="[${src}]"
     done
-    echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}"
+    
+    # Show Sources and IMDB rating on same line
+    imdb_display=""
+    if [[ -n "$imdb_rating" ]] && [[ "$imdb_rating" != "N/A" ]]; then
+        imdb_display="    ${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb_rating}${RESET}"
+    fi
+    echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
     
     # Deduplicate and format qualities/sizes  
-    # Use a simpler approach compatible with older bash
     seen_quals=()
     sizes_display=""
     for i in "${!qualities_arr[@]}"; do
@@ -84,6 +89,11 @@ if [[ "$source" == "COMBINED" ]]; then
     done
     
     echo -e "${BOLD}Available:${RESET} ${CYAN}${sizes_display}${RESET}"
+    
+    # Store plot for later display (don't fetch if already provided)
+    if [[ -n "$plot_text" ]] && [[ "$plot_text" != "N/A" ]]; then
+        description="$plot_text"
+    fi
     
 else
     # Regular entry: Source|Title|Magnet|Quality|Size|Seeds|Poster
