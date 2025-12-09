@@ -104,9 +104,12 @@ search_omdb_movie() {
         return 0
     fi
     
-    # Build API URL
-    local encoded_title=$(_omdb_urlencode "$title")
-    local url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encoded_title}&plot=short"
+    # Clean title: replace spaces/underscores with dots for OMDB compatibility
+    local clean_title=$(echo "$title" | sed 's/[[:space:]_]/./g' | sed 's/\.\.*/./g')
+    
+    # Build API URL - try by title first (t=)
+    local encoded_title=$(_omdb_urlencode "$clean_title")
+    local url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encoded_title}&type=movie&plot=short"
     
     [[ -n "$year" ]] && url="${url}&y=${year}"
     
@@ -114,18 +117,48 @@ search_omdb_movie() {
     local response
     response=$(curl -sL --max-time 5 "$url" 2>/dev/null)
     
-    if [[ -z "$response" ]]; then
-        echo '{"Error": "OMDB API request failed", "Response": "False"}'
-        return 1
-    fi
-    
-    # Check if response is valid
-    if echo "$response" | grep -q '"Response":"True"'; then
-        # Cache successful result
+    # Check if title search succeeded
+    if [[ -n "$response" ]] && echo "$response" | grep -q '"Response":"True"'; then
         echo "$response" > "$cache_file"
+        echo "$response"
+        return 0
     fi
     
-    echo "$response"
+    # Fallback: try search API (s=) for fuzzy matching
+    local search_url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&s=${encoded_title}&type=movie"
+    [[ -n "$year" ]] && search_url="${search_url}&y=${year}"
+    
+    local search_response
+    search_response=$(curl -sL --max-time 5 "$search_url" 2>/dev/null)
+    
+    if [[ -n "$search_response" ]] && echo "$search_response" | grep -q '"Response":"True"'; then
+        # Get first result's IMDB ID and fetch full details
+        local imdb_id
+        imdb_id=$(echo "$search_response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Search'):
+        print(data['Search'][0].get('imdbID', ''))
+except:
+    pass
+" 2>/dev/null)
+        
+        if [[ -n "$imdb_id" ]]; then
+            # Fetch full details by IMDB ID
+            response=$(curl -sL --max-time 5 "${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&i=${imdb_id}&plot=short" 2>/dev/null)
+            
+            if [[ -n "$response" ]] && echo "$response" | grep -q '"Response":"True"'; then
+                echo "$response" > "$cache_file"
+                echo "$response"
+                return 0
+            fi
+        fi
+    fi
+    
+    # Return error response
+    echo '{"Error": "Movie not found", "Response": "False"}'
+    return 1
 }
 
 # Get movie metadata (wrapper)

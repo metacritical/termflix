@@ -143,19 +143,69 @@ handle_fzf_selection() {
     local source name magnet quality size seeds poster
     IFS='|' read -r source name magnet quality size seeds poster <<< "$rest_data"
 
-     # Check if item is COMBINED
+     # Check if item is COMBINED (multiple sources)
      if [[ "$source" == "COMBINED" ]]; then
          # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster
          local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster
          IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster <<< "$rest_data"
          
-         # Just use the first magnet directly (no gum popup)
-         IFS='^' read -r magnet rest <<< "$c_magnets"
-         IFS='^' read -r source rest <<< "$c_sources"
-         IFS='^' read -r quality rest <<< "$c_qualities"
-         IFS='^' read -r size rest <<< "$c_sizes"
+         # Split into arrays
+         IFS='^' read -ra sources_arr <<< "$c_sources"
+         IFS='^' read -ra qualities_arr <<< "$c_qualities"
+         IFS='^' read -ra seeds_arr <<< "$c_seeds"
+         IFS='^' read -ra sizes_arr <<< "$c_sizes"
+         IFS='^' read -ra magnets_arr <<< "$c_magnets"
+         
          name="$c_name"
          poster="$c_poster"
+         
+         # If multiple magnets, show picker
+         if [[ ${#magnets_arr[@]} -gt 1 ]]; then
+             # Build options for FZF
+             local options=""
+             for i in "${!magnets_arr[@]}"; do
+                 local src="${sources_arr[$i]:-Unknown}"
+                 local qual="${qualities_arr[$i]:-N/A}"
+                 local sz="${sizes_arr[$i]:-N/A}"
+                 local sd="${seeds_arr[$i]:-0}"
+                 options+="$((i+1)). [$src] $qual - $sz - $sd seeds"$'\n'
+             done
+             
+             # Show magnet picker FZF
+             local pick
+             pick=$(printf "%s" "$options" | fzf \
+                 --ansi \
+                 --height=40% \
+                 --layout=reverse \
+                 --border=rounded \
+                 --prompt="🧲 Pick source: " \
+                 --header="$c_name" \
+                 --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+                 --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+                 --color=prompt:#50fa7b,pointer:#ff79c6 \
+                 2>/dev/null)
+             
+             if [[ -z "$pick" ]]; then
+                 return 1  # User cancelled
+             fi
+             
+             # Extract index from selection (first number)
+             local pick_idx
+             pick_idx=$(echo "$pick" | grep -oE '^[0-9]+' | head -1)
+             pick_idx=$((pick_idx - 1))  # Convert to 0-indexed
+             
+             # Get selected values
+             magnet="${magnets_arr[$pick_idx]}"
+             source="${sources_arr[$pick_idx]}"
+             quality="${qualities_arr[$pick_idx]}"
+             size="${sizes_arr[$pick_idx]}"
+         else
+             # Single magnet, use it directly
+             magnet="${magnets_arr[0]}"
+             source="${sources_arr[0]}"
+             quality="${qualities_arr[0]}"
+             size="${sizes_arr[0]}"
+         fi
      fi
      
      # Stream Selection
