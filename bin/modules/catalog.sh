@@ -1067,51 +1067,32 @@ display_catalog() {
 # CATALOG FETCHING LOGIC
 # ============================================================
 
-# Get latest movies from YTS (like Stremio catalog)
-# Uses same approach as YTS-Streaming app
-# Supports pagination via page parameter
+# Get latest movies from TPB (primary source)
+# Uses precompiled top 100 HD movies
 get_latest_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    # Build URL the same way as YTS-Streaming app (with pagination)
-    local base_url="https://yts.mx/api/v2/list_movies.json"
-    local api_url="${base_url}?limit=${limit}&sort_by=date_added&order_by=desc&page=${page}"
-    
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        # Try with timeout - YTS API may be slow or down
-        local response=$(curl -s --max-time 3 --connect-timeout 2 \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            "$api_url" 2>/dev/null)
-        
-        if [ -n "$response" ] && [ "$response" != "" ]; then
-            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
-            
-            if [ "$status" = "ok" ]; then
-                # Get movies and their torrents - same structure as YTS-Streaming
-                # Include poster URL (medium_cover_image)
-                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.date_uploaded // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
-                
-                if [ -n "$results" ]; then
-                    echo "$results"
-                    return 0
-                fi
-            fi
-        fi
-    fi
-    
-    # Fallback to TPB if YTS fails (YTS API is often down)
-    echo -e "${YELLOW}[TPB]${RESET} YTS unavailable, using ThePirateBay..." >&2
-    # TPB doesn't have pagination in precompiled, so we fetch more and paginate client-side
+    # TPB precompiled top 100 HD movies
     local tpb_url="https://apibay.org/precompiled/data_top100_207.json"
+    
     if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local tpb_response=$(curl -s --max-time 5 "$tpb_url" 2>/dev/null)
-        if [ -n "$tpb_response" ]; then
-            # Fetch all available and let display_catalog handle pagination
-            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|Latest"' 2>/dev/null
+        local tpb_response=$(curl -s --max-time 10 "$tpb_url" 2>/dev/null)
+        
+        if [ -n "$tpb_response" ] && [ "$tpb_response" != "[]" ]; then
+            # Parse TPB response - include IMDB ID for OMDB metadata
+            # Format: TPB|Name|Magnet|Quality|Size|Seeds|IMDB|Poster(placeholder)
+            echo "$tpb_response" | jq -r '
+                .[]? | 
+                select(.info_hash != null and .info_hash != "") | 
+                "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\((.size / 1024 / 1024 | floor))MB|\(.imdb // "")|\(.imdb // "N/A")"
+            ' 2>/dev/null
+            return 0
         fi
     fi
+    
+    echo ""
+    return 1
 }
 
 # Get trending movies from YTS

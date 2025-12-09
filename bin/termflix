@@ -283,9 +283,9 @@ main() {
     
     # If we get here and no source, default to "latest movies"
     if [ -z "$source" ] && [ "$list_only" = false ] && [ "$search_mode" = false ]; then
-        # Default behavior: show latest movies
+        # Default behavior: show latest movies from TPB
         check_jq
-        display_catalog "🎬 Latest Movies" get_latest_movies 25 get_ytsrs_latest_wrapper 25
+        display_catalog "🎬 Latest Movies" get_latest_movies 50
         exit $?
     fi
     
