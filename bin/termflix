@@ -35,10 +35,9 @@ source "${SCRIPT_DIR}/modules/core/deps.sh"
 # UI modules
 source "${SCRIPT_DIR}/modules/ui/status.sh"
 source "${SCRIPT_DIR}/modules/ui/sidebar_picker.sh"
+source "${SCRIPT_DIR}/modules/ui/help.sh"
 
 # Legacy modules (to be refactored into new structure)
-source "${SCRIPT_DIR}/modules/core.sh"
-source "${SCRIPT_DIR}/modules/ui.sh"
 source "${SCRIPT_DIR}/modules/posters.sh"
 source "${SCRIPT_DIR}/modules/search.sh"
 source "${SCRIPT_DIR}/modules/catalog.sh"
@@ -747,7 +746,7 @@ get_player_preference() {
     
     # Ask user for preference (first time) - check if /dev/tty is available
     # Don't check stdin (-t 0) as it may be consumed by previous reads
-    if [ -c /dev/tty ] 2>/dev/null && [ -r /dev/tty ] 2>/dev/null; then
+    if [ -c /dev/tty ] 2>/dev/null && [ -r /dev/tty ] 2>/dev/tty; then
         # Use a timeout to prevent hanging - try to read with a timeout
         echo
         echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
@@ -873,50 +872,6 @@ check_deps() {
     
     # Note: Player preference will be checked when streaming starts
     # This avoids prompting during catalog browsing
-}
-
-# Show help
-show_help() {
-    echo -e "${BOLD}${MAGENTA}Termflix${RESET} ${CYAN}- Torrent Streaming Tool${RESET}"
-    echo
-    echo "Stream torrents directly to mpv or VLC player using peerflix."
-    echo
-    echo -e "${PINK}Usage:${RESET}"
-    echo "  termflix                                    Show latest movies and shows (default)"
-    echo "  termflix <magnet_link>"
-    echo "  termflix <torrent_file>"
-    echo "  termflix search <query>"
-    echo "  termflix latest [movies|shows|all]"
-    echo "  termflix trending [movies|shows|all]"
-    echo "  termflix popular [movies|shows|all]"
-    echo "  termflix catalog [genre]"
-    echo
-    echo -e "${PINK}Options:${RESET}"
-    echo "  -h, --help          Show this help"
-    echo "  -l, --list          List available files in torrent"
-    echo "  -i, --index <num>   Select specific file by index"
-    echo "  -q, --quality       Auto-select best quality"
-    echo "  -s, --subtitles     Enable subtitle loading (auto-detected if available)"
-    echo "  -v, --verbose       Verbose output"
-    echo "      --debug         Show debug information (magnet links, etc.)"
-    echo "      --clear         Clear catalog cache files"
-    echo
-    echo -e "${PINK}Commands:${RESET}"
-    echo "  player <mpv|vlc>    Change default media player preference"
-    echo
-    echo -e "${PINK}Examples:${RESET}"
-    echo "  termflix                                    # Show latest movies and shows"
-    echo "  termflix \"magnet:?xt=urn:btih:...\""
-    echo "  termflix movie.torrent"
-    echo "  termflix search \"movie name\""
-    echo "  termflix latest movies"
-    echo "  termflix trending shows"
-    echo "  termflix catalog action"
-    echo
-    echo -e "${PINK}Catalog Features:${RESET}"
-    echo "  - Browse latest movies and TV shows (like Stremio)"
-    echo "  - View trending and popular content"
-    echo "  - Browse by genre/category"
 }
 
 # Search using YTS API (movies) - same as Stremio YTS addon
