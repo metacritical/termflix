@@ -232,25 +232,50 @@ handle_fzf_selection() {
                  local preview_data="${name}|${c_poster}"
              fi
              
-             # Stage 2 FZF - Same styling as Stage 1 for seamless feel
-             ver_pick=$(printf "%s" "$options" | fzf \
-                 --ansi \
-                 --delimiter='|' \
-                 --with-nth=2 \
-                 --height=100% \
-                 --layout=reverse \
-                 --border=rounded \
-                 --margin=1 \
-                 --padding=1 \
-                 --prompt="▶ Pick Version: " \
-                 --header="🎬 Available Versions: (Ctrl+H to back)" \
-                 --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
-                 --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
-                 --color=prompt:#50fa7b,pointer:#ff79c6 \
-                 --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
-                 --preview-window=left:45%:wrap \
-                 --bind='ctrl-h:abort,ctrl-o:abort' \
-                 2>/dev/null)
+             # Stage 2 FZF - Different layouts for Kitty vs Block mode
+              if [[ "$TERM" == "xterm-kitty" ]]; then
+                  # KITTY MODE: Preview on RIGHT (looks like Stage 1)
+                  # Versions on left (FZF picker), preview on right (poster+desc+info)
+                  ver_pick=$(printf "%s" "$options" | fzf \
+                      --ansi \
+                      --delimiter='|' \
+                      --with-nth=2 \
+                      --height=100% \
+                      --layout=reverse \
+                      --border=rounded \
+                      --margin=1 \
+                      --padding=1 \
+                      --prompt="▶ Pick Version: " \
+                      --header="🎬 Available Versions: (Ctrl+H to back)" \
+                      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+                      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+                      --color=prompt:#50fa7b,pointer:#ff79c6 \
+                      --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
+                      --preview-window=right:55%:wrap \
+                      --bind='ctrl-h:abort,ctrl-o:abort' \
+                      2>/dev/null)
+              else
+                  # BLOCK MODE: Preview on LEFT (current behavior)
+                  # Poster/spinner on left, versions on right (FZF picker)
+                  ver_pick=$(printf "%s" "$options" | fzf \
+                      --ansi \
+                      --delimiter='|' \
+                      --with-nth=2 \
+                      --height=100% \
+                      --layout=reverse \
+                      --border=rounded \
+                      --margin=1 \
+                      --padding=1 \
+                      --prompt="▶ Pick Version: " \
+                      --header="🎬 Available Versions: (Ctrl+H to back)" \
+                      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+                      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+                      --color=prompt:#50fa7b,pointer:#ff79c6 \
+                      --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
+                      --preview-window=left:45%:wrap \
+                      --bind='ctrl-h:abort,ctrl-o:abort' \
+                      2>/dev/null)
+              fi
              
              if [[ -z "$ver_pick" ]]; then
                  return 10  # Signal BACK to caller
