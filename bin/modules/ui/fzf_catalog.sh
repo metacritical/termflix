@@ -247,7 +247,7 @@ handle_fzf_selection() {
                  --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                  --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                  --color=prompt:#50fa7b,pointer:#ff79c6 \
-                 --preview "$stage2_preview '{3}|{4}|{5}|{6}|{7}'" \
+                 --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
                  --preview-window=left:45%:wrap \
                  --bind='ctrl-h:abort,ctrl-o:abort' \
                  2>/dev/null)
