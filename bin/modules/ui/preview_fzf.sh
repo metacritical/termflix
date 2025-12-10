@@ -184,12 +184,14 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
         curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
     fi
 
-    # Display Image using viu (most compatible)
+    # Display Image using block graphics (force TERM to avoid Kitty protocol)
+    # In Kitty terminal, viu auto-uses graphics protocol which leaks responses into FZF
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         if command -v viu &>/dev/null; then
-            viu -w 30 -h 12 "$poster_path" 2>/dev/null
+            # Force block mode by overriding TERM
+            TERM=xterm-256color viu -w 30 -h 12 "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
-            chafa --symbols=block --size="30x12" "$poster_path" 2>/dev/null
+            TERM=xterm-256color chafa --symbols=block --size="30x12" "$poster_path" 2>/dev/null
         fi
     fi
 fi
