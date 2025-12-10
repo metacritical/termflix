@@ -36,32 +36,61 @@ echo -e "${BOLD}${MAGENTA}${title}${RESET}"
 echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
-# --- 5. Display Poster ---
+# --- 5. Image dimensions ---
+IMAGE_WIDTH=20
+IMAGE_HEIGHT=15
+BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
+FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+
+# --- 6. Display Poster ---
+poster_path=""
 if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
     cache_dir="${HOME}/.cache/termflix/posters"
     mkdir -p "$cache_dir"
     
     filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-    poster_path="${cache_dir}/${filename_hash}.jpg"
+    poster_path="${cache_dir}/${filename_hash}.png"
     
-    # Download if not cached
+    # Download and convert to PNG if not cached
     if [[ ! -f "$poster_path" ]]; then
-        curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
-    fi
-
-    # Display Image using Kitty graphics (q=2 for response suppression)
-    if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        KITTY_IMAGE_PY="${TERMFLIX_SCRIPTS_DIR}/kitty_image.py"
-        
-        if [[ -f "$KITTY_IMAGE_PY" ]] && command -v python3 &>/dev/null; then
-            python3 "$KITTY_IMAGE_PY" "$poster_path" 40 12
+        temp_file="${cache_dir}/${filename_hash}.tmp"
+        curl -sL --max-time 5 "$poster_url" -o "$temp_file" 2>/dev/null
+        if [[ -f "$temp_file" && -s "$temp_file" ]]; then
+            if command -v sips &>/dev/null; then
+                sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
+            else
+                mv "$temp_file" "$poster_path"
+            fi
+            rm -f "$temp_file" 2>/dev/null
         fi
+    fi
+fi
+
+# Display using kitten icat
+if [[ -f "$poster_path" && -s "$poster_path" ]]; then
+    # Draw blank first to clear previous, then poster
+    if [[ -f "$BLANK_IMG" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --scale-up "$BLANK_IMG" 2>/dev/null
+    fi
+    kitten icat --transfer-mode=file --stdin=no \
+        --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+        --scale-up --align=left "$poster_path" 2>/dev/null
+    for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
+else
+    # Fallback to movie_night.jpg
+    if [[ -f "$FALLBACK_IMG" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
+        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
     fi
 fi
 
 echo
 
-# --- 6. Display Info ---
+# --- 7. Display Info ---
 echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET}"
 echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET}"
 echo -e "${BOLD}Size:${RESET} ${YELLOW}${size}${RESET}"
