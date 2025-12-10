@@ -136,7 +136,7 @@ clean_title=$(echo "$title" | sed -E '
 
 # --- Priority 0: Check cached description FIRST (instant) ---
 DESC_CACHE="${HOME}/.cache/termflix/descriptions"
-title_hash=$(echo -n "${title,,}" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+title_hash=$(echo -n "$title" | tr '[:upper:]' '[:lower:]' | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
 cached_desc="${DESC_CACHE}/${title_hash}.txt"
 if [[ -f "$cached_desc" ]]; then
     description=$(cat "$cached_desc")
