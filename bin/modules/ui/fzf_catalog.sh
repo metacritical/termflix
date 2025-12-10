@@ -168,17 +168,36 @@ handle_fzf_selection() {
          name="$c_name"
          poster="$c_poster"
          
-         # Prepare version options for "Right Pane" FZF
+         # Prepare version options for "Right Pane" FZF with nice formatting
          local options=""
          for i in "${!magnets_arr[@]}"; do
              local src="${sources_arr[$i]:-Unknown}"
              local qual="${qualities_arr[$i]:-N/A}"
              local sz="${sizes_arr[$i]:-N/A}"
              local sd="${seeds_arr[$i]:-0}"
-             # Colorized lines for FZF
-             # Format: index|Display String
-             local d_src="[${src}]"
-             local d_line="$((i+1)). ${d_src} ${qual} - ${sz} - ${sd} seeds"
+             
+             # Color seeds based on count (green=high, yellow=medium, red=low)
+             local seed_color
+             if [[ "$sd" -ge 100 ]]; then
+                 seed_color="\033[38;5;46m"   # Green
+             elif [[ "$sd" -ge 10 ]]; then
+                 seed_color="\033[38;5;220m"  # Yellow
+             else
+                 seed_color="\033[38;5;196m"  # Red
+             fi
+             
+             # Source name mapping
+             local src_name="Unknown"
+             case "$src" in
+                 "TPB") src_name="ThePirateBay" ;;
+                 "YTS") src_name="YTS.mx" ;;
+                 "1337x") src_name="1337x" ;;
+                 "EZTV") src_name="EZTV" ;;
+                 *) src_name="$src" ;;
+             esac
+             
+             # Format: 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay
+             local d_line="🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds\033[0m - ${src_name}"
              options+="${i}|${d_line}"$'\n'
          done
          
