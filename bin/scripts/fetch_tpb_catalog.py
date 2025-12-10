@@ -115,6 +115,7 @@ def format_size(size_bytes):
 def main():
     """Main function - fetch TPB top 100 and enrich each movie"""
     limit = int(sys.argv[1]) if len(sys.argv) > 1 else 50
+    fast_mode = '--fast' in sys.argv  # Fast mode skips slow API calls
     
     # Fetch TPB top 100
     top100 = fetch_json(TPB_TOP100_URL)
@@ -138,15 +139,20 @@ def main():
         if key not in movies:
             imdb_id = torrent.get('imdb', '')
             
-            # Fetch metadata from OMDB (has IMDB rating)
-            omdb = get_omdb_info(imdb_id) if imdb_id else None
-            
-            # Search TPB for all torrents of this movie
-            search_query = f"{title} {year}"
-            all_torrents = search_tpb(search_query)
-            
-            if not all_torrents:
-                all_torrents = [torrent]  # Use at least the original
+            if fast_mode:
+                # Fast mode: skip OMDB and extra search, use original torrent only
+                omdb = None
+                all_torrents = [torrent]
+            else:
+                # Full mode: Fetch metadata from OMDB (has IMDB rating)
+                omdb = get_omdb_info(imdb_id) if imdb_id else None
+                
+                # Search TPB for all torrents of this movie
+                search_query = f"{title} {year}"
+                all_torrents = search_tpb(search_query)
+                
+                if not all_torrents:
+                    all_torrents = [torrent]  # Use at least the original
             
             movies[key] = {
                 'title': omdb['title'] if omdb else title,

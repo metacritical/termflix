@@ -1103,10 +1103,11 @@ get_latest_movies() {
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../scripts/fetch_tpb_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        # Fetch enriched catalog as JSON and convert to COMBINED format
+        # Fetch catalog as JSON and convert to COMBINED format
+        # Use --fast mode for quick loading (skips slow OMDB/search API calls)
         local convert_script="${script_path%/*}/convert_tpb_catalog.py"
         
-        OMDB_API_KEY="$omdb_key" TMDB_API_KEY="$tmdb_key" python3 "$script_path" "$limit" 2>/dev/null | \
+        python3 "$script_path" "$limit" --fast 2>/dev/null | \
             python3 "$convert_script" 2>/dev/null
         
         return 0
