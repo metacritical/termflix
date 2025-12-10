@@ -1,133 +1,109 @@
 #!/usr/bin/env bash
 #
-# Stage 2 Preview Script for KITTY Terminal
-# Looks like Stage 1: Title + Sources + Poster + Description + Selected Version Info
-# The version picker is on the LEFT (FZF), this preview is on the RIGHT
-#
+# Stage 2 Preview Script - KITTY MODE
+# -----------------------------------
+# Used as the LEFT preview pane when picking a version.
+# It renders a static copy of the movie catalog list so that
+# Stage 2 appears visually identical to Stage 1, while the
+# actual FZF picker (versions) lives on the right.
 
-# --- 1. Resolve Script Directory ---
-SCRIPT_SOURCE="${BASH_SOURCE[0]}"
-while [ -L "$SCRIPT_SOURCE" ]; do
-    SCRIPT_DIR_TMP="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
-    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
-    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
-done
-SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+RESET=$'\033[0m'
+BOLD=$'\033[1m'
+DIM=$'\033[2m'
+MAGENTA=$'\033[38;5;213m'
+CYAN=$'\033[38;5;87m'
+GRAY=$'\033[38;5;241m'
+GREEN=$'\033[38;5;46m'
 
-if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
-    TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../../scripts" 2>/dev/null && pwd)"
+selected_index="${STAGE2_SELECTED_INDEX:-}"
+
+# Try environment first (if ever set), otherwise fall back
+# to the snapshot files created by show_fzf_catalog.
+header="${TERMFLIX_LAST_FZF_HEADER:-}"
+catalog="${TERMFLIX_LAST_FZF_DISPLAY:-}"
+
+if [[ -z "$header" ]]; then
+    snap_dir="${TMPDIR:-/tmp}"
+    snap_header_file="${snap_dir}/termflix_stage1_fzf_header.txt"
+    [[ -f "$snap_header_file" ]] && header="$(cat "$snap_header_file" 2>/dev/null)"
 fi
 
-# --- 2. Styling ---
-RESET=$'\e[0m'
-BOLD=$'\e[1m'
-DIM=$'\e[2m'
-MAGENTA=$'\e[38;5;213m'
-GREEN=$'\e[38;5;46m'
-CYAN=$'\e[38;5;87m'
-YELLOW=$'\e[38;5;220m'
-GRAY=$'\e[38;5;241m'
-WHITE=$'\e[38;5;255m'
-
-# --- 3. Parse Input ---
-# Receives: title|source|quality|size|poster_url
-IFS='|' read -r title source quality size poster_url <<< "$1"
-
-# --- 4. Display Title (like Stage 1) ---
-echo -e "${BOLD}${MAGENTA}${title}${RESET}"
-echo -e "${GRAY}────────────────────────────────────────${RESET}"
-echo
-
-# --- 5. Display Sources + Available (like Stage 1) ---
-echo -e "${BOLD}Sources:${RESET} ${GREEN}[${source}]${RESET}"
-echo -e "${BOLD}Available:${RESET} ${CYAN}${quality}${RESET} ${DIM}(${size})${RESET}"
-echo
-
-# --- 6. Image dimensions (same as Stage 1: 20x15) ---
-IMAGE_WIDTH=20
-IMAGE_HEIGHT=15
-BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
-FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
-
-# --- 7. Fetch poster URL if not provided ---
-if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
-    POSTER_SCRIPT="${SCRIPT_DIR%/bin/modules/ui}/bin/scripts/get_poster.py"
-    if [[ -f "$POSTER_SCRIPT" ]] && command -v python3 &>/dev/null && [[ -n "$title" ]]; then
-        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$title" 2>/dev/null)
-    fi
+if [[ -z "$catalog" ]]; then
+    snap_dir="${TMPDIR:-/tmp}"
+    snap_file="${snap_dir}/termflix_stage1_fzf_display.txt"
+    [[ -f "$snap_file" ]] && catalog="$(cat "$snap_file" 2>/dev/null)"
 fi
 
-# --- 8. Download/cache poster ---
-poster_path=""
-if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
-    cache_dir="${HOME}/.cache/termflix/posters"
-    mkdir -p "$cache_dir"
-    
-    filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-    poster_path="${cache_dir}/${filename_hash}.png"
-    
-    if [[ ! -f "$poster_path" ]]; then
-        temp_file="${cache_dir}/${filename_hash}.tmp"
-        curl -sL --max-time 5 "$poster_url" -o "$temp_file" 2>/dev/null
-        if [[ -f "$temp_file" && -s "$temp_file" ]]; then
-            if command -v sips &>/dev/null; then
-                sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
-            else
-                mv "$temp_file" "$poster_path"
-            fi
-            rm -f "$temp_file" 2>/dev/null
-        fi
-    fi
-fi
-
-# --- 9. Display Poster using kitten icat ---
-if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-    # Draw blank first to clear previous, then poster
-    if [[ -f "$BLANK_IMG" ]]; then
-        kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-            --scale-up "$BLANK_IMG" 2>/dev/null
-    fi
-    kitten icat --transfer-mode=file --stdin=no \
-        --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-        --scale-up --align=left "$poster_path" 2>/dev/null
-    for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
-else
-    # Fallback: movie_night.jpg
-    if [[ -f "$BLANK_IMG" ]]; then
-        kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-            --scale-up "$BLANK_IMG" 2>/dev/null
-    fi
-    if [[ -f "$FALLBACK_IMG" ]]; then
-        kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-            --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
-        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
-    fi
-fi
-
-echo
-
-# --- 10. Get and Display Description ---
-DESC_CACHE="${HOME}/.cache/termflix/descriptions"
-title_lower=$(echo -n "$title" | tr '[:upper:]' '[:lower:]')
-title_hash=$(echo -n "$title_lower" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-cached_desc="${DESC_CACHE}/${title_hash}.txt"
-
-description=""
-if [[ -f "$cached_desc" ]]; then
-    description=$(cat "$cached_desc")
-fi
-
-if [[ -n "$description" && "$description" != "null" ]]; then
-    echo -e "${WHITE}${description}${RESET}"
+# Header (matches Stage 1 style closely)
+if [[ -n "$header" ]]; then
+    echo -e "${BOLD}${CYAN}${header}${RESET}"
     echo
 fi
 
-# --- 11. Display Selected Version Info ---
-echo -e "${BOLD}${CYAN}Selected Version:${RESET}"
+# If we still have no catalog snapshot, just show an info message.
+if [[ -z "$catalog" ]]; then
+    echo -e "${DIM}No catalog snapshot available for Stage 2 preview.${RESET}"
+    exit 0
+fi
+
+# Re-render the movie list.
+# Each line of TERMFLIX_LAST_FZF_DISPLAY is:
+#   "<display_text>|<index>|<full_result_data...>"
+while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    IFS='|' read -r display idx _ <<< "$line"
+
+    if [[ -n "$selected_index" && "$idx" == "$selected_index" ]]; then
+        # Highlight the originally selected movie to mimic
+        # the Stage 1 focused row (pointer + colored text).
+        echo -e "${MAGENTA}▶ ${BOLD}${display}${RESET}"
+    else
+        echo "  $display"
+    fi
+done <<< "$catalog"
+
+# Footer hint under the static list
+echo
 echo -e "${GRAY}────────────────────────────────────────${RESET}"
-echo -e "  ${BOLD}Source:${RESET}  ${GREEN}${source}${RESET}"
-echo -e "  ${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET}"
-echo -e "  ${BOLD}Size:${RESET}    ${YELLOW}${size}${RESET}"
+echo -e "${DIM}Ctrl+H to go back • Enter to stream${RESET}"
+
+# Draw poster on the right to keep the
+# same visual location as Stage 1 (kitty only).
+if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+    # Resolve script dir for fallback images
+    SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+    while [ -L "$SCRIPT_SOURCE" ]; do
+        SCRIPT_DIR_TMP="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+        SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+        [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
+    done
+    SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+
+    poster_path="${STAGE2_POSTER:-}"
+    [[ -z "$poster_path" || ! -f "$poster_path" ]] && poster_path="$FALLBACK_IMG"
+
+    cols=$(tput cols 2>/dev/null || echo 120)
+    preview_cols="${FZF_PREVIEW_COLUMNS:-$cols}"
+
+    IMAGE_WIDTH=20
+    IMAGE_HEIGHT=15
+
+    # Compute the X offset where Stage 1's preview pane
+    # would normally start. In Stage 2, the preview window
+    # occupies the LEFT portion (preview_cols wide), so the
+    # right-hand FZF list starts at column preview_cols.
+    start_x=$preview_cols
+    (( start_x < 0 )) && start_x=0
+
+    # Draw poster roughly at row 2 of the right pane.
+    if [[ -n "$poster_path" && -f "$poster_path" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@${start_x}x2 \
+            --scale-up --align=left \
+            "$poster_path" 2>/dev/null
+    fi
+
+    # Textual title / sources / available are now handled
+    # via FZF's multi-line --header in the main picker.
+fi

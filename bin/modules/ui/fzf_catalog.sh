@@ -74,6 +74,16 @@ show_fzf_catalog() {
          fzf_display+="$display_line|$i|$result"$'\n'
     done
 
+    # Persist the last catalog view to temp files so Stage 2
+    # (version picker) can reconstruct the static movie list
+    # in its left pane, even though this function runs inside
+    # a subshell due to command substitution.
+    local snap_dir="${TMPDIR:-/tmp}"
+    local snap_file="${snap_dir}/termflix_stage1_fzf_display.txt"
+    local snap_header_file="${snap_dir}/termflix_stage1_fzf_header.txt"
+    printf "%s\n" "$fzf_display" > "$snap_file" 2>/dev/null
+    echo "$title - [$len results]" > "$snap_header_file" 2>/dev/null
+
     # 2. Configure FZF with enhanced options
     export FZF_DEFAULT_OPTS="
       --ansi
@@ -155,6 +165,11 @@ handle_fzf_selection() {
     # selection_line format: "key|index|result_data..."
     local key index rest_data
     IFS='|' read -r key index rest_data <<< "$selection_line"
+
+    # Remember which movie index was active when we jump
+    # into Stage 2 so the kitty preview can render the
+    # static movie list with the correct selection marker.
+    export STAGE2_SELECTED_INDEX="$index"
     
     # Now parse rest_data which starts with source
     local source name magnet quality size seeds poster
@@ -221,21 +236,51 @@ handle_fzf_selection() {
              local ver_pick
              local stage2_preview
              
-             # Detect terminal type for Stage 2 preview
-             if [[ "$TERM" == "xterm-kitty" ]]; then
-                 # Kitty: Use poster + info preview
-                 stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_kitty.sh"
-                 local preview_data="${name}|${sources_arr[0]}|${qualities_arr[0]}|${sizes_arr[0]}|${c_poster}"
-             else
-                 # Block mode: Use large poster only preview
-                 stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_block.sh"
-                 local preview_data="${name}|${c_poster}"
-             fi
-             
-             # Stage 2 FZF - Different layouts for Kitty vs Block mode
+             # Stage 2 FZF - Version Picker
               if [[ "$TERM" == "xterm-kitty" ]]; then
-                  # KITTY MODE: Preview on RIGHT (looks like Stage 1)
-                  # Versions on left (FZF picker), preview on right (poster+desc+info)
+                  # KITTY MODE: Layout matches Stage 1
+                  # LEFT: FZF Picker (Versions)
+                  # RIGHT: Preview (Poster + Info)
+                  
+                  # 1. Prepare Poster Path
+                  local poster_file=""
+                  if [[ -n "$c_poster" && "$c_poster" != "N/A" ]]; then
+                      local cache_dir="${HOME}/.cache/termflix/posters"
+                      local hash=$(echo -n "$c_poster" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                      poster_file="${cache_dir}/${hash}.png"
+                  fi
+                  # Fallbacks
+                  [[ ! -f "$poster_file" ]] && poster_file="${SCRIPT_DIR}/lib/torrent/img/movie_night.jpg"
+                  [[ ! -f "$poster_file" ]] && poster_file=""
+
+                  # 2. Prepare Sources/Available strings
+                  local unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
+                  local s_badges=""
+                  for s in "${unique_sources[@]}"; do s_badges+="[${s}]"; done
+                  
+                  local q_disp=""
+                  local seen_q=()
+                  for i in "${!qualities_arr[@]}"; do
+                      local q="${qualities_arr[$i]}"
+                      local sz="${sizes_arr[$i]}"
+                      if [[ ! " ${seen_q[@]} " =~ " ${q} " ]]; then
+                          seen_q+=("$q")
+                          [[ -n "$q_disp" ]] && q_disp+=", "
+                          q_disp+="${q} (${sz})"
+                      fi
+                  done
+                  
+                  # 3. Export variables for preview script
+                  export STAGE2_POSTER="$poster_file"
+                  export STAGE2_TITLE="$c_name"
+                  export STAGE2_SOURCES="$s_badges"
+                  export STAGE2_AVAIL="$q_disp"
+                  export STAGE2_PLOT="$c_plot"
+                  
+                  # 4. Use the Stage 2 Preview Script (Right Pane)
+                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_kitty.sh"
+                  
+                  # 5. Run FZF w/ Left Pane Preview (Picker on Right)
                   ver_pick=$(printf "%s" "$options" | fzf \
                       --ansi \
                       --delimiter='|' \
@@ -245,18 +290,25 @@ handle_fzf_selection() {
                       --border=rounded \
                       --margin=1 \
                       --padding=1 \
-                      --prompt="▶ Pick Version: " \
-                      --header="🎬 Available Versions: (Ctrl+H to back)" \
+                      --prompt='❯ ' \
+                      --pointer='▶' \
+                      --header="Pick Version - [${c_name}] →" \
+                      --header-first \
                       --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                       --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
-                      --color=prompt:#50fa7b,pointer:#ff79c6 \
-                      --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
-                      --preview-window=right:55%:wrap \
+                      --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
+                      --preview "$stage2_preview" \
+                      --preview-window=left:55%:wrap:border-right \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       2>/dev/null)
+                      
+                  # Cleanup
+                  unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_PLOT
+                  kitten icat --clear 2>/dev/null
               else
                   # BLOCK MODE: Preview on LEFT (current behavior)
-                  # Poster/spinner on left, versions on right (FZF picker)
+                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_block.sh"
+                  
                   ver_pick=$(printf "%s" "$options" | fzf \
                       --ansi \
                       --delimiter='|' \
