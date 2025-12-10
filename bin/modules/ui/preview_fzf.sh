@@ -199,14 +199,12 @@ fi
 # Display image or placeholder
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: First draw placeholder lines, then overlay image
-        # Print empty placeholder lines
-        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
-        
-        # Move cursor up and draw image (superimpose)
-        printf "\033[${IMAGE_HEIGHT}A"  # Move up
-        kitten icat --clear --transfer-mode=memory --stdin=no --scale-up --place=35x${IMAGE_HEIGHT}@0x0 "$poster_path" 2>/dev/null
-        printf "\033[${IMAGE_HEIGHT}B"  # Move back down
+        # Kitty: Simple inline display (no positioning tricks)
+        # Use unicode placeholders for FZF preview compatibility
+        kitten icat --transfer-mode=memory --stdin=no \
+            --unicode-placeholder \
+            --scale-up --align=left \
+            "$poster_path" 2>/dev/null
     else
         # Block mode: viu/chafa writes text-based image
         if command -v viu &>/dev/null; then
