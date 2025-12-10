@@ -188,10 +188,10 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     # Kitty: Uses graphics protocol with q=2 (suppress response) for HQ images
     # Other: Falls back to viu/chafa block graphics
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        KITTY_IMAGE_PY="${TERMFLIX_SCRIPTS_DIR}/kitty_image.py"
-        
-        if [[ -f "$KITTY_IMAGE_PY" ]] && command -v python3 &>/dev/null; then
-            python3 "$KITTY_IMAGE_PY" "$poster_path" 40 12
+        if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+            # Kitty terminal: Use kitten icat with --clear for clean redraw
+            # --place specifies position, --stdin=no reads from file
+            kitten icat --clear --transfer-mode=memory --stdin=no --place=40x15@0x3 "$poster_path" 2>/dev/null
         elif command -v viu &>/dev/null; then
             TERM=xterm-256color viu -w 20 -h 15 "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
