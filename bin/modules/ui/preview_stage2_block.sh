@@ -57,10 +57,10 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     # Display LARGE poster using viu block graphics
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         if command -v viu &>/dev/null; then
-            # Large poster: scale to fill left pane (90 cols, 50 rows)
-            TERM=xterm-256color viu -w 90 -h 50 "$poster_path" 2>/dev/null
+            # Large poster: scale to fill left pane (60 cols, 45 rows)
+            TERM=xterm-256color viu -w 60 -h 45 "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
-            TERM=xterm-256color chafa --symbols=block --size="90x50" "$poster_path" 2>/dev/null
+            TERM=xterm-256color chafa --symbols=block --size="60x45" "$poster_path" 2>/dev/null
         fi
     else
         echo -e "${DIM}[Poster loading...]${RESET}"
@@ -84,7 +84,7 @@ else
             
             if [[ -f "$poster_path" && -s "$poster_path" ]]; then
                 if command -v viu &>/dev/null; then
-                    TERM=xterm-256color viu -w 90 -h 50 "$poster_path" 2>/dev/null
+                    TERM=xterm-256color viu -w 60 -h 45 "$poster_path" 2>/dev/null
                 fi
             fi
         fi
