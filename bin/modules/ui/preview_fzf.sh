@@ -162,7 +162,16 @@ if [[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]
 fi
 
 # --- 6. Display Poster + Description Side-by-Side ---
-# Fetch and display poster
+# Fetch poster URL on-demand if not provided
+if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
+    # Try to fetch poster URL using get_poster.py
+    POSTER_SCRIPT="${TERMFLIX_SCRIPTS_DIR}/get_poster.py"
+    if [[ -f "$POSTER_SCRIPT" ]] && command -v python3 &>/dev/null; then
+        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title ($movie_year)" 2>/dev/null)
+    fi
+fi
+
+# Download and display poster
 if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
     cache_dir="${HOME}/.cache/termflix/posters"
     mkdir -p "$cache_dir"
@@ -175,12 +184,12 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
         curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
     fi
 
-    # Display Image (prioritize chafa for stability)
+    # Display Image using viu (most compatible)
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        if command -v chafa &>/dev/null; then
-            chafa --symbols=block --size="20x15" "$poster_path" 2>/dev/null
-        elif command -v viu &>/dev/null; then
-             viu -w 20 -h 15 "$poster_path" 2>/dev/null
+        if command -v viu &>/dev/null; then
+            viu -w 30 -h 12 "$poster_path" 2>/dev/null
+        elif command -v chafa &>/dev/null; then
+            chafa --symbols=block --size="30x12" "$poster_path" 2>/dev/null
         fi
     fi
 fi
