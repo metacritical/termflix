@@ -216,8 +216,17 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         fi
     fi
 else
-    # No image - print placeholder
-    echo -e "${DIM}[No poster available]${RESET}"
+    # No poster - use fallback movie_night.jpg
+    FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+    if [[ -f "$FALLBACK_IMG" ]]; then
+        if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+            kitten icat --transfer-mode=file --stdin=no --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
+        elif command -v viu &>/dev/null; then
+            TERM=xterm-256color viu -w 35 -h $IMAGE_HEIGHT "$FALLBACK_IMG" 2>/dev/null
+        fi
+    else
+        echo -e "${DIM}[No poster available]${RESET}"
+    fi
 fi
 
 echo
