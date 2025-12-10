@@ -43,6 +43,14 @@ BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
 FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
 
 # --- 6. Display Poster ---
+# Try to fetch poster URL on-demand if not provided
+if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
+    POSTER_SCRIPT="${SCRIPT_DIR%/bin/modules/ui}/bin/scripts/get_poster.py"
+    if [[ -f "$POSTER_SCRIPT" ]] && command -v python3 &>/dev/null && [[ -n "$title" ]]; then
+        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$title" 2>/dev/null)
+    fi
+fi
+
 poster_path=""
 if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
     cache_dir="${HOME}/.cache/termflix/posters"
@@ -79,7 +87,12 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         --scale-up --align=left "$poster_path" 2>/dev/null
     for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
 else
-    # Fallback to movie_night.jpg
+    # Fallback to movie_night.jpg - draw blank first to clear previous
+    if [[ -f "$BLANK_IMG" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --scale-up "$BLANK_IMG" 2>/dev/null
+    fi
     if [[ -f "$FALLBACK_IMG" ]]; then
         kitten icat --transfer-mode=file --stdin=no \
             --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
