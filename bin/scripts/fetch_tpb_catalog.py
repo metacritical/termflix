@@ -27,14 +27,22 @@ def fetch_json(url, timeout=10):
 
 def extract_movie_info(name):
     """Extract movie title and year from torrent name"""
-    # Try to match: "Movie Name 2025" or "Movie.Name.2025"
-    name = re.sub(r'[._]', ' ', name)
+    # Replace separators with spaces
+    name = re.sub(r'[._\-\+]', ' ', name)
+    
+    # Remove quality tags and other common suffixes
+    quality_tags = ['1080p', '720p', '480p', '2160p', '4k', 'hdr', 'bluray', 'web dl', 'webrip', 
+                    'hdrip', 'x264', 'x265', 'hevc', 'aac', 'cam', 'ts', 'tc', 'yts', 'yify', 'rarbg']
+    for tag in quality_tags:
+        name = re.sub(r'\b' + tag + r'\b', '', name, flags=re.IGNORECASE)
     
     # Match year pattern
-    match = re.search(r'^(.+?)\s+(19\d{2}|20\d{2})\b', name)
+    match = re.search(r'^(.+?)\s*(19\d{2}|20\d{2})\b', name)
     if match:
         title = match.group(1).strip()
         year = match.group(2)
+        # Further normalize title: lowercase, collapse spaces
+        title = re.sub(r'\s+', ' ', title).strip()
         return title, year
     
     return None, None
