@@ -32,16 +32,23 @@ def extract_movie_info(name):
     
     # Remove quality tags and other common suffixes
     quality_tags = ['1080p', '720p', '480p', '2160p', '4k', 'hdr', 'bluray', 'web dl', 'webrip', 
-                    'hdrip', 'x264', 'x265', 'hevc', 'aac', 'cam', 'ts', 'tc', 'yts', 'yify', 'rarbg']
+                    'hdrip', 'x264', 'x265', 'hevc', 'aac', 'cam', 'ts', 'tc', 'yts', 'yify', 'rarbg',
+                    'extended', 'remastered', 'unrated', 'directors cut', 'theatrical']
     for tag in quality_tags:
         name = re.sub(r'\b' + tag + r'\b', '', name, flags=re.IGNORECASE)
     
     # Match year pattern
-    match = re.search(r'^(.+?)\s*(19\d{2}|20\d{2})\b', name)
+    match = re.search(r'^(.+?)\s*[\(\[]?\s*(19\d{2}|20\d{2})\s*[\)\]]?', name)
     if match:
         title = match.group(1).strip()
         year = match.group(2)
-        # Further normalize title: lowercase, collapse spaces
+        # Aggressive normalization for dedup:
+        # Remove all parentheses/brackets and their content
+        title = re.sub(r'\([^)]*\)', '', title)
+        title = re.sub(r'\[[^\]]*\]', '', title)
+        # Remove non-alphanumeric (keep spaces)
+        title = re.sub(r'[^a-zA-Z0-9 ]', '', title)
+        # Collapse multiple spaces
         title = re.sub(r'\s+', ' ', title).strip()
         return title, year
     
@@ -136,51 +143,37 @@ def main():
         
         key = f"{title.lower()}_{year}"
         
+        # If movie doesn't exist yet, create it
         if key not in movies:
             imdb_id = torrent.get('imdb', '')
-            
-            if fast_mode:
-                # Fast mode: skip OMDB and extra search, use original torrent only
-                omdb = None
-                all_torrents = [torrent]
-            else:
-                # Full mode: Fetch metadata from OMDB (has IMDB rating)
-                omdb = get_omdb_info(imdb_id) if imdb_id else None
-                
-                # Search TPB for all torrents of this movie
-                search_query = f"{title} {year}"
-                all_torrents = search_tpb(search_query)
-                
-                if not all_torrents:
-                    all_torrents = [torrent]  # Use at least the original
-            
             movies[key] = {
-                'title': omdb['title'] if omdb else title,
-                'year': omdb['year'] if omdb else year,
+                'title': title,  # Use extracted title
+                'year': year,
                 'imdb_id': imdb_id,
-                'imdb_rating': omdb['imdb_rating'] if omdb else 'N/A',
-                'plot': omdb['plot'] if omdb else '',
-                'poster': omdb['poster'] if omdb else '',
-                'torrents': []
+                'imdb_rating': 'N/A',
+                'plot': '',
+                'poster': '',
+                'torrents': [],
+                'seen_hashes': set()  # Track seen hashes
             }
-            
-            # Add all torrents
-            seen_hashes = set()
-            for t in all_torrents:
-                info_hash = t.get('info_hash', '')
-                if info_hash and info_hash not in seen_hashes:
-                    seen_hashes.add(info_hash)
-                    movies[key]['torrents'].append({
-                        'name': t.get('name', ''),
-                        'hash': info_hash,
-                        'seeders': int(t.get('seeders', 0)),
-                        'leechers': int(t.get('leechers', 0)),
-                        'size': format_size(t.get('size', 0)),
-                        'size_bytes': int(t.get('size', 0))
-                    })
-            
-            # Sort torrents by seeders (highest first)
-            movies[key]['torrents'].sort(key=lambda x: x['seeders'], reverse=True)
+        
+        # Always add torrent to movie (merge)
+        info_hash = torrent.get('info_hash', '')
+        if info_hash and info_hash not in movies[key]['seen_hashes']:
+            movies[key]['seen_hashes'].add(info_hash)
+            movies[key]['torrents'].append({
+                'name': torrent.get('name', ''),
+                'hash': info_hash,
+                'seeders': int(torrent.get('seeders', 0)),
+                'leechers': int(torrent.get('leechers', 0)),
+                'size': format_size(torrent.get('size', 0)),
+                'size_bytes': int(torrent.get('size', 0))
+            })
+    
+    # Sort torrents by seeders and remove seen_hashes before output
+    for key, movie in movies.items():
+        movie['torrents'].sort(key=lambda x: x['seeders'], reverse=True)
+        del movie['seen_hashes']  # Remove helper field
     
     # Output as JSON
     output = list(movies.values())
