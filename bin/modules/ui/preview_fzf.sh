@@ -227,19 +227,35 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         fi
     fi
 else
-    # No poster - use fallback movie_night.jpg
+    # No poster available - different fallbacks for Kitty vs text mode
     FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
-    if [[ -f "$FALLBACK_IMG" ]]; then
-        if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+    
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+        # Kitty: Use movie_night.jpg fallback image
+        if [[ -f "$FALLBACK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
                 --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
                 --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
             for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
-        elif command -v viu &>/dev/null; then
-            TERM=xterm-256color viu -w $IMAGE_WIDTH -h $IMAGE_HEIGHT "$FALLBACK_IMG" 2>/dev/null
         fi
     else
-        echo -e "${DIM}[No poster available]${RESET}"
+        # Text/block mode: Draw colorful rainbow spinner grid
+        _draw_spinner_grid() {
+            local w=$1 h=$2
+            local spinners=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+            local colors=(196 202 208 214 220 226 190 154 118 82 46 47 48 49 50 51 45 39 33 27 21 57 93 129 165 201 200 199 198 197)
+            
+            for ((row=0; row<h; row++)); do
+                local line=""
+                for ((col=0; col<w; col++)); do
+                    local spin_idx=$(( (row + col) % ${#spinners[@]} ))
+                    local color_idx=$(( (row * w + col) % ${#colors[@]} ))
+                    line+="\033[38;5;${colors[$color_idx]}m${spinners[$spin_idx]}"
+                done
+                echo -e "${line}\033[0m"
+            done
+        }
+        _draw_spinner_grid $IMAGE_WIDTH $IMAGE_HEIGHT
     fi
 fi
 
