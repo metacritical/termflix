@@ -188,11 +188,24 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     mkdir -p "$cache_dir"
     
     filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-    poster_path="${cache_dir}/${filename_hash}.jpg"
+    poster_path="${cache_dir}/${filename_hash}.png"  # Use PNG for cached images
     
-    # Download if not cached
+    # Download and convert to PNG if not cached
     if [[ ! -f "$poster_path" ]]; then
-        curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
+        temp_file="${cache_dir}/${filename_hash}.tmp"
+        curl -sL --max-time 5 "$poster_url" -o "$temp_file" 2>/dev/null
+        
+        # Convert to PNG using sips (macOS) for consistent encoding
+        if [[ -f "$temp_file" && -s "$temp_file" ]]; then
+            if command -v sips &>/dev/null; then
+                # Resize and convert to PNG
+                sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
+            else
+                # Fallback: just rename if sips not available
+                mv "$temp_file" "$poster_path"
+            fi
+            rm -f "$temp_file" 2>/dev/null
+        fi
     fi
 fi
 
