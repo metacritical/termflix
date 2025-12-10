@@ -173,6 +173,7 @@ fi
 
 # Image height for block mode
 IMAGE_HEIGHT=15
+IMAGE_WIDTH=20
 
 # Download poster if we have URL
 poster_path=""
@@ -210,9 +211,9 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     else
         # Block mode: viu/chafa writes text-based image
         if command -v viu &>/dev/null; then
-            TERM=xterm-256color viu -w 35 -h $IMAGE_HEIGHT "$poster_path" 2>/dev/null
+            TERM=xterm-256color viu -w $IMAGE_WIDTH -h $IMAGE_HEIGHT "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
-            TERM=xterm-256color chafa --symbols=block --size="35x${IMAGE_HEIGHT}" "$poster_path" 2>/dev/null
+            TERM=xterm-256color chafa --symbols=block --size="${IMAGE_WIDTH}x${IMAGE_HEIGHT}" "$poster_path" 2>/dev/null
         fi
     fi
 else
@@ -222,7 +223,7 @@ else
         if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
             kitten icat --transfer-mode=file --stdin=no --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
         elif command -v viu &>/dev/null; then
-            TERM=xterm-256color viu -w 35 -h $IMAGE_HEIGHT "$FALLBACK_IMG" 2>/dev/null
+            TERM=xterm-256color viu -w $IMAGE_WIDTH -h $IMAGE_HEIGHT "$FALLBACK_IMG" 2>/dev/null
         fi
     else
         echo -e "${DIM}[No poster available]${RESET}"
