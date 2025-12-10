@@ -182,28 +182,40 @@ handle_fzf_selection() {
              options+="${i}|${d_line}"$'\n'
          done
          
-         # Launch "Right Pane" Version Picker
-         # Only if multiple magnets OR user explicitly navigated (though Combined usually has multiple)
+         # Launch "Right Pane" Version Picker (Stage 2)
+         # Only if multiple magnets OR user explicitly navigated
          if [[ ${#magnets_arr[@]} -ge 1 ]]; then
              local ver_pick
-             local preview_cmd="${SCRIPT_DIR}/modules/ui/preview_fzf.sh \"${rest_data//\"/\\\"}\""
+             local stage2_preview
              
+             # Detect terminal type for Stage 2 preview
+             if [[ "$TERM" == "xterm-kitty" ]]; then
+                 # Kitty: Use poster + info preview
+                 stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_kitty.sh"
+                 local preview_data="${name}|${sources_arr[0]}|${qualities_arr[0]}|${sizes_arr[0]}|${c_poster}"
+             else
+                 # Block mode: Use large poster only preview
+                 stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_block.sh"
+                 local preview_data="${name}|${c_poster}"
+             fi
+             
+             # Stage 2 FZF - Same styling as Stage 1 for seamless feel
              ver_pick=$(printf "%s" "$options" | fzf \
                  --ansi \
                  --delimiter='|' \
                  --with-nth=2.. \
                  --height=100% \
                  --layout=reverse \
-                 --border=none \
-                 --margin=0 \
+                 --border=rounded \
+                 --margin=1 \
                  --padding=1 \
                  --prompt="▶ Pick Version: " \
-                 --header="Use Up/Down to select, Enter to stream (Ctrl+H to back)" \
+                 --header="🎬 Available Versions: (Ctrl+H to back)" \
                  --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                  --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                  --color=prompt:#50fa7b,pointer:#ff79c6 \
-                 --preview "$preview_cmd" \
-                 --preview-window=left:50%:wrap \
+                 --preview "$stage2_preview '$preview_data'" \
+                 --preview-window=left:45%:wrap \
                  --bind='ctrl-h:abort,ctrl-o:abort' \
                  2>/dev/null)
              
