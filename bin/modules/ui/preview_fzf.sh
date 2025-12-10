@@ -224,7 +224,10 @@ else
     FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
     if [[ -f "$FALLBACK_IMG" ]]; then
         if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-            kitten icat --transfer-mode=file --stdin=no --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
+            kitten icat --transfer-mode=file --stdin=no \
+                --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+                --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
+            for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
         elif command -v viu &>/dev/null; then
             TERM=xterm-256color viu -w $IMAGE_WIDTH -h $IMAGE_HEIGHT "$FALLBACK_IMG" 2>/dev/null
         fi
