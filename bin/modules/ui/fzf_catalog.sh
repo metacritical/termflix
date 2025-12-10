@@ -209,9 +209,10 @@ handle_fzf_selection() {
                  *) src_name="$src" ;;
              esac
              
-             # Format: 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay
+             # Format display: 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay
              local d_line="🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds${RESET} - ${src_name}"
-             options+="${i}|${d_line}"$'\n'
+             # Format: idx|display|name|src|qual|sz|poster (for preview to use)
+             options+="${i}|${d_line}|${name}|${src}|${qual}|${sz}|${c_poster}"$'\n'
          done
          
          # Launch "Right Pane" Version Picker (Stage 2)
@@ -235,7 +236,7 @@ handle_fzf_selection() {
              ver_pick=$(printf "%s" "$options" | fzf \
                  --ansi \
                  --delimiter='|' \
-                 --with-nth=2.. \
+                 --with-nth=2 \
                  --height=100% \
                  --layout=reverse \
                  --border=rounded \
@@ -246,7 +247,7 @@ handle_fzf_selection() {
                  --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                  --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                  --color=prompt:#50fa7b,pointer:#ff79c6 \
-                 --preview "$stage2_preview '$preview_data'" \
+                 --preview "$stage2_preview '{3}|{4}|{5}|{6}|{7}'" \
                  --preview-window=left:45%:wrap \
                  --bind='ctrl-h:abort,ctrl-o:abort' \
                  2>/dev/null)

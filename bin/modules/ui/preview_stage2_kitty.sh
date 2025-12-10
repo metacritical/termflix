@@ -36,9 +36,9 @@ echo -e "${BOLD}${MAGENTA}${title}${RESET}"
 echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
-# --- 5. Image dimensions ---
-IMAGE_WIDTH=20
-IMAGE_HEIGHT=15
+# --- 5. Image dimensions (larger for Stage 2) ---
+IMAGE_WIDTH=40
+IMAGE_HEIGHT=30
 BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
 FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
 
