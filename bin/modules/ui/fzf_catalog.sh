@@ -170,6 +170,11 @@ handle_fzf_selection() {
          
          # Prepare version options for "Right Pane" FZF with nice formatting
          local options=""
+         local RESET=$'\e[0m'
+         local GREEN=$'\e[38;5;46m'
+         local YELLOW=$'\e[38;5;220m'
+         local RED=$'\e[38;5;196m'
+         
          for i in "${!magnets_arr[@]}"; do
              local src="${sources_arr[$i]:-Unknown}"
              local qual="${qualities_arr[$i]:-N/A}"
@@ -179,11 +184,11 @@ handle_fzf_selection() {
              # Color seeds based on count (green=high, yellow=medium, red=low)
              local seed_color
              if [[ "$sd" -ge 100 ]]; then
-                 seed_color="\033[38;5;46m"   # Green
+                 seed_color="$GREEN"
              elif [[ "$sd" -ge 10 ]]; then
-                 seed_color="\033[38;5;220m"  # Yellow
+                 seed_color="$YELLOW"
              else
-                 seed_color="\033[38;5;196m"  # Red
+                 seed_color="$RED"
              fi
              
              # Source name mapping
@@ -197,7 +202,7 @@ handle_fzf_selection() {
              esac
              
              # Format: 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay
-             local d_line="🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds\033[0m - ${src_name}"
+             local d_line="🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds${RESET} - ${src_name}"
              options+="${i}|${d_line}"$'\n'
          done
          
