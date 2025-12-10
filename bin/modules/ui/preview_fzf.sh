@@ -134,11 +134,24 @@ clean_title=$(echo "$title" | sed -E '
     s/[[:space:]]+$//
 ')
 
-# --- Priority 1: OMDB ---
+# --- Priority 0: Check cached description FIRST (instant) ---
+DESC_CACHE="${HOME}/.cache/termflix/descriptions"
+title_hash=$(echo -n "${title,,}" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+cached_desc="${DESC_CACHE}/${title_hash}.txt"
+if [[ -f "$cached_desc" ]]; then
+    description=$(cat "$cached_desc")
+fi
+
+# --- Priority 1: OMDB (if not cached) ---
 if [[ -z "$description" && -f "$OMDB_MODULE" ]]; then
     source "$OMDB_MODULE"
     if omdb_configured; then
         description=$(fetch_omdb_description "$clean_title" "$movie_year" 2>/dev/null)
+        # Cache it for next time
+        if [[ -n "$description" && "$description" != "null" ]]; then
+            mkdir -p "$DESC_CACHE"
+            echo "$description" > "$cached_desc"
+        fi
     fi
 fi
 
@@ -147,6 +160,11 @@ if [[ -z "$description" && -f "$TMDB_MODULE" ]]; then
     source "$TMDB_MODULE"
     if tmdb_configured; then
         description=$(fetch_movie_description "$clean_title" "$movie_year" 2>/dev/null)
+        # Cache it for next time
+        if [[ -n "$description" && "$description" != "null" ]]; then
+            mkdir -p "$DESC_CACHE"
+            echo "$description" > "$cached_desc"
+        fi
     fi
 fi
 

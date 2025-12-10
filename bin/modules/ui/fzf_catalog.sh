@@ -109,6 +109,14 @@ show_fzf_catalog() {
     # 3. Locate Preview Script
     local preview_script="${SCRIPT_DIR}/modules/ui/preview_fzf.sh"
     
+    # 3.5. Launch background precache for first 50 movies
+    local precache_script="${SCRIPT_DIR}/scripts/precache_catalog.py"
+    if [[ -f "$precache_script" ]] && command -v python3 &>/dev/null; then
+        # Pipe catalog data to precache script in background
+        printf "%s" "$fzf_input" | python3 "$precache_script" 50 &>/dev/null &
+        disown 2>/dev/null
+    fi
+    
     # 4. Run FZF  
     # Important: Use printf instead of echo -ne for better handling
     local selection
