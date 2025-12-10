@@ -171,14 +171,7 @@ if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; 
     fi
 fi
 
-# Debug: Show poster URL
-echo -e "${DIM}[Poster: ${poster_url:-NONE}]${RESET}"
-echo
-
-# === FIXED PLACEHOLDER BLOCK ===
-# Reserve 15 lines for image area - this space is always allocated
-# In block mode: viu writes text here
-# In Kitty mode: kitten icat superimposes image here
+# Image height for block mode
 IMAGE_HEIGHT=15
 
 # Download poster if we have URL
@@ -188,20 +181,18 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     mkdir -p "$cache_dir"
     
     filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-    poster_path="${cache_dir}/${filename_hash}.png"  # Use PNG for cached images
+    poster_path="${cache_dir}/${filename_hash}.png"
     
     # Download and convert to PNG if not cached
     if [[ ! -f "$poster_path" ]]; then
         temp_file="${cache_dir}/${filename_hash}.tmp"
         curl -sL --max-time 5 "$poster_url" -o "$temp_file" 2>/dev/null
         
-        # Convert to PNG using sips (macOS) for consistent encoding
+        # Convert to PNG using sips (macOS)
         if [[ -f "$temp_file" && -s "$temp_file" ]]; then
             if command -v sips &>/dev/null; then
-                # Resize and convert to PNG
                 sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
             else
-                # Fallback: just rename if sips not available
                 mv "$temp_file" "$poster_path"
             fi
             rm -f "$temp_file" 2>/dev/null
@@ -212,10 +203,8 @@ fi
 # Display image or placeholder
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Simple inline display (no positioning tricks)
-        # Use unicode placeholders for FZF preview compatibility
-        kitten icat --transfer-mode=memory --stdin=no \
-            --unicode-placeholder \
+        # Kitty: Use file-based transfer (more reliable)
+        kitten icat --transfer-mode=file --stdin=no \
             --scale-up --align=left \
             "$poster_path" 2>/dev/null
     else
@@ -227,9 +216,8 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         fi
     fi
 else
-    # No image - print placeholder lines with message
+    # No image - print placeholder
     echo -e "${DIM}[No poster available]${RESET}"
-    for ((i=0; i<IMAGE_HEIGHT-1; i++)); do echo; done
 fi
 
 echo
