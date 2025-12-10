@@ -189,9 +189,9 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         if command -v viu &>/dev/null; then
             # Force block mode by overriding TERM
-            TERM=xterm-256color viu -w 30 -h 12 "$poster_path" 2>/dev/null
+            TERM=xterm-256color viu -w 20 -h 15 "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
-            TERM=xterm-256color chafa --symbols=block --size="30x12" "$poster_path" 2>/dev/null
+            TERM=xterm-256color chafa --symbols=block --size="20x15" "$poster_path" 2>/dev/null
         fi
     fi
 fi
