@@ -106,29 +106,29 @@ def main():
     raw_query = sys.argv[1]
     query = clean_title(raw_query)
     
-    # 1. TMDB
-    tmdb_key = os.environ.get('TMDB_API_KEY')
-    if tmdb_key:
-        poster = fetch_tmdb(query, tmdb_key)
-        if poster:
-            print(poster)
-            return
-
-    # 2. YTS (Movies only, but public and fast)
-    poster = fetch_yts(query)
-    if poster:
-        print(poster)
-        return
-
-    # 3. OMDb
+    # 1. OMDb (Best for title-only search)
     omdb_key = os.environ.get('OMDB_API_KEY')
     if omdb_key:
         poster = fetch_omdb(query, omdb_key)
         if poster:
             print(poster)
             return
+    
+    # 2. YTS (Movies only, but public and fast)
+    poster = fetch_yts(query)
+    if poster:
+        print(poster)
+        return
+
+    # 3. TMDB (Needs proper IMDB ID for best results, title search less reliable)
+    tmdb_key = os.environ.get('TMDB_API_KEY')
+    if tmdb_key:
+        poster = fetch_tmdb(query, tmdb_key)
+        if poster:
+            print(poster)
+            return
             
-    # 4. Google Images (Scrape)
+    # 4. Google Images (Scrape - last resort)
     poster = fetch_google(query)
     if poster:
         print(poster)
