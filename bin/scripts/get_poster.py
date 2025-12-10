@@ -2,9 +2,9 @@
 """
 Termflix - Poster Fetcher
 Fetches movie poster URL with fallback chain:
-1. TMDB (API Key)
+1. OMDb (API Key - best for title search)
 2. YTS (Public API - Movies only)
-3. OMDb (API Key)
+3. TMDB (API Key)
 4. Google Images (Scrape)
 """
 import sys
@@ -14,6 +14,32 @@ import urllib.request
 import urllib.parse
 import re
 import ssl
+from pathlib import Path
+
+# Load API keys from config file
+_config = {}
+def load_config():
+    global _config
+    if _config:
+        return _config
+    
+    config_path = Path.home() / ".config" / "termflix" / "config"
+    if config_path.exists():
+        try:
+            with open(config_path) as f:
+                for line in f:
+                    line = line.strip()
+                    if '=' in line and not line.startswith('#'):
+                        key, value = line.split('=', 1)
+                        _config[key.strip()] = value.strip().strip('"\'')
+        except Exception:
+            pass
+    return _config
+
+def get_api_key(name):
+    """Get API key from config file or environment variable"""
+    config = load_config()
+    return config.get(name) or os.environ.get(name)
 
 def clean_title(title):
     # Remove year (1999) for better search
@@ -107,7 +133,7 @@ def main():
     query = clean_title(raw_query)
     
     # 1. OMDb (Best for title-only search)
-    omdb_key = os.environ.get('OMDB_API_KEY')
+    omdb_key = get_api_key('OMDB_API_KEY')
     if omdb_key:
         poster = fetch_omdb(query, omdb_key)
         if poster:
@@ -121,7 +147,7 @@ def main():
         return
 
     # 3. TMDB (Needs proper IMDB ID for best results, title search less reliable)
-    tmdb_key = os.environ.get('TMDB_API_KEY')
+    tmdb_key = get_api_key('TMDB_API_KEY')
     if tmdb_key:
         poster = fetch_tmdb(query, tmdb_key)
         if poster:
