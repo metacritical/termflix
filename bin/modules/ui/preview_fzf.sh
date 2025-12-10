@@ -171,7 +171,18 @@ if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; 
     fi
 fi
 
-# Download and display poster
+# Debug: Show poster URL
+echo -e "${DIM}[Poster: ${poster_url:-NONE}]${RESET}"
+echo
+
+# === FIXED PLACEHOLDER BLOCK ===
+# Reserve 15 lines for image area - this space is always allocated
+# In block mode: viu writes text here
+# In Kitty mode: kitten icat superimposes image here
+IMAGE_HEIGHT=15
+
+# Download poster if we have URL
+poster_path=""
 if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
     cache_dir="${HOME}/.cache/termflix/posters"
     mkdir -p "$cache_dir"
@@ -183,21 +194,31 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
     if [[ ! -f "$poster_path" ]]; then
         curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
     fi
+fi
 
-    # Display Image using Python helper
-    # Kitty: Uses graphics protocol with q=2 (suppress response) for HQ images
-    # Other: Falls back to viu/chafa block graphics
-    if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-            # Kitty terminal: Use kitten icat with --clear for clean redraw
-            # --place specifies position, --stdin=no reads from file
-            kitten icat --clear --transfer-mode=memory --stdin=no --place=40x15@0x3 "$poster_path" 2>/dev/null
-        elif command -v viu &>/dev/null; then
-            TERM=xterm-256color viu -w 20 -h 15 "$poster_path" 2>/dev/null
+# Display image or placeholder
+if [[ -f "$poster_path" && -s "$poster_path" ]]; then
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+        # Kitty: First draw placeholder lines, then overlay image
+        # Print empty placeholder lines
+        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
+        
+        # Move cursor up and draw image (superimpose)
+        printf "\033[${IMAGE_HEIGHT}A"  # Move up
+        kitten icat --clear --transfer-mode=memory --stdin=no --scale-up --place=35x${IMAGE_HEIGHT}@0x0 "$poster_path" 2>/dev/null
+        printf "\033[${IMAGE_HEIGHT}B"  # Move back down
+    else
+        # Block mode: viu/chafa writes text-based image
+        if command -v viu &>/dev/null; then
+            TERM=xterm-256color viu -w 35 -h $IMAGE_HEIGHT "$poster_path" 2>/dev/null
         elif command -v chafa &>/dev/null; then
-            TERM=xterm-256color chafa --symbols=block --size="20x15" "$poster_path" 2>/dev/null
+            TERM=xterm-256color chafa --symbols=block --size="35x${IMAGE_HEIGHT}" "$poster_path" 2>/dev/null
         fi
     fi
+else
+    # No image - print placeholder lines with message
+    echo -e "${DIM}[No poster available]${RESET}"
+    for ((i=0; i<IMAGE_HEIGHT-1; i++)); do echo; done
 fi
 
 echo
