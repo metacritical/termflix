@@ -204,10 +204,13 @@ fi
 # Display image or placeholder
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Use file-based transfer (more reliable)
+        # Kitty: Use file-based transfer with explicit size to prevent overlap
         kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
             --scale-up --align=left \
             "$poster_path" 2>/dev/null
+        # Add newlines to reserve space after image
+        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
     else
         # Block mode: viu/chafa writes text-based image
         if command -v viu &>/dev/null; then
