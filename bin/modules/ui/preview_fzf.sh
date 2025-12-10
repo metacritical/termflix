@@ -202,9 +202,16 @@ if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; 
 fi
 
 # Display image or placeholder
+BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
+
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Use file-based transfer with explicit size to prevent overlap
+        # Kitty: Draw blank first to erase previous, then superimpose poster
+        if [[ -f "$BLANK_IMG" ]]; then
+            kitten icat --transfer-mode=file --stdin=no \
+                --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+                --scale-up "$BLANK_IMG" 2>/dev/null
+        fi
         kitten icat --transfer-mode=file --stdin=no \
             --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
             --scale-up --align=left \
