@@ -85,6 +85,52 @@ show_fzf_catalog() {
     echo "$title - [$len results]" > "$snap_header_file" 2>/dev/null
 
     # 2. Configure FZF with enhanced options
+    # Header showing navigation options
+    local hl_latest=" "
+    local hl_trending=" "
+    local hl_popular=" "
+    local hl_shows=" "
+    local hl_genres=" "
+    
+    # Determine selected tab based on Title
+    case "$title" in
+        *"Latest"*)   hl_latest="o" ;;
+        *"Trending"*) hl_trending="o" ;;
+        *"Popular"*)  hl_popular="o" ;;
+        *"Shows"*)    hl_shows="o" ;;
+        *"Genre"*)    hl_genres="o" ;;
+        *)            hl_latest="o" ;; # Default
+    esac
+    
+    # Colors for header
+    local H_RESET="\033[0m"
+    local H_SEL="\033[1;32m" # Bright Green
+    
+    # Helper for button formatting
+    fmt_btn() {
+        local state="$1"
+        local label="$2"
+        if [[ "$state" == "o" ]]; then
+            echo -ne "[${H_SEL}● ${label}${H_RESET}]"
+        else
+            echo -ne "[${label}]"
+        fi
+    }
+
+    # Special formatter for Dropdown
+    fmt_drop() {
+        local state="$1"
+        local label="$2"
+        if [[ "$state" == "o" ]]; then
+            echo -ne "[${H_SEL}● ${label} ▾${H_RESET}]"
+        else
+            echo -ne "[${label} ▾]"
+        fi
+    }
+    
+    local menu_header
+    menu_header=$(echo -ne "$(fmt_btn "$hl_latest" "Latest") $(fmt_btn "$hl_trending" "Trending") $(fmt_btn "$hl_popular" "Popular") $(fmt_btn "$hl_shows" "Shows") $(fmt_drop "$hl_genres" "Kind/Genre") | ^W ^T ^P ^V ^G")
+    
     export FZF_DEFAULT_OPTS="
       --ansi
       --color=fg:#f8f8f2,bg:-1,hl:#ff79c6
@@ -97,14 +143,13 @@ show_fzf_catalog() {
       --padding=1
       --prompt='❯ '
       --pointer='▶'
-      --header='$title - [$len results]'
+      --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
       --bind='ctrl-/:toggle-preview'
       --bind='alt-j:preview-down,alt-k:preview-up'
       --bind='ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up'
-      --bind='ctrl-g:first'
-      --bind='ctrl-h:toggle-preview,ctrl-l:toggle-preview'
+      --bind='ctrl-h:toggle-preview'
     "
     
     
@@ -134,7 +179,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,enter \
+        --expect=ctrl-l,ctrl-w,ctrl-t,ctrl-p,ctrl-v,ctrl-g,ctrl-o,enter \
         --exit-0 2>/dev/null)
         
     # 5. Handle Result
@@ -143,6 +188,15 @@ show_fzf_catalog() {
         local key
         local selected_line
         { read -r key; read -r selected_line; } <<< "$selection"
+        
+        # Handle category switching shortcuts - return exit codes for main loop
+        case "$key" in
+            ctrl-w) return 101 ;;  # Latest
+            ctrl-t) return 102 ;;  # Trending
+            ctrl-p) return 103 ;;  # Popular
+            ctrl-v) return 104 ;;  # Shows
+            ctrl-g) return 105 ;;  # Genres
+        esac
         
         # If no selection line (e.g. only key was output), return fail
         [[ -z "$selected_line" ]] && return 1
