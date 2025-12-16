@@ -111,7 +111,8 @@ def set_cache(key: str, data: str):
 # ═══════════════════════════════════════════════════════════════
 
 def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added', 
-                     query_term: str = None, genre: str = None, min_rating: int = 0) -> List[Dict]:
+                     query_term: str = None, genre: str = None, min_rating: int = 0,
+                     order_by: str = 'desc') -> List[Dict]:
     """
     Fetch movie list from YTS API.
     
@@ -122,6 +123,7 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
         query_term: Search query (e.g. 'Avenger', '2024')
         genre: Filter by genre
         min_rating: Minimum rating filter (0-9)
+        order_by: Sort order ('desc' or 'asc')
     """
     # Map 'seeds'/'peers' to 'download_count' for YTS (closest proxy generally available on list endpoint)
     # However, 'peers' isn't a direct YTS sort option, but 'download_count' suggests popularity/activity.
@@ -131,7 +133,7 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
        yts_sort = 'download_count'
        
     # Check cache
-    cache_key = get_cache_key('yts_list', f"{limit}_{page}_{yts_sort}_{query_term}_{genre}_{min_rating}")
+    cache_key = get_cache_key('yts_list', f"{limit}_{page}_{yts_sort}_{query_term}_{genre}_{min_rating}_{order_by}")
     cached = get_cached(cache_key)
     if cached:
         try:
@@ -140,7 +142,7 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
             pass
 
     for domain in YTS_DOMAINS:
-        url = f"https://{domain}/api/v2/list_movies.json?limit={limit}&page={page}&sort_by={yts_sort}&order_by=desc"
+        url = f"https://{domain}/api/v2/list_movies.json?limit={limit}&page={page}&sort_by={yts_sort}&order_by={order_by}"
         
         if query_term:
             url += f"&query_term={urllib.parse.quote_plus(str(query_term))}"
@@ -431,7 +433,8 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
     return combined
 
 def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = True, sort_by: str = 'date_added',
-                               query_term: str = None, genre: str = None, min_rating: int = 0) -> List[str]:
+                               query_term: str = None, genre: str = None, min_rating: int = 0,
+                               order_by: str = 'desc') -> List[str]:
     """
     Fetch movies from YTS and enrich each with TPB torrents.
     
@@ -443,12 +446,14 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
         query_term: Search query
         genre: Genre filter
         min_rating: Minimum rating filter
+        order_by: Sort order ('desc' or 'asc')
     
     Returns list of COMBINED format strings.
     """
     # Fetch movies from YTS with sort option
     movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
-                              query_term=query_term, genre=genre, min_rating=min_rating)
+                              query_term=query_term, genre=genre, min_rating=min_rating,
+                              order_by=order_by)
     
     # FALLBACK: If YTS fails, use TPB precompiled top100 movies directly
     if not movies:
@@ -518,6 +523,7 @@ def main():
     parser.add_argument('--query', type=str, default=None, help='Search query (or Year)')
     parser.add_argument('--genre', type=str, default=None, help='Filter by genre')
     parser.add_argument('--min-rating', type=int, default=0, help='Minimum rating (0-9)')
+    parser.add_argument('--order', type=str, default='desc', choices=['desc', 'asc'], help='Sort order')
     parser.add_argument('--sequential', action='store_true', help='Disable parallel fetch')
     parser.add_argument('--refresh', action='store_true', help='Force refresh cache (ignore cached data)')
     
@@ -534,7 +540,8 @@ def main():
         sort_by=args.sort,
         query_term=args.query,
         genre=args.genre,
-        min_rating=args.min_rating
+        min_rating=args.min_rating,
+        order_by=args.order
     )
     
     for line in results:

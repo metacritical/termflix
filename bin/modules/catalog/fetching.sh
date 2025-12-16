@@ -16,6 +16,7 @@ get_latest_movies() {
     [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
     [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
     [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
+    [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order $CURRENT_ORDER"
     
     # Use multi-source Python script (combines YTS + TPB)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
@@ -203,6 +204,7 @@ get_catalog_by_genre() {
     [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
     [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
     [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
+    [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order $CURRENT_ORDER"
 
     # Use multi-source Python script
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
