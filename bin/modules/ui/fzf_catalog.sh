@@ -181,14 +181,13 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+H/J/K/L:Preview  </> Page  Ctrl+W/T/P/V/G:Menu Bar \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+H/J/K/L:Preview  Ctrl+Y:Year  </> Page  Ctrl+W/T/P/V/G:Menu Bar \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-j:preview-down,ctrl-k:preview-up'
       --bind='ctrl-h:change-preview-window(hidden|right:55%)'
       --bind='ctrl-l:change-preview-window(right:55%|hidden)'
     "
-
     
     
     # Debug: show what we're sending to FZF
@@ -223,7 +222,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-y,ctrl-v,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
         
@@ -235,7 +234,7 @@ show_fzf_catalog() {
         { read -r key; read -r selected_line; } <<< "$selection"
         
         # Handle category switching shortcuts - return exit codes for main loop
-        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
+        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre, ^Y=Year
         case "$key" in
             ctrl-o) return 101 ;;  # mOvies
             ctrl-s) return 102 ;;  # Shows
@@ -243,6 +242,7 @@ show_fzf_catalog() {
             ctrl-t) return 104 ;;  # Type dropdown
             ctrl-v) return 105 ;;  # Sort dropdown (mapped to V as R is refresh)
             ctrl-g) return 106 ;;  # Genre dropdown
+            ctrl-y) return 110 ;;  # Year dropdown
             ctrl-r) return 109 ;;  # Refresh
             ">"|ctrl-right) return 107 ;;  # Next page
             "<"|ctrl-left) return 108 ;;   # Previous page

@@ -110,17 +110,28 @@ def set_cache(key: str, data: str):
 # YTS API
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added') -> List[Dict]:
+def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added', 
+                     query_term: str = None, genre: str = None, min_rating: int = 0) -> List[Dict]:
     """
     Fetch movie list from YTS API.
     
     Args:
         limit: Number of movies per page
         page: Page number
-        sort_by: Sort method ('date_added', 'download_count', 'rating')
+        sort_by: Sort method ('date_added', 'download_count', 'rating', 'seeds', 'peers', 'year')
+        query_term: Search query (e.g. 'Avenger', '2024')
+        genre: Filter by genre
+        min_rating: Minimum rating filter (0-9)
     """
+    # Map 'seeds'/'peers' to 'download_count' for YTS (closest proxy generally available on list endpoint)
+    # However, 'peers' isn't a direct YTS sort option, but 'download_count' suggests popularity/activity.
+    # 'year' is a valid sort option.
+    yts_sort = sort_by
+    if sort_by in ['seeds', 'peers']:
+       yts_sort = 'download_count'
+       
     # Check cache
-    cache_key = get_cache_key('yts_list', f"{limit}_{page}_{sort_by}")
+    cache_key = get_cache_key('yts_list', f"{limit}_{page}_{yts_sort}_{query_term}_{genre}_{min_rating}")
     cached = get_cached(cache_key)
     if cached:
         try:
@@ -129,7 +140,14 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
             pass
 
     for domain in YTS_DOMAINS:
-        url = f"https://{domain}/api/v2/list_movies.json?limit={limit}&page={page}&sort_by={sort_by}&order_by=desc"
+        url = f"https://{domain}/api/v2/list_movies.json?limit={limit}&page={page}&sort_by={yts_sort}&order_by=desc"
+        
+        if query_term:
+            url += f"&query_term={urllib.parse.quote_plus(str(query_term))}"
+        if genre:
+            url += f"&genre={urllib.parse.quote_plus(genre)}"
+        if min_rating > 0:
+            url += f"&minimum_rating={min_rating}"
         
         response = fetch_url(url)
         if not response:
@@ -412,7 +430,8 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
     
     return combined
 
-def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = True, sort_by: str = 'date_added') -> List[str]:
+def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = True, sort_by: str = 'date_added',
+                               query_term: str = None, genre: str = None, min_rating: int = 0) -> List[str]:
     """
     Fetch movies from YTS and enrich each with TPB torrents.
     
@@ -420,12 +439,16 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
         limit: Movies per page
         page: Page number
         parallel: Use parallel fetching
-        sort_by: Sort method ('date_added', 'download_count', 'rating')
+        sort_by: Sort method ('date_added', 'download_count', 'rating', 'seeds', 'peers', 'year')
+        query_term: Search query
+        genre: Genre filter
+        min_rating: Minimum rating filter
     
     Returns list of COMBINED format strings.
     """
     # Fetch movies from YTS with sort option
-    movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by)
+    movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
+                              query_term=query_term, genre=genre, min_rating=min_rating)
     
     # FALLBACK: If YTS fails, use TPB precompiled top100 movies directly
     if not movies:
@@ -490,8 +513,11 @@ def main():
     parser.add_argument('--limit', type=int, default=50, help='Movies per page')
     parser.add_argument('--page', type=int, default=1, help='Page number')
     parser.add_argument('--sort', type=str, default='date_added', 
-                        choices=['date_added', 'download_count', 'rating'],
-                        help='Sort method (date_added=latest, download_count=trending, rating=popular)')
+                        choices=['date_added', 'download_count', 'rating', 'seeds', 'peers', 'year'],
+                        help='Sort method')
+    parser.add_argument('--query', type=str, default=None, help='Search query (or Year)')
+    parser.add_argument('--genre', type=str, default=None, help='Filter by genre')
+    parser.add_argument('--min-rating', type=int, default=0, help='Minimum rating (0-9)')
     parser.add_argument('--sequential', action='store_true', help='Disable parallel fetch')
     parser.add_argument('--refresh', action='store_true', help='Force refresh cache (ignore cached data)')
     
@@ -505,7 +531,10 @@ def main():
         limit=args.limit,
         page=args.page,
         parallel=not args.sequential,
-        sort_by=args.sort
+        sort_by=args.sort,
+        query_term=args.query,
+        genre=args.genre,
+        min_rating=args.min_rating
     )
     
     for line in results:

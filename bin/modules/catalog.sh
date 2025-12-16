@@ -299,6 +299,7 @@ display_catalog() {
             105) return 105 ;;  # Sort dropdown (^V)
             106) return 106 ;;  # Genre dropdown (^G)
             109) return 109 ;;  # Refresh (^R) -> FORCE_REFRESH
+            110) return 110 ;;  # Year dropdown (^Y)
             107)  # Next page (> or Ctrl+Right)
                 if [[ $current_page -lt $total_pages ]]; then
                     ((current_page++))

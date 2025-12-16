@@ -290,8 +290,25 @@ main() {
         local current_category="movies"
         local current_sort="latest"
         local current_genre=""
+        local current_min_rating=0
+        local current_query=""
         
         while true; do
+            # Export context for fetch functions
+            export CURRENT_GENRE="$current_genre"
+            export CURRENT_MIN_RATING="$current_min_rating"
+            export CURRENT_QUERY="$current_query"
+            
+            # Map sort friendly name to API sort key if needed
+            case "$current_sort" in
+                 latest)   export CURRENT_SORT="date_added" ;;
+                 trending) export CURRENT_SORT="download_count" ;;
+                 popular)  export CURRENT_SORT="rating" ;;
+                 seeds)    export CURRENT_SORT="seeds" ;; # "peers"
+                 rating)   export CURRENT_SORT="rating" ;;
+                 *)        export CURRENT_SORT="date_added" ;;
+            esac
+
             # Build title based on current filters
             local title_prefix=""
             local data_func=""
@@ -300,22 +317,31 @@ main() {
                 movies)
                     title_prefix="🎬"
                     case "$current_sort" in
-                        latest)   data_func="get_latest_movies"; title_prefix="$title_prefix Latest Movies" ;;
-                        trending) data_func="get_trending_movies"; title_prefix="$title_prefix Trending Movies" ;;
-                        popular)  data_func="get_popular_movies"; title_prefix="$title_prefix Popular Movies" ;;
-                        new)      data_func="get_new_48h_movies"; title_prefix="$title_prefix New (48h)" ;;
-                        *)        data_func="get_latest_movies"; title_prefix="$title_prefix HD Movies" ;;
+                        trending|seeds) data_func="get_trending_movies" ;;
+                        popular|rating) data_func="get_popular_movies" ;;
+                        new)            data_func="get_new_48h_movies" ;;
+                        *)              data_func="get_latest_movies" ;;
                     esac
                     
-                    # Add genre filter if selected
+                    # Update title display
+                    case "$current_sort" in
+                        latest)   title_prefix="$title_prefix Latest" ;;
+                        trending) title_prefix="$title_prefix Trending" ;;
+                        seeds)    title_prefix="$title_prefix Most Seeded" ;;
+                        popular)  title_prefix="$title_prefix Popular" ;;
+                        rating)   title_prefix="$title_prefix Rated ${current_min_rating}+" ;;
+                        new)      title_prefix="$title_prefix New (48h)" ;;
+                    esac
+                    
+                    if [[ -n "$current_query" ]]; then
+                        title_prefix="$title_prefix [Year: ${current_query}]"
+                    fi
+                    
                     if [[ -n "$current_genre" ]]; then
                         title_prefix="$title_prefix • $current_genre"
-                        # Use genre-specific fetcher for YTS
-                        data_func="get_catalog_by_genre"
-                        display_catalog "$title_prefix" "$data_func" 50 "$current_genre"
-                    else
-                        display_catalog "$title_prefix" "$data_func" 50
                     fi
+
+                    display_catalog "$title_prefix" "$data_func" 50
                     ;;
                 shows)
                     display_catalog "📺 TV Shows" get_latest_shows 50
@@ -352,17 +378,37 @@ main() {
                     [[ "$current_category" == "movies" ]] && current_category="shows" || current_category="movies"
                     ;;
                 105)
-                    # Sort dropdown: show FZF popup with sort options
-                    local sort_options="Latest (newest)\nTrending (most seeded)\nPopular (best rated)\nNew (last 48h)"
+                    # Sort dropdown (^V)
+                    # Add "Rating" and "Peers" to sort options
+                    local sort_options="Latest (newest)\nTrending (most seeded)\nPopular (best rated)\nRating (high->low)\nPeers (seeds)\nNew (last 48h)"
                     local selected_sort
-                    selected_sort=$(echo -e "$sort_options" | fzf --height=10 --layout=reverse --border --prompt="Sort by: " --header="Select sorting order" 2>/dev/null)
+                    selected_sort=$(echo -e "$sort_options" | fzf --height=15 --layout=reverse --border --prompt="Sort by: " --header="Select sorting method" 2>/dev/null)
                     
-                    case "$selected_sort" in
-                        *"Latest"*)    current_sort="latest" ;;
-                        *"Trending"*)  current_sort="trending" ;;
-                        *"Popular"*)   current_sort="popular" ;;
-                        *"New"*)       current_sort="new" ;;
-                    esac
+                    if [[ -n "$selected_sort" ]]; then
+                        case "$selected_sort" in
+                            "Latest (newest)") current_sort="latest" ;;
+                            "Trending (most seeded)") current_sort="trending" ;;
+                            "Popular (best rated)") current_sort="popular" ;;
+                            "Rating (high->low)") 
+                                 current_sort="rating" 
+                                 # Show rating picker
+                                 local rating_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\n4+ Stars\nAny Rating"
+                                 local sel_rat
+                                 sel_rat=$(echo -e "$rating_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " --header="Filter by Rating" 2>/dev/null)
+                                 case "$sel_rat" in
+                                     "9+ Stars") current_min_rating=9 ;;
+                                     "8+ Stars") current_min_rating=8 ;;
+                                     "7+ Stars") current_min_rating=7 ;;
+                                     "6+ Stars") current_min_rating=6 ;;
+                                     "5+ Stars") current_min_rating=5 ;;
+                                     "4+ Stars") current_min_rating=4 ;;
+                                     *) current_min_rating=0 ;;
+                                 esac
+                                 ;;
+                            "Peers (seeds)") current_sort="seeds" ;;
+                            "New (last 48h)") current_sort="new" ;;
+                        esac
+                    fi
                     continue
                     ;;
                 106)
@@ -375,6 +421,19 @@ main() {
                         current_genre="$selected_genre"
                     else
                         current_genre=""
+                    fi
+                    continue
+                    ;;
+                110)
+                    # Year dropdown (^Y)
+                    # Generate years from current year down to 1950
+                    local current_yr=$(date +%Y)
+                    local year_list=$(seq "$current_yr" -1 1950)
+                    local selected_year
+                    selected_year=$(echo "$year_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " --header="Filter by Year" 2>/dev/null)
+                    
+                    if [[ -n "$selected_year" ]]; then
+                        current_query="$selected_year"
                     fi
                     continue
                     ;;

@@ -10,15 +10,19 @@ get_latest_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    local refresh_flag=""
-    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
+    [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
     
     # Use multi-source Python script (combines YTS + TPB)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" $refresh_flag 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -55,15 +59,18 @@ get_trending_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    local refresh_flag=""
-    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
     
     # Use multi-source Python script with download_count sort (trending)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count $refresh_flag 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -96,15 +103,18 @@ get_popular_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
-    local refresh_flag=""
-    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
     
     # Use multi-source Python script with rating sort (popular)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" --sort rating $refresh_flag 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --sort rating $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -175,48 +185,36 @@ get_latest_shows() {
 }
 
 # Get catalog by genre
+# Get catalog by genre (Unified)
 get_catalog_by_genre() {
-    local genre="$1"
-    local limit="${2:-20}"
+    # If using globals, arg1 might be empty or redundant
+    local genre_arg="${1:-$CURRENT_GENRE}"
+    local limit="${2:-50}" 
+    local page="${3:-1}"
     
-    local genre_id=""
-    case "$(echo "$genre" | tr '[:upper:]' '[:lower:]')" in
-        action) genre_id="Action" ;;
-        adventure) genre_id="Adventure" ;;
-        animation) genre_id="Animation" ;;
-        comedy) genre_id="Comedy" ;;
-        crime) genre_id="Crime" ;;
-        documentary) genre_id="Documentary" ;;
-        drama) genre_id="Drama" ;;
-        family) genre_id="Family" ;;
-        fantasy) genre_id="Fantasy" ;;
-        horror) genre_id="Horror" ;;
-        mystery) genre_id="Mystery" ;;
-        romance) genre_id="Romance" ;;
-        sci-fi|scifi|science-fiction) genre_id="Sci-Fi" ;;
-        thriller) genre_id="Thriller" ;;
-        war) genre_id="War" ;;
-        western) genre_id="Western" ;;
-        *) genre_id="$genre" ;;
-    esac
+    # If no genre provided, fall back to Action
+    [[ -z "$genre_arg" ]] && genre_arg="Action"
     
-    local base_url="https://yts.lt/api/v2/list_movies.json"
-    local api_url="${base_url}?genre=${genre_id}&limit=${limit}&sort_by=date_added&order_by=desc"
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    # Ensure genre arg is passed
+    extra_args+=" --genre \"$genre_arg\""
     
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local response=$(curl -s --max-time 10 --retry 1 --retry-delay 2 \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
-            "$api_url" 2>/dev/null)
-        
-        if [ -n "$response" ]; then
-            local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
-            
-            if [ "$status" = "ok" ]; then
-                echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.genres | join(", "))|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20
-            fi
-        fi
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
+    [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
+
+    # Use multi-source Python script
+    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    
+    if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
+        python3 "$script_path" --limit "$limit" --page "$page" $extra_args 2>/dev/null
+        return $?
     fi
+    
+    # Legacy fallback logic removed for cleaner integration
+    return 1
 }
 
 # Get new movies from last 48 hours (TPB 48h precompiled)
