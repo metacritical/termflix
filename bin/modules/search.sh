@@ -4,7 +4,7 @@
 # Search wrappers to Python scripts and result grouping
 #
 
-# Search YTS via Python script
+# Search YTS via Python script (with retry, caching, and fallback)
 search_yts() {
     local query="$1"
     
@@ -14,9 +14,19 @@ search_yts() {
         return 1
     fi
     
+    # Pass configuration to Python script via environment
     export YTS_QUERY="$query"
+    export YTS_CACHE_TTL=$(config_get "YTS_CACHE_TTL" "3600")
+    export YTS_MAX_RETRIES=$(config_get "YTS_MAX_RETRIES" "3")
+    export YTS_TIMEOUT=$(config_get "YTS_TIMEOUT" "10")
+    
+    # Pass custom domains if configured (comma-separated)
+    local custom_domains=$(config_get "YTS_DOMAINS" "")
+    [[ -n "$custom_domains" ]] && export YTS_DOMAINS="$custom_domains"
+    
     python3 "$TERMFLIX_SCRIPTS_DIR/search_yts.py" 2>/tmp/termflix_last_error.log
 }
+
 
 # Search 1337x via Python script
 search_1337x() {

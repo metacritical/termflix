@@ -277,12 +277,101 @@ main() {
             ;;
     esac
     
-    # If we get here and no source, default to "latest movies"
+    # If we get here and no source, default to "latest movies" with category switching
     if [ -z "$source" ] && [ "$list_only" = false ] && [ "$search_mode" = false ]; then
-        # Default behavior: show latest movies from TPB
         check_jq
-        display_catalog "🎬 Latest Movies" get_latest_movies 50
-        exit $?
+        
+        # Category switching loop - NEW DESIGN
+        local current_category="movies"
+        local current_sort="latest"
+        local current_genre=""
+        
+        while true; do
+            # Build title based on current filters
+            local title_prefix=""
+            local data_func=""
+            
+            case "$current_category" in
+                movies)
+                    title_prefix="🎬"
+                    case "$current_sort" in
+                        latest)   data_func="get_latest_movies"; title_prefix="$title_prefix Latest Movies" ;;
+                        trending) data_func="get_trending_movies"; title_prefix="$title_prefix Trending Movies" ;;
+                        popular)  data_func="get_popular_movies"; title_prefix="$title_prefix Popular Movies" ;;
+                        new)      data_func="get_new_48h_movies"; title_prefix="$title_prefix New (48h)" ;;
+                        *)        data_func="get_latest_movies"; title_prefix="$title_prefix HD Movies" ;;
+                    esac
+                    
+                    # Add genre filter if selected
+                    if [[ -n "$current_genre" ]]; then
+                        title_prefix="$title_prefix • $current_genre"
+                        # Use genre-specific fetcher for YTS
+                        data_func="get_catalog_by_genre"
+                        display_catalog "$title_prefix" "$data_func" 50 "$current_genre"
+                    else
+                        display_catalog "$title_prefix" "$data_func" 50
+                    fi
+                    ;;
+                shows)
+                    display_catalog "📺 TV Shows" get_latest_shows 50
+                    ;;
+                watchlist)
+                    # Placeholder for future Watchlist feature
+                    clear
+                    echo -e "\n${BOLD}${YELLOW}📚 Watchlist${RESET}\n"
+                    echo -e "${CYAN}Coming Soon!${RESET}"
+                    echo -e "\nThis feature will allow you to:"
+                    echo -e "  • Save movies and shows to watch later"
+                    echo -e "  • Get notified when new episodes arrive"
+                    echo -e "  • Track your watch history"
+                    echo -e "\n${GRAY}Press any key to go back...${RESET}"
+                    read -n 1 -s
+                    current_category="movies"
+                    continue
+                    ;;
+            esac
+            
+            local ret=$?
+            case $ret in
+                101) current_category="movies" ;;
+                102) current_category="shows" ;;
+                103) current_category="watchlist" ;;
+                104) 
+                    # Type dropdown: toggle between movies and shows
+                    [[ "$current_category" == "movies" ]] && current_category="shows" || current_category="movies"
+                    ;;
+                105)
+                    # Sort dropdown: show FZF popup with sort options
+                    local sort_options="Latest (newest)\nTrending (most seeded)\nPopular (best rated)\nNew (last 48h)"
+                    local selected_sort
+                    selected_sort=$(echo -e "$sort_options" | fzf --height=10 --layout=reverse --border --prompt="Sort by: " --header="Select sorting order" 2>/dev/null)
+                    
+                    case "$selected_sort" in
+                        *"Latest"*)    current_sort="latest" ;;
+                        *"Trending"*)  current_sort="trending" ;;
+                        *"Popular"*)   current_sort="popular" ;;
+                        *"New"*)       current_sort="new" ;;
+                    esac
+                    continue
+                    ;;
+                106)
+                    # Genre dropdown: show FZF popup with genre list
+                    local genre_list="All Genres\nAction\nAdventure\nAnimation\nComedy\nCrime\nDocumentary\nDrama\nFamily\nFantasy\nHorror\nMusic\nMystery\nRomance\nSci-Fi\nThriller\nWar\nWestern"
+                    local selected_genre
+                    selected_genre=$(echo -e "$genre_list" | fzf --height=15 --layout=reverse --border --prompt="Genre: " --header="Filter by genre" 2>/dev/null)
+                    
+                    if [[ -n "$selected_genre" && "$selected_genre" != "All Genres" ]]; then
+                        current_genre="$selected_genre"
+                    else
+                        current_genre=""
+                    fi
+                    continue
+                    ;;
+                *)   break ;;  # User cancelled or streamed
+            esac
+        done
+        
+        exit 0
     fi
     
     # Check dependencies for streaming (only needed when actually streaming)

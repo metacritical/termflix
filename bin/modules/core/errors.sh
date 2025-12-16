@@ -3,6 +3,9 @@
 # Termflix Errors Module
 # Unified error handling and signal management
 #
+# @version 1.0.0
+# @updated 2025-12-14
+#
 
 # Prevent multiple sourcing
 [[ -n "${_TERMFLIX_ERRORS_LOADED:-}" ]] && return 0

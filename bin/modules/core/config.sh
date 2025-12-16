@@ -3,10 +3,46 @@
 # Termflix Configuration Module
 # Config file management and preferences
 #
+# @version 1.0.0
+# @updated 2025-12-14
+#
 
 # Prevent multiple sourcing
 [[ -n "${_TERMFLIX_CONFIG_LOADED:-}" ]] && return 0
 _TERMFLIX_CONFIG_LOADED=1
+
+# ═══════════════════════════════════════════════════════════════
+# IN-MEMORY CONFIG CACHE (Bash 3.2 compatible)
+# ═══════════════════════════════════════════════════════════════
+
+# Cache file location (faster than reading config file repeatedly)
+_CONFIG_CACHE_FILE="/tmp/termflix_config_cache_$$"
+_CONFIG_CACHE_LOADED=0
+
+# Load config file into cache file
+_load_config_cache() {
+    local config_file
+    config_file=$(get_config_file 2>/dev/null || echo "${HOME}/.config/termflix/config")
+    
+    # Clear existing cache
+    rm -f "$_CONFIG_CACHE_FILE" 2>/dev/null
+    
+    if [[ -f "$config_file" ]]; then
+        # Copy config to cache file (removes comments and empty lines)
+        grep -v '^[[:space:]]*#' "$config_file" 2>/dev/null | grep -v '^[[:space:]]*$' > "$_CONFIG_CACHE_FILE" 2>/dev/null
+    fi
+    
+    _CONFIG_CACHE_LOADED=1
+}
+
+# Invalidate config cache (call after config_set)
+invalidate_config_cache() {
+    rm -f "$_CONFIG_CACHE_FILE" 2>/dev/null
+    _CONFIG_CACHE_LOADED=0
+}
+
+# Cleanup cache on exit
+trap 'rm -f "$_CONFIG_CACHE_FILE" 2>/dev/null' EXIT
 
 # ═══════════════════════════════════════════════════════════════
 # CONFIG PATHS
@@ -31,15 +67,23 @@ get_cache_dir() {
 # CONFIG READING
 # ═══════════════════════════════════════════════════════════════
 
-# Read a config value
+# Read a config value (uses file-based cache for performance)
 # Usage: config_get "PLAYER" "mpv"
 config_get() {
     local key="$1"
     local default="${2:-}"
-    local config_file=$(get_config_file)
+    local value=""
     
-    if [[ -f "$config_file" ]]; then
-        local value=$(grep "^${key}=" "$config_file" 2>/dev/null | cut -d'=' -f2- | tr -d '[:space:]')
+    # Load cache on first access
+    if [[ $_CONFIG_CACHE_LOADED -eq 0 ]]; then
+        _load_config_cache
+    fi
+    
+    # Try cache file first
+    if [[ -f "$_CONFIG_CACHE_FILE" ]]; then
+        value=$(grep "^${key}=" "$_CONFIG_CACHE_FILE" 2>/dev/null | head -1 | cut -d'=' -f2-)
+        # Strip surrounding quotes and whitespace
+        value=$(echo "$value" | tr -d '[:space:]' | sed 's/^["'"'"']//;s/["'"'"']$//')
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
@@ -76,6 +120,9 @@ config_set() {
     
     # Add new key=value
     echo "${key}=${value}" >> "$config_file"
+    
+    # Invalidate cache so next read picks up the change
+    invalidate_config_cache
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -122,7 +169,9 @@ set_quality_preference() {
 
 # Get TMDB API key
 get_tmdb_api_key() {
-    config_get "TMDB_API_KEY" ""
+    local key=$(config_get "TMDB_API_KEY" "")
+    [[ -z "$key" ]] && key="${TMDB_API_KEY:-}"
+    echo "$key"
 }
 
 # Set TMDB API key
@@ -134,6 +183,136 @@ set_tmdb_api_key() {
 # Get TMDB read token
 get_tmdb_read_token() {
     config_get "TMDB_READ_TOKEN" ""
+}
+
+# ═══════════════════════════════════════════════════════════════
+# OMDB API KEY MANAGEMENT
+# ═══════════════════════════════════════════════════════════════
+
+# Get OMDB API key
+get_omdb_api_key() {
+    local key=$(config_get "OMDB_API_KEY" "")
+    [[ -z "$key" ]] && key="${OMDB_API_KEY:-}"
+    echo "$key"
+}
+
+# Set OMDB API key
+set_omdb_api_key() {
+    local key="$1"
+    config_set "OMDB_API_KEY" "$key"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIG VALIDATION
+# ═══════════════════════════════════════════════════════════════
+
+# Validate API key format (basic check - non-empty, reasonable length, valid chars)
+# Usage: validate_api_key "key" [min_length] [max_length]
+# Returns: 0 if valid, 1 if invalid
+validate_api_key() {
+    local key="$1"
+    local min_length="${2:-8}"
+    local max_length="${3:-100}"
+    
+    # Must be non-empty
+    [[ -z "$key" ]] && return 1
+    
+    # Check length bounds
+    [[ ${#key} -lt $min_length ]] && return 1
+    [[ ${#key} -gt $max_length ]] && return 1
+    
+    # Check for valid characters (alphanumeric, dashes, underscores)
+    [[ ! "$key" =~ ^[a-zA-Z0-9_-]+$ ]] && return 1
+    
+    return 0
+}
+
+# Validate full config and report issues
+# Returns: 0 if all valid, 1 if issues found (prints issues to stdout)
+validate_config() {
+    local issues=()
+    
+    # Check TMDB key format (32-40 chars typical)
+    local tmdb_key=$(get_tmdb_api_key)
+    if [[ -n "$tmdb_key" ]] && ! validate_api_key "$tmdb_key" 32 40; then
+        issues+=("TMDB_API_KEY: Invalid format (expected 32-40 alphanumeric chars)")
+    fi
+    
+    # Check OMDB key format (8-16 chars typical)
+    local omdb_key=$(get_omdb_api_key)
+    if [[ -n "$omdb_key" ]] && ! validate_api_key "$omdb_key" 8 16; then
+        issues+=("OMDB_API_KEY: Invalid format (expected 8-16 alphanumeric chars)")
+    fi
+    
+    # Check player preference exists
+    local player=$(config_get "PLAYER" "")
+    if [[ -n "$player" ]] && ! command -v "$player" &>/dev/null; then
+        issues+=("PLAYER: '$player' not found in PATH")
+    fi
+    
+    # Check quality is valid
+    local quality=$(config_get "QUALITY" "")
+    if [[ -n "$quality" ]] && [[ ! "$quality" =~ ^(720p|1080p|2160p|4k)$ ]]; then
+        issues+=("QUALITY: Invalid value '$quality' (expected 720p/1080p/2160p/4k)")
+    fi
+    
+    # Output issues
+    if [[ ${#issues[@]} -gt 0 ]]; then
+        printf '%s\n' "${issues[@]}"
+        return 1
+    fi
+    
+    return 0
+}
+
+# ═══════════════════════════════════════════════════════════════
+# FALLBACK DEFAULTS (Bash 3.2 compatible - uses case statement)
+# ═══════════════════════════════════════════════════════════════
+
+# Get default value for a config key
+# Usage: get_config_default "KEY"
+get_config_default() {
+    local key="$1"
+    case "$key" in
+        PLAYER)         echo "mpv" ;;
+        QUALITY)        echo "1080p" ;;
+        CACHE_TTL)      echo "3600" ;;
+        POSTER_WIDTH)   echo "20" ;;
+        POSTER_HEIGHT)  echo "15" ;;
+        API_TIMEOUT)    echo "10" ;;
+        TMDB_API_KEY)   echo "" ;;
+        OMDB_API_KEY)   echo "" ;;
+        TMDB_READ_TOKEN) echo "" ;;
+        YTS_CACHE_TTL)  echo "3600" ;;  # 1 hour cache
+        YTS_MAX_RETRIES) echo "3" ;;    # 3 retry attempts
+        YTS_TIMEOUT)    echo "10" ;;    # 10 second timeout
+        *)              echo "" ;;
+    esac
+}
+
+# Get config value with fallback to registered default
+# Usage: config_get_default "KEY"
+config_get_default() {
+    local key="$1"
+    local default
+    default=$(get_config_default "$key")
+    config_get "$key" "$default"
+}
+
+# List all default keys and values
+list_config_defaults() {
+    echo "API_TIMEOUT=$(get_config_default API_TIMEOUT)"
+    echo "CACHE_TTL=$(get_config_default CACHE_TTL)"
+    echo "OMDB_API_KEY=$(get_config_default OMDB_API_KEY)"
+    echo "PLAYER=$(get_config_default PLAYER)"
+    echo "POSTER_HEIGHT=$(get_config_default POSTER_HEIGHT)"
+    echo "POSTER_WIDTH=$(get_config_default POSTER_WIDTH)"
+    echo "QUALITY=$(get_config_default QUALITY)"
+    echo "TMDB_API_KEY=$(get_config_default TMDB_API_KEY)"
+    echo "TMDB_READ_TOKEN=$(get_config_default TMDB_READ_TOKEN)"
+    echo "YTS_CACHE_TTL=$(get_config_default YTS_CACHE_TTL)"
+    echo "YTS_MAX_RETRIES=$(get_config_default YTS_MAX_RETRIES)"
+    echo "YTS_TIMEOUT=$(get_config_default YTS_TIMEOUT)"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -190,8 +369,11 @@ is_cache_valid() {
 # ═══════════════════════════════════════════════════════════════
 
 export -f get_config_dir get_config_file get_cache_dir
-export -f config_get config_set
+export -f config_get config_set invalidate_config_cache
 export -f get_player_preference set_player_preference
 export -f get_quality_preference set_quality_preference
 export -f get_tmdb_api_key set_tmdb_api_key get_tmdb_read_token
+export -f get_omdb_api_key set_omdb_api_key
+export -f validate_api_key validate_config
+export -f config_get_default get_config_default list_config_defaults
 export -f clear_cache generate_cache_key is_cache_valid

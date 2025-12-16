@@ -25,17 +25,21 @@ if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
     TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../../scripts" 2>/dev/null && pwd)"
 fi
 
-# --- 2. Styling ---
-RESET='\033[0m'
-BOLD='\033[1m'
-DIM='\033[2m'
-MAGENTA='\033[38;5;213m'
-GREEN='\033[38;5;46m'
-CYAN='\033[38;5;87m'
-YELLOW='\033[38;5;220m'
-BLUE='\033[38;5;81m'
-GRAY='\033[38;5;241m'
-ORANGE='\033[38;5;208m'
+# --- 2. Source Theme & Colors ---
+if [[ -f "${SCRIPT_DIR}/../core/theme.sh" ]]; then
+    source "${SCRIPT_DIR}/../core/theme.sh"
+fi
+source "${SCRIPT_DIR}/../core/colors.sh"
+
+# Alias semantic colors (with theme fallback)
+MAGENTA="${THEME_GLOW:-$C_GLOW}"
+GREEN="${THEME_SUCCESS:-$C_SUCCESS}"
+CYAN="${THEME_INFO:-$C_INFO}"
+YELLOW="${THEME_WARNING:-$C_WARNING}"
+BLUE="${THEME_INFO:-$C_INFO}"
+GRAY="${THEME_FG_MUTED:-$C_MUTED}"
+ORANGE="${THEME_ORANGE:-$C_ORANGE}"
+PURPLE="${THEME_PURPLE:-$C_PURPLE}"
 
 # --- 3. Parse Entry ---
 IFS='|' read -r source title rest <<< "$input_line"
@@ -73,22 +77,21 @@ if [[ "$source" == "COMBINED" ]]; then
     fi
     echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
     
-    # Deduplicate and format qualities/sizes  
+    # Deduplicate and format qualities only (no sizes)
     seen_quals=()
-    sizes_display=""
+    quals_display=""
     for i in "${!qualities_arr[@]}"; do
         qual="${qualities_arr[$i]}"
-        sz="${sizes_arr[$i]}"
         
         # Check if we've seen this quality before
         if [[ ! " ${seen_quals[@]} " =~ " ${qual} " ]]; then
             seen_quals+=("$qual")
-            [[ -n "$sizes_display" ]] && sizes_display+=", "
-            sizes_display+="${qual} (${sz})"
+            [[ -n "$quals_display" ]] && quals_display+=", "
+            quals_display+="${qual}"
         fi
     done
     
-    echo -e "${BOLD}Available:${RESET} ${CYAN}${sizes_display}${RESET}"
+    echo -e "${BOLD}Available:${RESET} ${CYAN}${quals_display}${RESET}"
     
     # Store plot for later display (don't fetch if already provided)
     if [[ -n "$plot_text" ]] && [[ "$plot_text" != "N/A" ]]; then
@@ -101,6 +104,74 @@ else
     
     echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET}"
     echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
+fi
+
+# --- 4.5 Fetch Rich Metadata (Genre, Runtime, Rating, Year) ---
+OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
+
+# Variables for rich metadata
+movie_genre=""
+movie_runtime=""
+movie_rating=""
+movie_year_api=""
+
+# Clean title for API lookup
+clean_title_for_api="$title"
+movie_year=""
+
+# Extract year from title
+if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
+    movie_year="${BASH_REMATCH[1]}"
+fi
+
+# Remove quality tags from title for API lookup
+clean_title_for_api=$(echo "$title" | sed -E '
+    s/[[:space:]]*(19|20)[0-9]{2}[[:space:]]*/ /g;
+    s/[[:space:]]*(1080p|720p|480p|2160p|4K|UHD)//gi;
+    s/[[:space:]]*(HDRip|BRRip|BluRay|WEBRip|HDTV|DVDRip|CAM|TS|TC|HDCAM|WEB-DL|WEBDL)//gi;
+    s/[[:space:]]*(HEVC|x264|x265|H264|H265|AVC|AAC|DTS|AC3)//gi;
+    s/[[:space:]]+(YTS|YIFY|RARBG|EZTV)//gi;
+    s/[[:space:]]+/ /g;
+    s/^[[:space:]]+//;
+    s/[[:space:]]+$//
+')
+
+# Fetch metadata from OMDB if module available
+if [[ -f "$OMDB_MODULE" ]]; then
+    source "$OMDB_MODULE"
+    if omdb_configured; then
+        # Get full metadata JSON
+        metadata_json=$(get_omdb_metadata "$clean_title_for_api" "$movie_year" 2>/dev/null)
+        
+        if [[ -n "$metadata_json" ]] && echo "$metadata_json" | grep -q '"Response":"True"'; then
+            movie_genre=$(echo "$metadata_json" | extract_omdb_genre)
+            movie_runtime=$(echo "$metadata_json" | extract_omdb_runtime)
+            movie_rating=$(echo "$metadata_json" | extract_omdb_rating)
+            movie_year_api=$(echo "$metadata_json" | extract_omdb_year)
+            
+            # Update year if we got it from API
+            [[ -n "$movie_year_api" && "$movie_year_api" != "N/A" ]] && movie_year="$movie_year_api"
+        fi
+    fi
+fi
+
+# Display rich metadata line (Year | Genre | Runtime) - Rating already shown in Sources line
+metadata_line=""
+if [[ -n "$movie_year" && "$movie_year" != "N/A" ]]; then
+    metadata_line+="${BOLD}Year:${RESET} ${CYAN}${movie_year}${RESET}"
+fi
+if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
+    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
+    metadata_line+="${BOLD}Genre:${RESET} ${PURPLE}${movie_genre}${RESET}"
+fi
+if [[ -n "$movie_runtime" && "$movie_runtime" != "N/A" ]]; then
+    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
+    metadata_line+="${BOLD}Runtime:${RESET} ${CYAN}${movie_runtime}${RESET}"
+fi
+
+# Only print if we have metadata
+if [[ -n "$metadata_line" ]]; then
+    echo -e "$metadata_line"
 fi
 
 echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
@@ -224,10 +295,10 @@ BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
 
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Draw blank first to erase previous, then superimpose poster
+        # Kitty: Draw larger blank first to fully erase previous, then poster at normal size
         if [[ -f "$BLANK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
-                --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+                --place=20x16@0x0 \
                 --scale-up "$BLANK_IMG" 2>/dev/null
         fi
         kitten icat --transfer-mode=file --stdin=no \

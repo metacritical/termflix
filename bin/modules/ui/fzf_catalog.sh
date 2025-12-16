@@ -48,6 +48,17 @@ show_fzf_catalog() {
     local title="$1"
     local arr_name="$2"
     
+    # Display logo in Kitty mode (at top of screen)
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
+        # SCRIPT_DIR is modules/ui, so go up to bin/ then to lib/termflix/img/
+        local logo_file="${SCRIPT_DIR}/../../lib/termflix/img/logo.jpg"
+        if [[ -f "$logo_file" ]]; then
+            kitten icat --transfer-mode=file --stdin=no \
+                --place=40x4@0x0 --scale-up --align=left \
+                "$logo_file" 2>/dev/null
+        fi
+    fi
+    
     # 1. Prepare Data for FZF
     local fzf_input=""
     local fzf_display=""
@@ -85,59 +96,88 @@ show_fzf_catalog() {
     echo "$title - [$len results]" > "$snap_header_file" 2>/dev/null
 
     # 2. Configure FZF with enhanced options
-    # Header showing navigation options
-    local hl_latest=" "
-    local hl_trending=" "
-    local hl_popular=" "
+    # Header showing navigation options - New Design with LOGO
+    local hl_movies=" "
     local hl_shows=" "
-    local hl_genres=" "
+    local hl_watchlist=" "
+    local hl_type=" "
+    local hl_sort=" "
+    local hl_genre=" "
     
     # Determine selected tab based on Title
     case "$title" in
-        *"Latest"*)   hl_latest="o" ;;
-        *"Trending"*) hl_trending="o" ;;
-        *"Popular"*)  hl_popular="o" ;;
-        *"Shows"*)    hl_shows="o" ;;
-        *"Genre"*)    hl_genres="o" ;;
-        *)            hl_latest="o" ;; # Default
+        *"Movies"*)     hl_movies="o" ;;
+        *"Shows"*|*"TV"*) hl_shows="o" ;;
+        *"Watchlist"*|*"Library"*) hl_watchlist="o" ;;
+        *)              hl_movies="o" ;; # Default
     esac
     
-    # Colors for header
-    local H_RESET="\033[0m"
-    local H_SEL="\033[1;32m" # Bright Green
+    # Colors for header - Use ANSI-C quoting for proper escape code interpretation
+    local H_RESET=$'\e[0m'
+    local H_PINK=$'\e[38;2;232;121;249m'     # Hot pink #E879F9
+    local H_PURPLE=$'\e[38;2;139;92;246m'    # Purple #8B5CF6
+    local H_CYAN=$'\e[38;2;94;234;212m'      # Cyan #5EEAD4
+    local H_MUTED=$'\e[38;2;107;114;128m'    # Muted gray
+    local H_SEL=$'\e[1;38;2;232;121;249m'    # Bold pink - selection
+    local H_UL=$'\e[4m'                       # Underline
+    local H_KEY=$'\e[1;38;2;94;234;212m'     # Bold cyan - shortcut key
+    local H_ITALIC=$'\e[3m'                   # Italic
     
-    # Helper for button formatting
+    # Crush-inspired logo: "🍿 TERMFLIX™"
+    local logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
+
+    
+    # Helper for button formatting with underlined + colored shortcut
+    # Usage: fmt_btn "state" "prefix" "shortcut" "suffix"
+    # Example: fmt_btn "o" "m" "O" "vies" => m[O]vies (O is cyan+underlined)
     fmt_btn() {
         local state="$1"
-        local label="$2"
+        local prefix="$2"
+        local shortcut="$3"
+        local suffix="$4"
         if [[ "$state" == "o" ]]; then
-            echo -ne "[${H_SEL}● ${label}${H_RESET}]"
+            echo -ne "[${H_SEL}● ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_SEL}${suffix}${H_RESET}]"
         else
-            echo -ne "[${label}]"
+            echo -ne "[${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix}]"
         fi
     }
 
-    # Special formatter for Dropdown
+    # Special formatter for Dropdown with underlined + colored shortcut
     fmt_drop() {
         local state="$1"
-        local label="$2"
+        local prefix="$2"
+        local shortcut="$3"
+        local suffix="$4"
         if [[ "$state" == "o" ]]; then
-            echo -ne "[${H_SEL}● ${label} ▾${H_RESET}]"
+            echo -ne "[${H_SEL}● ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_SEL}${suffix} ▾${H_RESET}]"
         else
-            echo -ne "[${label} ▾]"
+            echo -ne "[${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} ▾]"
         fi
     }
     
     local menu_header
-    menu_header=$(echo -ne "$(fmt_btn "$hl_latest" "Latest") $(fmt_btn "$hl_trending" "Trending") $(fmt_btn "$hl_popular" "Popular") $(fmt_btn "$hl_shows" "Shows") $(fmt_drop "$hl_genres" "Kind/Genre") | ^W ^T ^P ^V ^G")
+    # Build header with LOGO + underlined shortcuts: o=Movies, S=Shows, W=Watchlist, T=Type, r=Sort, G=Genre
+    menu_header="${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "So" "r" "t") $(fmt_drop "$hl_genre" "" "G" "enre")"
+    
+    # Get FZF colors from theme (if theme loader available)
+    # Charm-style: purple header, blue/purple selection bar, cyan prompt
+    local fzf_colors
+    if command -v get_fzf_colors &>/dev/null; then
+        fzf_colors=$(get_fzf_colors)
+    else
+        # Charm menu picker colors: purple header, blue highlight bar, cyan prompt
+        fzf_colors="fg:#e4e4e7,bg:#1e1e2e,hl:#c084fc"
+        fzf_colors+=",fg+:#ffffff,bg+:#6366f1,hl+:#f0abfc"  # Blue selection bar
+        fzf_colors+=",info:#a78bfa,prompt:#5eead4,pointer:#c084fc"  # Purple info, cyan prompt
+        fzf_colors+=",marker:#c084fc,spinner:#c084fc,header:#a78bfa"  # Purple accents
+        fzf_colors+=",border:#6366f1,gutter:#1e1e2e"  # Blue border
+    fi
     
     export FZF_DEFAULT_OPTS="
       --ansi
-      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6
-      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6
-      --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6
-      --color=marker:#ff79c6,spinner:#ffb86c,header:#6272a4
+      --color=${fzf_colors}
       --layout=reverse
+
       --border=rounded
       --margin=1
       --padding=1
@@ -151,6 +191,7 @@ show_fzf_catalog() {
       --bind='ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up'
       --bind='ctrl-h:toggle-preview'
     "
+
     
     
     # Debug: show what we're sending to FZF
@@ -167,9 +208,9 @@ show_fzf_catalog() {
     # 3.5. Launch background precache for first 50 movies
     local precache_script="${SCRIPT_DIR}/scripts/precache_catalog.py"
     if [[ -f "$precache_script" ]] && command -v python3 &>/dev/null; then
-        # Pipe catalog data to precache script in background
-        printf "%s" "$fzf_input" | python3 "$precache_script" 50 &>/dev/null &
-        disown 2>/dev/null
+        # Pipe catalog data to precache script in background (suppress ALL output)
+        (printf "%s" "$fzf_input" | python3 "$precache_script" 50 >/dev/null 2>&1) &
+        disown 2>/dev/null || true
     fi
     
     # 4. Run FZF  
@@ -179,7 +220,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-w,ctrl-t,ctrl-p,ctrl-v,ctrl-g,ctrl-o,enter \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter \
         --exit-0 2>/dev/null)
         
     # 5. Handle Result
@@ -190,12 +231,14 @@ show_fzf_catalog() {
         { read -r key; read -r selected_line; } <<< "$selection"
         
         # Handle category switching shortcuts - return exit codes for main loop
+        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^R=soRt, ^G=Genre
         case "$key" in
-            ctrl-w) return 101 ;;  # Latest
-            ctrl-t) return 102 ;;  # Trending
-            ctrl-p) return 103 ;;  # Popular
-            ctrl-v) return 104 ;;  # Shows
-            ctrl-g) return 105 ;;  # Genres
+            ctrl-o) return 101 ;;  # mOvies
+            ctrl-s) return 102 ;;  # Shows
+            ctrl-w) return 103 ;;  # Watchlist
+            ctrl-t) return 104 ;;  # Type dropdown
+            ctrl-r) return 105 ;;  # soRt dropdown
+            ctrl-g) return 106 ;;  # Genre dropdown
         esac
         
         # If no selection line (e.g. only key was output), return fail
@@ -291,47 +334,72 @@ handle_fzf_selection() {
              local stage2_preview
              
              # Stage 2 FZF - Version Picker
-              if [[ "$TERM" == "xterm-kitty" ]]; then
-                  # KITTY MODE: Layout matches Stage 1
-                  # LEFT: FZF Picker (Versions)
-                  # RIGHT: Preview (Poster + Info)
-                  
-                  # 1. Prepare Poster Path
-                  local poster_file=""
-                  if [[ -n "$c_poster" && "$c_poster" != "N/A" ]]; then
-                      local cache_dir="${HOME}/.cache/termflix/posters"
-                      local hash=$(echo -n "$c_poster" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-                      poster_file="${cache_dir}/${hash}.png"
-                  fi
-                  # Fallbacks
-                  [[ ! -f "$poster_file" ]] && poster_file="${SCRIPT_DIR}/lib/torrent/img/movie_night.jpg"
-                  [[ ! -f "$poster_file" ]] && poster_file=""
+              # Prepare Poster Path (for both Kitty and Block modes)
+              local poster_file=""
+              local cache_dir="${HOME}/.cache/termflix/posters"
 
-                  # 2. Prepare Sources/Available strings
-                  local unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
-                  local s_badges=""
-                  for s in "${unique_sources[@]}"; do s_badges+="[${s}]"; done
-                  
-                  local q_disp=""
-                  local seen_q=()
-                  for i in "${!qualities_arr[@]}"; do
-                      local q="${qualities_arr[$i]}"
-                      local sz="${sizes_arr[$i]}"
-                      if [[ ! " ${seen_q[@]} " =~ " ${q} " ]]; then
-                          seen_q+=("$q")
-                          [[ -n "$q_disp" ]] && q_disp+=", "
-                          q_disp+="${q} (${sz})"
+              # 1) Prefer catalog-provided poster URL (c_poster)
+              if [[ -n "$c_poster" && "$c_poster" != "N/A" ]]; then
+                  local hash
+                  hash=$(echo -n "$c_poster" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                  poster_file="${cache_dir}/${hash}.png"
+              fi
+
+              # 2) If catalog had no poster, reuse Stage 1 search cache (search_<title_hash>.url)
+              if [[ -z "$poster_file" || ! -f "$poster_file" ]]; then
+                  # Compute same title_hash as preview_fzf.sh
+                  local title_hash
+                  if command -v md5 &>/dev/null; then
+                      title_hash=$(echo -n "$c_name" | tr '[:upper:]' '[:lower:]' | md5)
+                  elif command -v md5sum &>/dev/null; then
+                      title_hash=$(echo -n "$c_name" | tr '[:upper:]' '[:lower:]' | md5sum | cut -d' ' -f1)
+                  else
+                      title_hash=$(echo -n "$c_name" | tr '[:upper:]' '[:lower:]' | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                  fi
+
+                  local search_cache="${cache_dir}/search_${title_hash}.url"
+                  if [[ -f "$search_cache" ]]; then
+                      local cached_url
+                      cached_url=$(cat "$search_cache")
+                      if [[ "$cached_url" != "null" && "$cached_url" != "N/A" && -n "$cached_url" ]]; then
+                          local hash2
+                          hash2=$(echo -n "$cached_url" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                          poster_file="${cache_dir}/${hash2}.png"
                       fi
-                  done
-                  
-                  # 3. Export variables for preview script
-                  export STAGE2_POSTER="$poster_file"
-                  export STAGE2_TITLE="$c_name"
-                  export STAGE2_SOURCES="$s_badges"
-                  export STAGE2_AVAIL="$q_disp"
-                  export STAGE2_PLOT="$c_plot"
-                  
-                  # 4. Use the Stage 2 Preview Script (Right Pane)
+                  fi
+              fi
+
+              # 3) Fallback to built-in image
+              [[ ! -f "$poster_file" ]] && poster_file="${SCRIPT_DIR}/../lib/termflix/img/movie_night.jpg"
+              [[ ! -f "$poster_file" ]] && poster_file=""
+
+              # Prepare Sources/Available strings (for both Kitty and Block modes)
+              local unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
+              local s_badges=""
+              for s in "${unique_sources[@]}"; do s_badges+="[${s}]"; done
+
+              local q_disp=""
+              local seen_q=()
+              for i in "${!qualities_arr[@]}"; do
+                  local q="${qualities_arr[$i]}"
+                  local sz="${sizes_arr[$i]}"
+                  if [[ ! " ${seen_q[@]} " =~ " ${q} " ]]; then
+                      seen_q+=("$q")
+                      [[ -n "$q_disp" ]] && q_disp+=", "
+                      q_disp+="${q} (${sz})"
+                  fi
+              done
+
+              # Export variables for BOTH preview scripts (Kitty and Block)
+              export STAGE2_POSTER="$poster_file"
+              export STAGE2_TITLE="$c_name"
+              export STAGE2_SOURCES="$s_badges"
+              export STAGE2_AVAIL="$q_disp"
+              export STAGE2_PLOT="$c_plot"
+              export STAGE2_IMDB="$c_imdb"
+
+              if [[ "$TERM" == "xterm-kitty" ]]; then
+                  # KITTY MODE: Poster/Sources/Exports already prepared above
                   local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_kitty.sh"
                   
                   # 5. Run FZF w/ Left Pane Preview (Picker on Right)
@@ -360,10 +428,17 @@ handle_fzf_selection() {
                   unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_PLOT
                   kitten icat --clear 2>/dev/null
               else
-                  # BLOCK MODE: Preview on LEFT (current behavior)
+                  # BLOCK MODE: Preview on LEFT
+                  # Must pass env vars explicitly since FZF subprocess doesn't inherit them
                   local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_block.sh"
                   
-                  ver_pick=$(printf "%s" "$options" | fzf \
+                  ver_pick=$(STAGE2_POSTER="$poster_file" \
+                             STAGE2_TITLE="$c_name" \
+                             STAGE2_SOURCES="$s_badges" \
+                             STAGE2_AVAIL="$q_disp" \
+                             STAGE2_PLOT="$c_plot" \
+                             STAGE2_IMDB="$c_imdb" \
+                             printf "%s" "$options" | fzf \
                       --ansi \
                       --delimiter='|' \
                       --with-nth=2 \
@@ -374,10 +449,10 @@ handle_fzf_selection() {
                       --padding=1 \
                       --prompt="▶ Pick Version: " \
                       --header="🎬 Available Versions: (Ctrl+H to back)" \
-                      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
-                      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
-                      --color=prompt:#50fa7b,pointer:#ff79c6 \
-                      --preview "$stage2_preview \"{3}|{4}|{5}|{6}|{7}\"" \
+                      --color=fg:#f8f8f2,bg:-1,hl:#E879F9 \
+                      --color=fg+:#ffffff,bg+:#2d1f3d,hl+:#E879F9 \
+                      --color=prompt:#5EEAD4,pointer:#E879F9 \
+                      --preview "STAGE2_POSTER='$poster_file' STAGE2_TITLE='$c_name' STAGE2_SOURCES='$s_badges' STAGE2_AVAIL='$q_disp' STAGE2_PLOT='$c_plot' STAGE2_IMDB='$c_imdb' $stage2_preview" \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       2>/dev/null)

@@ -3,6 +3,9 @@
 # Stage 2 Preview Script for BLOCK TEXT Mode (xterm-256color)
 # Shows: Large Poster + Title + Basic Info
 #
+# Uses environment variables set by fzf_catalog.sh:
+#   STAGE2_POSTER, STAGE2_TITLE, STAGE2_SOURCES, STAGE2_AVAIL, STAGE2_PLOT, STAGE2_IMDB
+#
 
 # --- 1. Resolve Script Directory ---
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
@@ -13,77 +16,96 @@ while [ -L "$SCRIPT_SOURCE" ]; do
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 
-if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
-    TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../../scripts" 2>/dev/null && pwd)"
+# --- 2. Source Theme & Colors ---
+if [[ -f "${SCRIPT_DIR}/../core/theme.sh" ]]; then
+    source "${SCRIPT_DIR}/../core/theme.sh"
 fi
+source "${SCRIPT_DIR}/../core/colors.sh"
 
-# --- 2. Styling ---
-RESET='\033[0m'
-BOLD='\033[1m'
-DIM='\033[2m'
-MAGENTA='\033[38;5;213m'
-GREEN='\033[38;5;46m'
-CYAN='\033[38;5;87m'
-YELLOW='\033[38;5;220m'
-GRAY='\033[38;5;241m'
+# Use theme colors with fallback
+MAGENTA="${THEME_GLOW:-$C_GLOW}"
+GREEN="${THEME_SUCCESS:-$C_SUCCESS}"
+CYAN="${THEME_INFO:-$C_INFO}"
+YELLOW="${THEME_WARNING:-$C_WARNING}"
+GRAY="${THEME_FG_MUTED:-$C_MUTED}"
+PURPLE="${THEME_PURPLE:-$C_PURPLE}"
 
-# --- 3. Parse Input ---
-# Receives: title|poster_url (passed as single argument)
-input="$1"
-IFS='|' read -r title poster_url <<< "$input"
+# --- 3. Get Data from Environment Variables ---
+title="${STAGE2_TITLE:-Unknown Title}"
+poster_file="${STAGE2_POSTER:-}"
+sources="${STAGE2_SOURCES:-}"
+avail="${STAGE2_AVAIL:-}"
+plot="${STAGE2_PLOT:-}"
+imdb="${STAGE2_IMDB:-}"
 
-# Debug: Log what we received
-# echo "[DEBUG] Input: $input" >&2
-# echo "[DEBUG] Title: $title, Poster: $poster_url" >&2
-
-# --- 4. Display Title ---
+# --- 4. Display Title Header ---
 echo -e "${BOLD}${MAGENTA}${title}${RESET}"
 echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
-# --- 5. Display Large Poster ---
-if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
-    cache_dir="${HOME}/.cache/termflix/posters"
-    mkdir -p "$cache_dir"
-    
-    filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-    poster_path="${cache_dir}/${filename_hash}.jpg"
-    
-    # Download if not cached
-    if [[ ! -f "$poster_path" ]]; then
-        curl -sL --max-time 3 "$poster_url" -o "$poster_path" 2>/dev/null
-    fi
+# --- 5. Display Metadata ---
+[[ -n "$sources" ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}${sources}${RESET}"
+[[ -n "$avail" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${avail}${RESET}"
+[[ -n "$imdb" && "$imdb" != "N/A" ]] && echo -e "${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb}${RESET}"
+echo
 
-    # Display LARGE poster using viu block graphics
-    if [[ -f "$poster_path" && -s "$poster_path" ]]; then
-        if command -v viu &>/dev/null; then
-            # Large poster: scale to fill left pane (60 cols, 45 rows)
-            TERM=xterm-256color viu -w 60 -h 45 "$poster_path" 2>/dev/null
-        elif command -v chafa &>/dev/null; then
-            TERM=xterm-256color chafa --symbols=block --size="60x45" "$poster_path" 2>/dev/null
-        fi
-    else
-        echo -e "${DIM}[Poster loading...]${RESET}"
+# --- 6. Display Poster ---
+# First check if poster file exists
+if [[ -n "$poster_file" && -f "$poster_file" && -s "$poster_file" ]]; then
+    # Display poster using viu block graphics
+    if command -v viu &>/dev/null; then
+        TERM=xterm-256color viu -w 50 -h 35 "$poster_file" 2>/dev/null
+    elif command -v chafa &>/dev/null; then
+        TERM=xterm-256color chafa --symbols=block --size="50x35" "$poster_file" 2>/dev/null
     fi
 else
-    # No poster - draw colorful spinner grid as placeholder
-    _draw_spinner_grid() {
-        local w=$1 h=$2
-        local spinners=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-        local colors=(196 202 208 214 220 226 190 154 118 82 46 47 48 49 50 51 45 39 33 27 21 57 93 129 165 201 200 199 198 197)
+    # Try to download poster if we have a URL in cache
+    cache_dir="${HOME}/.cache/termflix/posters"
+    
+    # Try to find any cached poster for this title
+    if [[ -n "$title" && "$title" != "Unknown Title" ]]; then
+        # Compute title hash
+        title_hash=$(echo -n "$title" | tr '[:upper:]' '[:lower:]' | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
         
-        for ((row=0; row<h; row++)); do
-            local line=""
-            for ((col=0; col<w; col++)); do
-                local spin_idx=$(( (row + col) % ${#spinners[@]} ))
-                local color_idx=$(( (row * w + col) % ${#colors[@]} ))
-                line+="\033[38;5;${colors[$color_idx]}m${spinners[$spin_idx]}"
-            done
-            echo -e "${line}\033[0m"
-        done
-    }
-    _draw_spinner_grid 60 45
+        # Check for search cache URL
+        search_cache="${cache_dir}/search_${title_hash}.url"
+        if [[ -f "$search_cache" ]]; then
+            cached_url=$(cat "$search_cache")
+            if [[ -n "$cached_url" && "$cached_url" != "null" && "$cached_url" != "N/A" ]]; then
+                url_hash=$(echo -n "$cached_url" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                poster_file="${cache_dir}/${url_hash}.png"
+                
+                # Download if not exists
+                if [[ ! -f "$poster_file" ]]; then
+                    curl -sL --max-time 3 "$cached_url" -o "$poster_file" 2>/dev/null
+                fi
+                
+                # Display if we got it
+                if [[ -f "$poster_file" && -s "$poster_file" ]]; then
+                    if command -v viu &>/dev/null; then
+                        TERM=xterm-256color viu -w 50 -h 35 "$poster_file" 2>/dev/null
+                    elif command -v chafa &>/dev/null; then
+                        TERM=xterm-256color chafa --symbols=block --size="50x35" "$poster_file" 2>/dev/null
+                    fi
+                else
+                    echo -e "${DIM}[Fetching poster...]${RESET}"
+                fi
+            else
+                echo -e "${DIM}[No poster available]${RESET}"
+            fi
+        else
+            echo -e "${DIM}[No poster cached]${RESET}"
+        fi
+    else
+        echo -e "${DIM}[No title info]${RESET}"
+    fi
 fi
 
 echo
+# --- 7. Display Plot ---
+if [[ -n "$plot" && "$plot" != "N/A" ]]; then
+    echo -e "${DIM}${plot}${RESET}"
+    echo
+fi
+
 echo -e "${DIM}Select a version from the picker →${RESET}"

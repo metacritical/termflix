@@ -18,22 +18,11 @@ if [[ -f "${OMDB_SCRIPT_DIR}/../core/config.sh" ]]; then
     source "${OMDB_SCRIPT_DIR}/../core/config.sh"
 fi
 
-# Get API key from config or environment
-_get_omdb_api_key() {
-    local key=""
-    
-    # Try config file first
-    if command -v config_get &>/dev/null; then
-        key=$(config_get "OMDB_API_KEY" "")
-    fi
-    
-    # Fallback to environment variable
-    [[ -z "$key" ]] && key="${OMDB_API_KEY:-}"
-    
-    echo "$key"
-}
+# Use centralized config - get_omdb_api_key from config.sh
+if command -v get_omdb_api_key &>/dev/null; then
+    OMDB_API_KEY="${OMDB_API_KEY:-$(get_omdb_api_key)}"
+fi
 
-OMDB_API_KEY="${OMDB_API_KEY:-$(_get_omdb_api_key)}"
 OMDB_BASE_URL="http://www.omdbapi.com"
 OMDB_CACHE_DIR="${HOME}/.cache/termflix/omdb"
 OMDB_CACHE_TTL=$((7 * 24 * 60 * 60))  # 7 days in seconds
@@ -216,6 +205,217 @@ except:
 "
 }
 
+# Extract genre from OMDB response
+extract_omdb_genre() {
+    python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Response') == 'True':
+        print(data.get('Genre', 'N/A'))
+    else:
+        print('N/A')
+except:
+    print('N/A')
+"
+}
+
+# Extract runtime from OMDB response
+extract_omdb_runtime() {
+    python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Response') == 'True':
+        print(data.get('Runtime', 'N/A'))
+    else:
+        print('N/A')
+except:
+    print('N/A')
+"
+}
+
+# Extract year from OMDB response
+extract_omdb_year() {
+    python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Response') == 'True':
+        print(data.get('Year', 'N/A'))
+    else:
+        print('N/A')
+except:
+    print('N/A')
+"
+}
+
+# Extract rated (content rating) from OMDB response
+extract_omdb_rated() {
+    python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Response') == 'True':
+        print(data.get('Rated', 'N/A'))
+    else:
+        print('N/A')
+except:
+    print('N/A')
+"
+}
+
+# ═══════════════════════════════════════════════════════════════
+# TV SERIES FUNCTIONS
+# ═══════════════════════════════════════════════════════════════
+
+# Search OMDB for a TV series by name
+# Returns: JSON with Title, Year, Plot, Poster, Ratings, etc.
+search_omdb_series() {
+    local title="$1"
+    local year="${2:-}"
+    
+    # Check API key
+    if [[ -z "$OMDB_API_KEY" ]]; then
+        echo '{"Error": "No OMDB API key configured", "Response": "False"}'
+        return 1
+    fi
+    
+    # Create cache directory
+    mkdir -p "$OMDB_CACHE_DIR"
+    
+    # Check cache (use series prefix)
+    local cache_key=$(_omdb_cache_key "series_${title}" "$year")
+    local cache_file="${OMDB_CACHE_DIR}/${cache_key}.json"
+    
+    if _omdb_cache_valid "$cache_file"; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    # Clean title
+    local clean_title=$(echo "$title" | sed 's/[[:space:]_]/./g' | sed 's/\.\.*/./g')
+    
+    # Build API URL with type=series
+    local encoded_title=$(_omdb_urlencode "$clean_title")
+    local url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encoded_title}&type=series&plot=short"
+    
+    [[ -n "$year" ]] && url="${url}&y=${year}"
+    
+    # Make API request
+    local response
+    response=$(curl -sL --max-time 5 "$url" 2>/dev/null)
+    
+    # Check if request succeeded
+    if [[ -n "$response" ]] && echo "$response" | grep -q '"Response":"True"'; then
+        echo "$response" > "$cache_file"
+        echo "$response"
+        return 0
+    fi
+    
+    # Fallback: try search API
+    local search_url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&s=${encoded_title}&type=series"
+    [[ -n "$year" ]] && search_url="${search_url}&y=${year}"
+    
+    local search_response
+    search_response=$(curl -sL --max-time 5 "$search_url" 2>/dev/null)
+    
+    if [[ -n "$search_response" ]] && echo "$search_response" | grep -q '"Response":"True"'; then
+        # Get first result's IMDB ID
+        local imdb_id
+        imdb_id=$(echo "$search_response" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Search'):
+        print(data['Search'][0].get('imdbID', ''))
+except:
+    pass
+" 2>/dev/null)
+        
+        if [[ -n "$imdb_id" ]]; then
+            response=$(curl -sL --max-time 5 "${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&i=${imdb_id}&plot=short" 2>/dev/null)
+            
+            if [[ -n "$response" ]] && echo "$response" | grep -q '"Response":"True"'; then
+                echo "$response" > "$cache_file"
+                echo "$response"
+                return 0
+            fi
+        fi
+    fi
+    
+    echo '{"Error": "Series not found", "Response": "False"}'
+    return 1
+}
+
+# Search OMDB for a specific episode
+# Returns: JSON with episode details
+search_omdb_episode() {
+    local title="$1"
+    local season="$2"
+    local episode="$3"
+    
+    # Check API key
+    if [[ -z "$OMDB_API_KEY" ]]; then
+        echo '{"Error": "No OMDB API key configured", "Response": "False"}'
+        return 1
+    fi
+    
+    # Create cache directory
+    mkdir -p "$OMDB_CACHE_DIR"
+    
+    # Check cache
+    local cache_key=$(_omdb_cache_key "ep_${title}_s${season}e${episode}" "")
+    local cache_file="${OMDB_CACHE_DIR}/${cache_key}.json"
+    
+    if _omdb_cache_valid "$cache_file"; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    # Clean title
+    local clean_title=$(echo "$title" | sed 's/[[:space:]_]/./g' | sed 's/\.\.*/./g')
+    local encoded_title=$(_omdb_urlencode "$clean_title")
+    
+    # Build URL with season and episode
+    local url="${OMDB_BASE_URL}/?apikey=${OMDB_API_KEY}&t=${encoded_title}&Season=${season}&Episode=${episode}&plot=short"
+    
+    local response
+    response=$(curl -sL --max-time 5 "$url" 2>/dev/null)
+    
+    if [[ -n "$response" ]] && echo "$response" | grep -q '"Response":"True"'; then
+        echo "$response" > "$cache_file"
+        echo "$response"
+        return 0
+    fi
+    
+    echo '{"Error": "Episode not found", "Response": "False"}'
+    return 1
+}
+
+# Get series metadata (wrapper)
+get_omdb_series_metadata() {
+    local title="$1"
+    local year="${2:-}"
+    
+    search_omdb_series "$title" "$year"
+}
+
+# Extract series total seasons
+extract_omdb_total_seasons() {
+    python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    if data.get('Response') == 'True':
+        print(data.get('totalSeasons', 'N/A'))
+    else:
+        print('N/A')
+except:
+    print('N/A')
+"
+}
+
 # ═══════════════════════════════════════════════════════════════
 # CONVENIENCE FUNCTIONS
 # ═══════════════════════════════════════════════════════════════
@@ -232,6 +432,17 @@ fetch_omdb_description() {
     echo "$metadata" | extract_omdb_plot
 }
 
+# Fetch description for a TV series
+fetch_omdb_series_description() {
+    local title="$1"
+    local year="${2:-}"
+    
+    local metadata
+    metadata=$(get_omdb_series_metadata "$title" "$year")
+    
+    echo "$metadata" | extract_omdb_plot
+}
+
 # Check if OMDB is configured
 omdb_configured() {
     [[ -n "$OMDB_API_KEY" ]]
@@ -242,5 +453,7 @@ omdb_configured() {
 # ═══════════════════════════════════════════════════════════════
 
 export -f search_omdb_movie get_omdb_metadata
-export -f extract_omdb_plot extract_omdb_rating extract_omdb_poster
-export -f fetch_omdb_description omdb_configured
+export -f search_omdb_series search_omdb_episode get_omdb_series_metadata
+export -f extract_omdb_plot extract_omdb_rating extract_omdb_poster extract_omdb_total_seasons
+export -f extract_omdb_genre extract_omdb_runtime extract_omdb_year extract_omdb_rated
+export -f fetch_omdb_description fetch_omdb_series_description omdb_configured

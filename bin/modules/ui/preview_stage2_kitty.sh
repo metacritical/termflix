@@ -7,13 +7,23 @@
 # Stage 2 appears visually identical to Stage 1, while the
 # actual FZF picker (versions) lives on the right.
 
-RESET=$'\033[0m'
-BOLD=$'\033[1m'
-DIM=$'\033[2m'
-MAGENTA=$'\033[38;5;213m'
-CYAN=$'\033[38;5;87m'
-GRAY=$'\033[38;5;241m'
-GREEN=$'\033[38;5;46m'
+# Resolve script location for sourcing colors
+SCRIPT_SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SCRIPT_SOURCE" ]; do
+    SCRIPT_DIR_TMP="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+    SCRIPT_SOURCE="$(readlink "$SCRIPT_SOURCE")"
+    [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
+done
+_SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+
+# Source centralized color palette
+source "${_SCRIPT_DIR}/../core/colors.sh"
+
+# Alias semantic colors for this script
+MAGENTA="${C_GLOW}"
+CYAN="${C_INFO}"
+GRAY="${C_MUTED}"
+GREEN="${C_SUCCESS}"
 
 selected_index="${STAGE2_SELECTED_INDEX:-}"
 

@@ -3,6 +3,9 @@
 # Termflix Dependencies Module
 # Dependency checking and initialization
 #
+# @version 1.0.0
+# @updated 2025-12-14
+#
 
 # Prevent multiple sourcing
 [[ -n "${_TERMFLIX_DEPS_LOADED:-}" ]] && return 0
