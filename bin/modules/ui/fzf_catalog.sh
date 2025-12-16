@@ -49,6 +49,7 @@ show_fzf_catalog() {
     local arr_name="$2"
     local current_page="${3:-1}"
     local total_pages="${4:-1}"
+    local start_pos="${5:-1}"  # Cursor start position (1-indexed)
     
     # Display logo in Kitty mode (at top of screen)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
@@ -184,7 +185,7 @@ show_fzf_catalog() {
       --margin=1
       --padding=1
       --info=hidden
-      --prompt=\"❯ [Page ${current_page}/${total_pages}] \"
+      --prompt=\"< Page ${current_page}/${total_pages} > \"
       --pointer='▶'
       --header=\"$menu_header\"
       --header-first
@@ -192,7 +193,7 @@ show_fzf_catalog() {
       --bind='ctrl-/:toggle-preview'
       --bind='alt-j:preview-down,alt-k:preview-up'
       --bind='ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up'
-      --bind='ctrl-h:toggle-preview'
+      --bind='ctrl-h:change-preview-window(hidden|right:55%)'
     "
 
     
@@ -216,6 +217,12 @@ show_fzf_catalog() {
         disown 2>/dev/null || true
     fi
     
+    # Build start position binding if provided
+    local pos_bind=""
+    if [[ $start_pos -gt 1 ]]; then
+        pos_bind="--bind=start:pos($start_pos)"
+    fi
+    
     # 4. Run FZF  
     # Important: Use printf instead of echo -ne for better handling
     local selection
@@ -224,6 +231,7 @@ show_fzf_catalog() {
         --with-nth=1 \
         --preview "$preview_script {3..}" \
         --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
+        $pos_bind \
         --exit-0 2>/dev/null)
         
     # 5. Handle Result

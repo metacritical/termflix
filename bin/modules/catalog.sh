@@ -1076,6 +1076,7 @@ display_catalog() {
     local total_items=${#all_results[@]}
     local total_pages=$(( (total_items + items_per_page - 1) / items_per_page ))
     [[ $total_pages -lt 1 ]] && total_pages=1
+    local last_selected_pos=1  # Track cursor position for restoration
     
     # FZF Catalog Logic with Navigation Loop
     # -------------------------------------------------------------------------
@@ -1085,7 +1086,7 @@ display_catalog() {
         local page_results=("${all_results[@]:$start_idx:$items_per_page}")
         
         local selection_line
-        selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_pages")
+        selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_pages" "$last_selected_pos")
         local fzf_ret=$?
         
         # Handle category switching return codes (101-108)
@@ -1114,6 +1115,12 @@ display_catalog() {
         
         # Normal selection handling (fzf_ret=0 with output)
         if [ -n "$selection_line" ]; then
+             # Extract index from selection to remember cursor position
+             # Format: "key|index|rest_data..."
+             local sel_idx
+             sel_idx=$(echo "$selection_line" | cut -d'|' -f2)
+             [[ "$sel_idx" =~ ^[0-9]+$ ]] && last_selected_pos="$sel_idx"
+             
              handle_fzf_selection "$selection_line"
              local ret_code=$?
              
