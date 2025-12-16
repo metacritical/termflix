@@ -22,10 +22,10 @@ display_catalog() {
     local per_page=20
     shift
 
-    # Check if 'gum' is the next argument
-    if [ "$1" = "gum" ]; then
+    # Check if 'gum' is the next argument OR if --grid flag was used
+    if [ "$1" = "gum" ] || [ "$USE_GUM_MODE" = "true" ]; then
         use_gum=true
-        shift
+        [ "$1" = "gum" ] && shift
     fi
     
     # Store original arguments for pagination navigation

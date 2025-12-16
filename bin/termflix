@@ -125,6 +125,11 @@ main() {
                 export TORRENT_DEBUG
                 shift
                 ;;
+            -g|--grid)
+                USE_GUM_MODE=true
+                export USE_GUM_MODE
+                shift
+                ;;
             --clear)
                 local cache_dir="$HOME/.config/termflix/cache"
                 if [ -d "$cache_dir" ]; then
