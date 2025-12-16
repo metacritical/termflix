@@ -118,17 +118,8 @@ show_fzf_catalog() {
     local H_KEY=$'\e[1;38;2;94;234;212m'     # Bold cyan - shortcut key
     local H_ITALIC=$'\e[3m'                   # Italic
     
-    # Logo: Use inline image for Kitty terminals, text fallback for others
-    local logo
-    local logo_file="${HOME}/.oh_my_bash/lib/torrent/img/logo.png"
-    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null && [[ -f "$logo_file" ]]; then
-        # Kitty: render small inline image (3 rows tall for header)
-        logo=$(kitten icat --unicode-placeholder --stdin=no --transfer-mode=memory -H 2 "$logo_file" 2>/dev/null)
-        [[ -z "$logo" ]] && logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
-    else
-        # Fallback: text logo with gradient
-        logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
-    fi
+    # Logo: text with gradient colors
+    local logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
     
     # Helper for button formatting with underlined + colored shortcut
     # Usage: fmt_btn "state" "prefix" "shortcut" "suffix"
@@ -163,17 +154,17 @@ show_fzf_catalog() {
     menu_header="${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "So" "r" "t") $(fmt_drop "$hl_genre" "" "G" "enre")"
     
     # Get FZF colors from theme (if theme loader available)
-    # Charm-style: purple header, blue/purple selection bar, cyan prompt
+    # Charm-style: blue selection bar, muted gray text, dark background
     local fzf_colors
     if command -v get_fzf_colors &>/dev/null; then
         fzf_colors=$(get_fzf_colors)
     else
-        # Charm menu picker colors: purple header, violet highlight bar, cyan prompt
-        fzf_colors="fg:#e4e4e7,bg:#1e1e2e,hl:#c084fc"
-        fzf_colors+=",fg+:#ffffff,bg+:#7c3aed,hl+:#f0abfc"  # Charmy violet selection bar
-        fzf_colors+=",info:#a78bfa,prompt:#5eead4,pointer:#c084fc"  # Purple info, cyan prompt
-        fzf_colors+=",marker:#c084fc,spinner:#c084fc,header:#a78bfa"  # Purple accents
-        fzf_colors+=",border:#7c3aed,gutter:#1e1e2e"  # Violet border
+        # Charm picker colors: muted gray text, blue highlight bar
+        fzf_colors="fg:#6b7280,bg:#1e1e2e,hl:#818cf8"           # Muted gray text, indigo highlight
+        fzf_colors+=",fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd"      # White on blue selection bar
+        fzf_colors+=",info:#6b7280,prompt:#5eead4,pointer:#818cf8"  # Muted info, cyan prompt
+        fzf_colors+=",marker:#818cf8,spinner:#818cf8,header:#a78bfa" # Indigo accents
+        fzf_colors+=",border:#5865f2,gutter:#1e1e2e"            # Blue border
     fi
     
     export FZF_DEFAULT_OPTS="
