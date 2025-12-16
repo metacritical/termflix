@@ -75,7 +75,34 @@ done <<< "$catalog"
 # Footer hint under the static list
 echo
 echo -e "${GRAY}────────────────────────────────────────${RESET}"
-echo -e "${DIM}Ctrl+H to go back • Enter to stream${RESET}"
+
+# --- Buffering Status (if streaming is active) ---
+BUFFER_STATUS_FILE="/tmp/termflix_buffer_status.txt"
+
+if [[ -f "$BUFFER_STATUS_FILE" ]]; then
+    # Source buffer UI module
+    BUFFER_UI="${_SCRIPT_DIR}/../streaming/buffer_ui.sh"
+    [[ -f "$BUFFER_UI" ]] && source "$BUFFER_UI"
+    
+    IFS='|' read -r b_percent b_speed b_peers_conn b_peers_total b_size b_status < "$BUFFER_STATUS_FILE"
+    
+    if [[ "$b_status" == "BUFFERING" ]]; then
+        echo -e "${BOLD}${CYAN}⏳ Buffering...${RESET}"
+        if type draw_line_bar &>/dev/null; then
+            echo -e "$(draw_line_bar "${b_percent:-0}" 35)  ${b_percent:-0}%"
+        else
+            echo -e "Progress: ${b_percent:-0}%"
+        fi
+        [[ -n "$b_speed" && "$b_speed" != "0" ]] && echo -e "Down: ${b_speed} KB/s"
+        echo -e "${DIM}Press Ctrl+C to cancel${RESET}"
+    elif [[ "$b_status" == "READY" ]]; then
+        echo -e "${BOLD}${GREEN}✓ Buffer ready!${RESET}"
+    elif [[ "$b_status" == "PLAYING" ]]; then
+        echo -e "${BOLD}${GREEN}▶ Now playing${RESET}"
+    fi
+else
+    echo -e "${DIM}Ctrl+H to go back • Enter to stream${RESET}"
+fi
 
 # Draw poster on the right to keep the
 # same visual location as Stage 1 (kitty only).

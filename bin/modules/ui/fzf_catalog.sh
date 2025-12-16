@@ -487,6 +487,15 @@ handle_fzf_selection() {
      fi
      
      # Stream Selection
+     # Create buffer status file to show progress in preview pane
+     local BUFFER_STATUS_FILE="/tmp/termflix_buffer_status.txt"
+     
+     # Clean up any old status
+     rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
+     
+     # Write initial buffering status
+     echo "0|0|0|0|0|BUFFERING" > "$BUFFER_STATUS_FILE"
+     
      tput reset 2>/dev/null || clear
      echo -e "${GREEN}Streaming:${RESET} $name"
      echo -e "${CYAN}Source:${RESET} $source  ${CYAN}Size:${RESET} $size  ${CYAN}Quality:${RESET} $quality"
@@ -495,5 +504,12 @@ handle_fzf_selection() {
      if [ -z "$TORRENT_TOOL" ]; then
           check_deps
      fi
+     
+     # Export buffer status file path for streaming module
+     export TERMFLIX_BUFFER_STATUS="$BUFFER_STATUS_FILE"
+     
      stream_torrent "$magnet" "" false false
+     
+     # Clean up buffer status after streaming ends
+     rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
 }

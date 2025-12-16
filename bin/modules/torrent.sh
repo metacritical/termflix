@@ -748,10 +748,15 @@ EOF
                             
                             printf "\r${CYAN}Buffering:${RESET} %s %s" "$bar" "$progress_display"
                             
+                            # Write status to file for inline UI (if exported)
+                            [[ -n "$TERMFLIX_BUFFER_STATUS" ]] && \
+                                echo "${progress_int:-0}|${bytes_per_sec:-0}|${connected_peers:-0}|${total_peers:-0}|${size_mb:-0}|BUFFERING" > "$TERMFLIX_BUFFER_STATUS"
+                            
                             # Check if we have 10% progress
                             if [ "$progress_int" -ge "$target_progress" ]; then
                                 echo ""
                                 echo -e "${GREEN}✓ Buffer ready (${current_progress}% progress, ${size_display} downloaded)${RESET}"
+                                [[ -n "$TERMFLIX_BUFFER_STATUS" ]] && echo "${progress_int}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|READY" > "$TERMFLIX_BUFFER_STATUS"
                                 if [ "$total_peers" -gt 0 ]; then
                                     echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
                                 fi

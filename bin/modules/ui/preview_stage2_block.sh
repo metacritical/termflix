@@ -108,4 +108,44 @@ if [[ -n "$plot" && "$plot" != "N/A" ]]; then
     echo
 fi
 
-echo -e "${DIM}Select a version from the picker →${RESET}"
+# --- 8. Display Buffering Status (if streaming is active) ---
+BUFFER_STATUS_FILE="/tmp/termflix_buffer_status.txt"
+
+if [[ -f "$BUFFER_STATUS_FILE" ]]; then
+    # Source buffer UI module for progress bar rendering
+    BUFFER_UI="${SCRIPT_DIR}/../streaming/buffer_ui.sh"
+    [[ -f "$BUFFER_UI" ]] && source "$BUFFER_UI"
+    
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    
+    # Read status from file (format: PERCENT|SPEED|PEERS_CONN|PEERS_TOTAL|SIZE_MB|STATUS)
+    IFS='|' read -r b_percent b_speed b_peers_conn b_peers_total b_size b_status < "$BUFFER_STATUS_FILE"
+    
+    if [[ "$b_status" == "BUFFERING" ]]; then
+        echo -e "${BOLD}${CYAN}⏳ Buffering...${RESET}"
+        
+        # Draw progress bar
+        if type draw_line_bar &>/dev/null; then
+            echo -e "$(draw_line_bar "${b_percent:-0}" 35)  ${b_percent:-0}%"
+        else
+            # Fallback: simple percent display
+            echo -e "${CYAN}Progress:${RESET} ${b_percent:-0}%"
+        fi
+        
+        # Show stats if available
+        [[ -n "$b_speed" && "$b_speed" != "0" ]] && echo -e "Down: ${b_speed} KB/s"
+        [[ -n "$b_peers_total" && "$b_peers_total" != "0" ]] && echo -e "Peers: ${b_peers_conn:-0}/${b_peers_total}"
+        [[ -n "$b_size" ]] && echo -e "Downloaded: ${b_size} MB"
+        
+        echo
+        echo -e "${DIM}Press Ctrl+C to cancel${RESET}"
+    elif [[ "$b_status" == "READY" ]]; then
+        echo -e "${BOLD}${GREEN}✓ Buffer ready! Launching player...${RESET}"
+    elif [[ "$b_status" == "PLAYING" ]]; then
+        echo -e "${BOLD}${GREEN}▶ Now playing in external player${RESET}"
+    fi
+else
+    echo -e "${DIM}Select a version from the picker →${RESET}"
+fi
+
