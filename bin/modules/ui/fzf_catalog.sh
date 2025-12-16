@@ -118,9 +118,17 @@ show_fzf_catalog() {
     local H_KEY=$'\e[1;38;2;94;234;212m'     # Bold cyan - shortcut key
     local H_ITALIC=$'\e[3m'                   # Italic
     
-    # Crush-inspired logo: "🍿 TERMFLIX™"
-    local logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
-
+    # Logo: Use inline image for Kitty terminals, text fallback for others
+    local logo
+    local logo_file="${HOME}/.oh_my_bash/lib/torrent/img/logo.png"
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null && [[ -f "$logo_file" ]]; then
+        # Kitty: render small inline image (3 rows tall for header)
+        logo=$(kitten icat --unicode-placeholder --stdin=no --transfer-mode=memory -H 2 "$logo_file" 2>/dev/null)
+        [[ -z "$logo" ]] && logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
+    else
+        # Fallback: text logo with gradient
+        logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
+    fi
     
     # Helper for button formatting with underlined + colored shortcut
     # Usage: fmt_btn "state" "prefix" "shortcut" "suffix"
