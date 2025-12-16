@@ -47,6 +47,8 @@ format_fzf_display() {
 show_fzf_catalog() {
     local title="$1"
     local arr_name="$2"
+    local current_page="${3:-1}"
+    local total_pages="${4:-1}"
     
     # Display logo in Kitty mode (at top of screen)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
@@ -181,7 +183,8 @@ show_fzf_catalog() {
       --border=rounded
       --margin=1
       --padding=1
-      --prompt='❯ '
+      --info=hidden
+      --prompt=\"❯ [Page ${current_page}/${total_pages}] \"
       --pointer='▶'
       --header=\"$menu_header\"
       --header-first
@@ -220,7 +223,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
         --exit-0 2>/dev/null)
         
     # 5. Handle Result
@@ -239,6 +242,8 @@ show_fzf_catalog() {
             ctrl-t) return 104 ;;  # Type dropdown
             ctrl-r) return 105 ;;  # soRt dropdown
             ctrl-g) return 106 ;;  # Genre dropdown
+            ">"|ctrl-right) return 107 ;;  # Next page
+            "<"|ctrl-left) return 108 ;;   # Previous page
         esac
         
         # If no selection line (e.g. only key was output), return fail

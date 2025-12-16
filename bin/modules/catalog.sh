@@ -1070,22 +1070,45 @@ display_catalog() {
     # -------------------------------------------------------------------------
     # Use FZF for browsing, filtering, and Preview (replacing sidebar picker)
     
+    # Pagination state
+    local current_page=1
+    local items_per_page=50
+    local total_items=${#all_results[@]}
+    local total_pages=$(( (total_items + items_per_page - 1) / items_per_page ))
+    [[ $total_pages -lt 1 ]] && total_pages=1
+    
     # FZF Catalog Logic with Navigation Loop
     # -------------------------------------------------------------------------
     while true; do
+        # Slice array for current page
+        local start_idx=$(( (current_page - 1) * items_per_page ))
+        local page_results=("${all_results[@]:$start_idx:$items_per_page}")
+        
         local selection_line
-        selection_line=$(show_fzf_catalog "$title" all_results)
+        selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_pages")
         local fzf_ret=$?
         
-        # Handle category switching return codes (101-106)
-        # New keybindings: ^M=Movies, ^S=Shows, ^W=Watchlist, ^T=Type, ^O=Sort, ^G=Genre
+        # Handle category switching return codes (101-108)
+        # Keybindings: ^O=Movies, ^S=Shows, ^W=Watchlist, ^T=Type, ^R=Sort, ^G=Genre, >/<=Page
         case $fzf_ret in
-            101) return 101 ;;  # Movies (^M)
+            101) return 101 ;;  # Movies (^O)
             102) return 102 ;;  # Shows (^S)
             103) return 103 ;;  # Watchlist (^W)
             104) return 104 ;;  # Type dropdown (^T)
-            105) return 105 ;;  # Sort dropdown (^O)
+            105) return 105 ;;  # Sort dropdown (^R)
             106) return 106 ;;  # Genre dropdown (^G)
+            107)  # Next page (> or Ctrl+Right)
+                if [[ $current_page -lt $total_pages ]]; then
+                    ((current_page++))
+                fi
+                continue
+                ;;
+            108)  # Previous page (< or Ctrl+Left)
+                if [[ $current_page -gt 1 ]]; then
+                    ((current_page--))
+                fi
+                continue
+                ;;
             1)   return 0 ;;    # FZF cancelled (Esc/Ctrl-C)
         esac
         
