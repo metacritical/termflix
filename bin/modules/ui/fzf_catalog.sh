@@ -190,6 +190,8 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
+      --border-label=\" ⌨ Enter:Select  Ctrl+H:Preview  </> Page  Ctrl+W/T/P/V/G:Categories \"
+      --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='alt-j:preview-down,alt-k:preview-up'
       --bind='ctrl-d:preview-half-page-down,ctrl-u:preview-half-page-up'
@@ -465,6 +467,8 @@ handle_fzf_selection() {
                       --color=fg:#f8f8f2,bg:-1,hl:#E879F9 \
                       --color=fg+:#ffffff,bg+:#2d1f3d,hl+:#E879F9 \
                       --color=prompt:#5EEAD4,pointer:#E879F9 \
+                      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+                      --border-label-pos=bottom \
                       --preview "STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
