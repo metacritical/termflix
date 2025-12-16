@@ -168,12 +168,12 @@ show_fzf_catalog() {
     if command -v get_fzf_colors &>/dev/null; then
         fzf_colors=$(get_fzf_colors)
     else
-        # Charm menu picker colors: purple header, blue highlight bar, cyan prompt
+        # Charm menu picker colors: purple header, violet highlight bar, cyan prompt
         fzf_colors="fg:#e4e4e7,bg:#1e1e2e,hl:#c084fc"
-        fzf_colors+=",fg+:#ffffff,bg+:#6366f1,hl+:#f0abfc"  # Blue selection bar
+        fzf_colors+=",fg+:#ffffff,bg+:#7c3aed,hl+:#f0abfc"  # Charmy violet selection bar
         fzf_colors+=",info:#a78bfa,prompt:#5eead4,pointer:#c084fc"  # Purple info, cyan prompt
         fzf_colors+=",marker:#c084fc,spinner:#c084fc,header:#a78bfa"  # Purple accents
-        fzf_colors+=",border:#6366f1,gutter:#1e1e2e"  # Blue border
+        fzf_colors+=",border:#7c3aed,gutter:#1e1e2e"  # Violet border
     fi
     
     export FZF_DEFAULT_OPTS="
