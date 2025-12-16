@@ -181,10 +181,10 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+H/J/K/L:Preview  Ctrl+Y:Year  </> Page  Ctrl+W/T/P/V/G:Menu Bar \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+Y:Year  Ctrl+R:Refresh \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
-      --bind='ctrl-j:preview-down,ctrl-k:preview-up'
+      --bind='ctrl-d:preview-down,ctrl-u:preview-up'
       --bind='ctrl-h:change-preview-window(hidden|right:55%)'
       --bind='ctrl-l:change-preview-window(right:55%|hidden)'
     "
