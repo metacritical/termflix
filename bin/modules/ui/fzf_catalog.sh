@@ -57,8 +57,10 @@ show_fzf_catalog() {
         local logo_file="${HOME}/.oh_my_bash/lib/torrent/img/logo.png"
         if [[ -f "$logo_file" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
-                --place=40x4@0x0 --scale-up --align=left \
+                --place=20x3@1x0 --scale-up --align=left \
                 "$logo_file" 2>/dev/null
+            # Add top margin to FZF so logo stays visible
+            KITTY_MARGIN="4,1,1,1"
         fi
     fi
     
@@ -182,7 +184,7 @@ show_fzf_catalog() {
       --layout=reverse
 
       --border=rounded
-      --margin=1
+      --margin=${KITTY_MARGIN:-1}
       --padding=1
       --info=hidden
       --prompt=\"< Page ${current_page}/${total_pages} > \"
