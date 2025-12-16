@@ -318,6 +318,7 @@ main() {
             export CURRENT_GENRE="" # Clear genre for now unless specific
             export CURRENT_MIN_RATING="$current_min_rating"
             export CURRENT_QUERY="$current_query"
+            export CURRENT_CATEGORY="$current_category"
 
             # Build title
             local title_prefix="🎬"

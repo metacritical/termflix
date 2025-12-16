@@ -303,12 +303,13 @@ def extract_quality(name: str) -> str:
 # TPB FALLBACK (when YTS is unavailable)
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_tpb_fallback_catalog(limit: int = 50) -> List[str]:
+def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str]:
     """
-    Fallback: Fetch movies directly from TPB top100 when YTS is unavailable.
+    Fallback: Fetch movies directly from TPB top100 (Default: HD Movies 207).
     Returns COMBINED format strings.
     """
-    TPB_TOP100_URL = 'https://apibay.org/precompiled/data_top100_205.json'
+    # 201=Movies, 207=HD Movies, 205=TV Shows, 208=HD TV Shows
+    TPB_TOP100_URL = f'https://apibay.org/precompiled/data_top100_{category}.json'
     
     response = fetch_url(TPB_TOP100_URL, timeout=10)
     if not response:
@@ -318,12 +319,21 @@ def fetch_tpb_fallback_catalog(limit: int = 50) -> List[str]:
         data = json.loads(response)
         results = []
         
+        # Regex to detect TV Shows (Season/Episode patterns)
+        tv_pattern = re.compile(r'(S\d{1,2}E\d{1,2}|Season\s*\d+|Complete\s*Series)', re.IGNORECASE)
+        
         for item in data[:limit]:
             info_hash = item.get('info_hash', '')
             if not info_hash or info_hash == '0' * 40:
                 continue
             
             name = item.get('name', 'Unknown')
+            
+            # Strict Content Filtering: If we are asking for Movies (201/207), 
+            # reject anything looking like a TV show.
+            if category in [201, 207, 209, 202] and tv_pattern.search(name):
+                continue
+            
             seeders = int(item.get('seeders', 0))
             size_bytes = int(item.get('size', 0))
             size_mb = size_bytes // (1024 * 1024)
@@ -434,7 +444,7 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
 
 def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = True, sort_by: str = 'date_added',
                                query_term: str = None, genre: str = None, min_rating: int = 0,
-                               order_by: str = 'desc') -> List[str]:
+                               order_by: str = 'desc', category_mode: str = 'movies') -> List[str]:
     """
     Fetch movies from YTS and enrich each with TPB torrents.
     
@@ -447,17 +457,27 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
         genre: Genre filter
         min_rating: Minimum rating filter
         order_by: Sort order ('desc' or 'asc')
+        category_mode: 'movies' or 'shows'
     
     Returns list of COMBINED format strings.
     """
     # Fetch movies from YTS with sort option
-    movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
-                              query_term=query_term, genre=genre, min_rating=min_rating,
-                              order_by=order_by)
+    # Note: YTS is strictly movies. If category_mode is 'shows', YTS might return nothing suitable.
+    # Future TODO: Integrate EZTV or similar for Shows. For now, Shows rely on TPB fallback.
+    movies = []
+    if category_mode == 'movies':
+        movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
+                                  query_term=query_term, genre=genre, min_rating=min_rating,
+                                  order_by=order_by)
     
-    # FALLBACK: If YTS fails, use TPB precompiled top100 movies directly
+    # FALLBACK: If YTS fails or we want SHOWS, use TPB precompiled
     if not movies:
-        return fetch_tpb_fallback_catalog(limit)
+        # Determine TPB Category
+        tpb_cat = 207  # Default HD Movies
+        if category_mode == 'shows':
+            tpb_cat = 208 # HD TV Shows
+        
+        return fetch_tpb_fallback_catalog(limit, category=tpb_cat)
     
     results = []
     
@@ -523,17 +543,19 @@ def main():
     parser.add_argument('--query', type=str, default=None, help='Search query (or Year)')
     parser.add_argument('--genre', type=str, default=None, help='Filter by genre')
     parser.add_argument('--min-rating', type=int, default=0, help='Minimum rating (0-9)')
-    parser.add_argument('--order', type=str, default='desc', choices=['desc', 'asc'], help='Sort order')
+    parser.add_argument('--order-by', type=str, default='desc', help='Sort order (desc/asc)')
+    parser.add_argument('--category', type=str, default='movies', help='Category mode (movies/shows)')
     parser.add_argument('--sequential', action='store_true', help='Disable parallel fetch')
     parser.add_argument('--refresh', action='store_true', help='Force refresh cache (ignore cached data)')
     
     args = parser.parse_args()
     
-    if args.refresh:
-        global REFRESH_CACHE
-        REFRESH_CACHE = True
+    # Set global flags
+    global REFRESH_CACHE
+    REFRESH_CACHE = args.refresh
     
-    results = fetch_multi_source_catalog(
+    # 2. Fetch Catalog
+    catalog = fetch_multi_source_catalog(
         limit=args.limit,
         page=args.page,
         parallel=not args.sequential,
@@ -541,10 +563,11 @@ def main():
         query_term=args.query,
         genre=args.genre,
         min_rating=args.min_rating,
-        order_by=args.order
+        order_by=args.order_by,
+        category_mode=args.category
     )
     
-    for line in results:
+    for line in catalog:
         print(line, flush=True)
 
 if __name__ == '__main__':
