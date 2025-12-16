@@ -181,7 +181,7 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+R:Refresh \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+R:Refresh \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-d:preview-down,ctrl-u:preview-up'
