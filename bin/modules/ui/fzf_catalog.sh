@@ -223,7 +223,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
         
@@ -235,14 +235,15 @@ show_fzf_catalog() {
         { read -r key; read -r selected_line; } <<< "$selection"
         
         # Handle category switching shortcuts - return exit codes for main loop
-        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^R=soRt, ^G=Genre
+        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
         case "$key" in
             ctrl-o) return 101 ;;  # mOvies
             ctrl-s) return 102 ;;  # Shows
             ctrl-w) return 103 ;;  # Watchlist
             ctrl-t) return 104 ;;  # Type dropdown
-            ctrl-r) return 105 ;;  # soRt dropdown
+            ctrl-v) return 105 ;;  # Sort dropdown (mapped to V as R is refresh)
             ctrl-g) return 106 ;;  # Genre dropdown
+            ctrl-r) return 109 ;;  # Refresh
             ">"|ctrl-right) return 107 ;;  # Next page
             "<"|ctrl-left) return 108 ;;   # Previous page
         esac

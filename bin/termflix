@@ -337,6 +337,12 @@ main() {
             esac
             
             local ret=$?
+            
+            # Reset refresh flag immediately after usage so it doesn't persist
+            if [[ "$FORCE_REFRESH" == "true" ]]; then
+                export FORCE_REFRESH=false
+            fi
+            
             case $ret in
                 101) current_category="movies" ;;
                 102) current_category="shows" ;;
@@ -370,6 +376,11 @@ main() {
                     else
                         current_genre=""
                     fi
+                    continue
+                    ;;
+                109)
+                    # Refresh: Force reload of catalog data
+                    export FORCE_REFRESH=true
                     continue
                     ;;
                 *)   break ;;  # User cancelled or streamed

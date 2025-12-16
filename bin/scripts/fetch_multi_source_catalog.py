@@ -38,7 +38,10 @@ MAX_RETRIES = 2
 
 # Cache settings
 CACHE_DIR = Path.home() / '.cache' / 'termflix' / 'multi_source'
-CACHE_TTL = 1800  # 30 minutes
+CACHE_TTL = 14400  # 4 hours
+
+# Global flags
+REFRESH_CACHE = False
 
 # Headers
 HEADERS = {
@@ -81,6 +84,9 @@ def get_cache_key(prefix: str, query: str) -> str:
 
 def get_cached(key: str) -> Optional[str]:
     """Get cached result if valid."""
+    if REFRESH_CACHE:
+        return None
+        
     cache_file = CACHE_DIR / f"{key}.json"
     if cache_file.exists():
         try:
@@ -113,6 +119,15 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
         page: Page number
         sort_by: Sort method ('date_added', 'download_count', 'rating')
     """
+    # Check cache
+    cache_key = get_cache_key('yts_list', f"{limit}_{page}_{sort_by}")
+    cached = get_cached(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except:
+            pass
+
     for domain in YTS_DOMAINS:
         url = f"https://{domain}/api/v2/list_movies.json?limit={limit}&page={page}&sort_by={sort_by}&order_by=desc"
         
@@ -124,6 +139,7 @@ def fetch_yts_movies(limit: int = 50, page: int = 1, sort_by: str = 'date_added'
             data = json.loads(response)
             if data.get('status') == 'ok':
                 movies = data.get('data', {}).get('movies', [])
+                set_cache(cache_key, json.dumps(movies))
                 return movies
         except:
             continue
@@ -477,8 +493,13 @@ def main():
                         choices=['date_added', 'download_count', 'rating'],
                         help='Sort method (date_added=latest, download_count=trending, rating=popular)')
     parser.add_argument('--sequential', action='store_true', help='Disable parallel fetch')
+    parser.add_argument('--refresh', action='store_true', help='Force refresh cache (ignore cached data)')
     
     args = parser.parse_args()
+    
+    if args.refresh:
+        global REFRESH_CACHE
+        REFRESH_CACHE = True
     
     results = fetch_multi_source_catalog(
         limit=args.limit,

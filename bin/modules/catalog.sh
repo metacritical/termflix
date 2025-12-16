@@ -296,8 +296,9 @@ display_catalog() {
             102) return 102 ;;  # Shows (^S)
             103) return 103 ;;  # Watchlist (^W)
             104) return 104 ;;  # Type dropdown (^T)
-            105) return 105 ;;  # Sort dropdown (^R)
+            105) return 105 ;;  # Sort dropdown (^V)
             106) return 106 ;;  # Genre dropdown (^G)
+            109) return 109 ;;  # Refresh (^R) -> FORCE_REFRESH
             107)  # Next page (> or Ctrl+Right)
                 if [[ $current_page -lt $total_pages ]]; then
                     ((current_page++))

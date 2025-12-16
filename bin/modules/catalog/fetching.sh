@@ -10,12 +10,15 @@ get_latest_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    local refresh_flag=""
+    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    
     # Use multi-source Python script (combines YTS + TPB)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" $refresh_flag 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -52,12 +55,15 @@ get_trending_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    local refresh_flag=""
+    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    
     # Use multi-source Python script with download_count sort (trending)
     local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count $refresh_flag 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -85,29 +91,40 @@ get_trending_movies() {
 }
 
 # Get popular movies - Multi-source (YTS + TPB)
+# Get popular movies - Multi-source (YTS + TPB)
 get_popular_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    local refresh_flag=""
+    [[ "$FORCE_REFRESH" == "true" ]] && refresh_flag="--refresh"
+    
+    # Use multi-source Python script with rating sort (popular)
+    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    
+    if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
+        python3 "$script_path" --limit "$limit" --page "$page" --sort rating $refresh_flag 2>/dev/null
+        local ret=$?
+        [[ $ret -eq 0 ]] && return 0
+    fi
+
+    # Fallback to direct API call if python fails
     local base_url="https://yts.lt/api/v2/list_movies.json"
     local api_url="${base_url}?limit=${limit}&sort_by=rating&order_by=desc&minimum_rating=7&page=${page}"
     
     if command -v curl &> /dev/null && command -v jq &> /dev/null; then
         local response=$(curl -s --max-time 3 --connect-timeout 2 \
-            -H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36" \
-            -H "Accept: application/json" \
+            -H "User-Agent: Mozilla" \
             "$api_url" 2>/dev/null)
         
         if [ -n "$response" ] && [ "$response" != "" ]; then
             local status=$(echo "$response" | jq -r '.status // "fail"' 2>/dev/null)
             
             if [ "$status" = "ok" ]; then
-                local results=$(echo "$response" | jq -r '.data.movies[]? | select(.torrents != null and (.torrents | length) > 0) | .torrents[0] as $torrent | select($torrent.hash != null and $torrent.hash != "") | "YTS|\(.title) (\(.year)) - ⭐\(.rating // "N/A")|magnet:?xt=urn:btih:\($torrent.hash)|\($torrent.quality // "N/A")|\($torrent.size // "N/A")|\(.rating // "N/A")|\(.medium_cover_image // "N/A")"' 2>/dev/null | head -20)
-                
-                if [ -n "$results" ]; then
-                    echo "$results"
-                    return 0
-                fi
+                # Simplistic fallback format (not COMBINED)
+                 echo "$response" | jq -r '.data.movies[]? | select(.torrents != null) | "YTS|\(.title) (\(.year))|magnet:?xt=urn:btih:\(.torrents[0].hash)|\(.torrents[0].quality)|\(.torrents[0].size)|\(.torrents[0].seeds)|\(.medium_cover_image)"' 2>/dev/null
+                return 0
             fi
         fi
     fi
