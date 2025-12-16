@@ -363,29 +363,16 @@ main() {
                      continue
                      ;;
                 104) 
-                    # View Menu (^T) - Consolidated Control Center
-                    # Build Dynamic Menu Options based on current context
+                    # Type Menu (^T) - Select Category & Context
                     local menu_items="🎬 Browse Movies\n📺 Browse Shows\n"
-                    menu_items+="\n-- 🔍 Filters --\n"
-                    menu_items+="📅 Filter by Year...\n"
-                    menu_items+="⭐ Filter by Rating...\n"
-                    menu_items+="🌱 Filter by Peers...\n"
-                    menu_items+="🔤 Filter by Title...\n"
-                    
-                    menu_items+="\n-- 🔃 Sort Order --\n"
-                    case "$current_context" in
-                        default|year) 
-                            menu_items+="⬇️ Sort: Newest First\n⬆️ Sort: Oldest First" ;;
-                        rating)       
-                            menu_items+="⬇️ Sort: Highest Rated\n⬆️ Sort: Lowest Rated" ;;
-                        peers)        
-                            menu_items+="⬇️ Sort: Most Seeds\n⬆️ Sort: Fewest Seeds" ;;
-                        title)        
-                            menu_items+="⬇️ Sort: A-Z\n⬆️ Sort: Z-A" ;;
-                    esac
+                    menu_items+="\n-- 🔍 Switch Context --\n"
+                    menu_items+="📅 By Year (Mode)...\n"
+                    menu_items+="⭐ By Rating (Mode)...\n"
+                    menu_items+="🌱 By Peers (Mode)...\n"
+                    menu_items+="🔤 By Title (Mode)...\n"
                     
                     local selected_action
-                    selected_action=$(echo -e "$menu_items" | fzf --height=20 --layout=reverse --border --prompt="Menu: " --header="View Options" 2>/dev/null)
+                    selected_action=$(echo -e "$menu_items" | fzf --height=15 --layout=reverse --border --prompt="Type: " --header="Select Content Mode" 2>/dev/null)
                     
                     case "$selected_action" in
                         "🎬 Browse Movies") 
@@ -393,18 +380,18 @@ main() {
                         "📺 Browse Shows") 
                             current_category="shows" ;;
                             
-                        # Context Filters
-                        "📅 Filter by Year...") 
+                        # Context Switching - Immediately Prompts for Filter Value
+                        "📅 By Year (Mode)...") 
                             current_context="year"; current_sort="desc" 
-                            # Prompt Year
+                            # Initial Prompt
                             local yr_list=$(seq $(date +%Y) -1 1950)
-                            local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " 2>/dev/null)
+                            local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " --header="Set Initial Year" 2>/dev/null)
                             [[ -n "$sel_yr" ]] && current_query="$sel_yr"
                             ;;
-                        "⭐ Filter by Rating...") 
+                        "⭐ By Rating (Mode)...") 
                             current_context="rating"; current_sort="desc"
                             local rat_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\nAny Rating"
-                            local sel_rat=$(echo -e "$rat_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " 2>/dev/null)
+                            local sel_rat=$(echo -e "$rat_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " --header="Set Initial Rating" 2>/dev/null)
                             case "$sel_rat" in
                                 "9+ Stars") current_min_rating=9 ;;
                                 "8+ Stars") current_min_rating=8 ;;
@@ -414,20 +401,74 @@ main() {
                                 *) current_min_rating=0 ;;
                             esac
                             ;;
-                        "🌱 Filter by Peers...") 
+                        "🌱 By Peers (Mode)...") 
                              current_context="peers"; current_sort="desc" ;;
-                        "🔤 Filter by Title...") 
-                             current_context="title"; current_sort="asc" 
-                             # Logic for title search is handled by query usually, but 'current_context=title' sets sort to title. 
-                             # Maybe prompt for search term? Or just switch mode.
-                             ;;
-                             
-                        # Sort Actions
-                        *"Newest First"|*"Highest Rated"|*"Most Seeds"|*"Z-A")
-                            current_sort="desc" ;;
-                        *"Oldest First"|*"Lowest Rated"|*"Fewest Seeds"|*"A-Z")
-                            current_sort="asc" ;;
+                        "🔤 By Title (Mode)...") 
+                             current_context="title"; current_sort="asc" ;;
                     esac
+                    continue
+                    ;;
+                105) 
+                    # Smart Sort Menu (^V) - Context Aware + Tweaker
+                    local sort_menu=""
+                    
+                    case "$current_context" in
+                        default)
+                            sort_menu="⬇️ Latest Uploads (Default)\n🔥 Trending Now\n⭐ Popular All Time" ;;
+                        year)
+                            # Allow changing the filter value (Year) from here too
+                            sort_menu="📅 Change Year... [Current: $current_query]\n"
+                            sort_menu+="⬇️ Sort: Newest First\n⬆️ Sort: Oldest First" ;;
+                        rating)
+                            sort_menu="⭐ Change Min Rating... [Current: ${current_min_rating}+]\n"
+                            sort_menu+="⬇️ Sort: Highest Rated\n⬆️ Sort: Lowest Rated" ;;
+                        peers)
+                            sort_menu="⬇️ Sort: Most Seeds\n⬆️ Sort: Fewest Seeds" ;;
+                        title)
+                            sort_menu="⬇️ Sort: A-Z\n⬆️ Sort: Z-A" ;;
+                    esac
+                    
+                    local sel_sort
+                    sel_sort=$(echo -e "$sort_menu" | fzf --height=12 --layout=reverse --border --prompt="Sort: " --header="Sort & Tweak ($current_context)" 2>/dev/null)
+                    
+                    if [[ -n "$sel_sort" ]]; then
+                        case "$sel_sort" in
+                            # DEFAULT
+                            *"Latest Uploads"*) current_sort="date_added"; current_order="desc" ;;
+                            *"Trending Now"*)   current_sort="trending";   current_order="desc" ;; # Trending usually implies desc
+                            *"Popular All Time"*) current_sort="rating"; current_order="desc" ;;
+                            
+                            # YEAR TWEAKS
+                            *"Change Year"*)
+                                local yr_list=$(seq $(date +%Y) -1 1950)
+                                local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " 2>/dev/null)
+                                [[ -n "$sel_yr" ]] && current_query="$sel_yr"
+                                ;;
+                            *"Newest First"*) current_sort="desc" ;;
+                            *"Oldest First"*) current_sort="asc" ;;
+                            
+                            # RATING TWEAKS
+                            *"Change Min Rating"*)
+                                local r_opts="9+\n8+\n7+\n6+\nAny"
+                                local r_sel=$(echo -e "$r_opts" | fzf --height=8 --layout=reverse --border --prompt="Min Rating: " 2>/dev/null)
+                                case "$r_sel" in
+                                    "9+") current_min_rating=9 ;;
+                                    "8+") current_min_rating=8 ;;
+                                    "7+") current_min_rating=7 ;;
+                                    "6+") current_min_rating=6 ;;
+                                    *)    current_min_rating=0 ;;
+                                esac
+                                ;;
+                            *"Highest Rated"*) current_sort="desc" ;;
+                            *"Lowest Rated"*)  current_sort="asc" ;;
+                            
+                            # GENERAL
+                            *"Most Seeds"*)    current_sort="desc" ;;
+                            *"Fewest Seeds"*)  current_sort="asc" ;;
+                            *"A-Z"*)           current_sort="asc" ;;
+                            *"Z-A"*)           current_sort="desc" ;;
+                        esac
+                    fi
                     continue
                     ;;
                 106)

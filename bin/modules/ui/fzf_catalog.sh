@@ -150,8 +150,8 @@ show_fzf_catalog() {
     }
     
     local menu_header
-    # Build header with LOGO + underlined shortcuts: o=Movies, S=Shows, W=Watchlist, T=Type, r=Sort, G=Genre
-    menu_header="${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "So" "r" "t") $(fmt_drop "$hl_genre" "" "G" "enre")"
+    # Build header with LOGO + underlined shortcuts: o=Movies, S=Shows, W=Watchlist, T=Type, V=Sort, G=Genre
+    menu_header="${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "Sort [" "V" "]") $(fmt_drop "$hl_genre" "" "G" "enre")"
     
     # Get FZF colors from theme (if theme loader available)
     # Charm-style: blue selection bar, muted gray text, dark background
@@ -181,7 +181,7 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  Ctrl+T:View Menu  Ctrl+R:Refresh \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+R:Refresh \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-d:preview-down,ctrl-u:preview-up'
@@ -222,7 +222,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
         
@@ -234,12 +234,13 @@ show_fzf_catalog() {
         { read -r key; read -r selected_line; } <<< "$selection"
         
         # Handle category switching shortcuts - return exit codes for main loop
-        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=ViewMenu, ^R=Refresh, ^G=Genre
+        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
         case "$key" in
             ctrl-o) return 101 ;;  # mOvies
             ctrl-s) return 102 ;;  # Shows
             ctrl-w) return 103 ;;  # Watchlist
-            ctrl-t) return 104 ;;  # View Menu (Main)
+            ctrl-t) return 104 ;;  # Type dropdown
+            ctrl-v) return 105 ;;  # Sort dropdown
             ctrl-g) return 106 ;;  # Genre dropdown (kept for now or merged?) -> Kept as direct genre jump if user wants it, or remove? Plan said remove V/Y. I'll leave G for now unless requested.
             ctrl-r) return 109 ;;  # Refresh
             ">"|ctrl-right) return 107 ;;  # Next page
