@@ -362,50 +362,74 @@ main() {
                      current_category="movies"
                      continue
                      ;;
-                104) # Type Menu (^T) - Select CONTEXT
-                     local type_opts="Movies (Default)\nShows\nBy Year\nBy Title\nBy Rating\nBy Peers"
-                     local sel_type
-                     sel_type=$(echo -e "$type_opts" | fzf --height=12 --layout=reverse --border --prompt="Browse by: " --header="Select Content Type" 2>/dev/null)
-                     case "$sel_type" in
-                        "Movies (Default)") current_category="movies"; current_context="default" ;;
-                        "Shows") current_category="shows" ;;
-                        "By Year") current_context="year"; current_sort="desc" ;;
-                        "By Title") current_context="title"; current_sort="asc" ;;
-                        "By Rating") current_context="rating"; current_sort="desc" ;;
-                        "By Peers") current_context="peers"; current_sort="desc" ;;
-                     esac
-                     continue
-                     ;;
-                105) # Sort Menu (^V) - Context Aware
-                     local sort_opts=""
-                     case "$current_context" in
-                        default|year) sort_opts="Newest First (desc)\nOldest First (asc)" ;;
-                        rating)       sort_opts="Highest Rated (desc)\nLowest Rated (asc)" ;;
-                        peers)        sort_opts="Most Seeds (desc)\nFewest Seeds (asc)" ;;
-                        title)        sort_opts="A-Z (asc)\nZ-A (desc)" ;;
-                     esac
-                     
-                     local sel_sort
-                     sel_sort=$(echo -e "$sort_opts" | fzf --height=10 --layout=reverse --border --prompt="Sort: " --header="Sort Order" 2>/dev/null)
-                     
-                     if [[ -n "$sel_sort" ]]; then
-                         if [[ "$sel_sort" == *"asc)" ]]; then current_sort="asc"; else current_sort="desc"; fi
-                         
-                         # If in Rating context, also show Min Rating picker after sort?
-                         if [[ "$current_context" == "rating" && "$sel_sort" == *"Highest"* ]]; then
-                             local r_opts="9+\n8+\n7+\n6+\nAny"
-                             local r_sel=$(echo -e "$r_opts" | fzf --height=8 --layout=reverse --border --prompt="Min Rating: " 2>/dev/null)
-                             case "$r_sel" in
-                                "9+") current_min_rating=9 ;;
-                                "8+") current_min_rating=8 ;;
-                                "7+") current_min_rating=7 ;;
-                                "6+") current_min_rating=6 ;;
-                                *)    current_min_rating=0 ;;
-                             esac
-                         fi
-                     fi
-                     continue
-                     ;;
+                104) 
+                    # View Menu (^T) - Consolidated Control Center
+                    # Build Dynamic Menu Options based on current context
+                    local menu_items="🎬 Browse Movies\n📺 Browse Shows\n"
+                    menu_items+="\n-- 🔍 Filters --\n"
+                    menu_items+="📅 Filter by Year...\n"
+                    menu_items+="⭐ Filter by Rating...\n"
+                    menu_items+="🌱 Filter by Peers...\n"
+                    menu_items+="🔤 Filter by Title...\n"
+                    
+                    menu_items+="\n-- 🔃 Sort Order --\n"
+                    case "$current_context" in
+                        default|year) 
+                            menu_items+="⬇️ Sort: Newest First\n⬆️ Sort: Oldest First" ;;
+                        rating)       
+                            menu_items+="⬇️ Sort: Highest Rated\n⬆️ Sort: Lowest Rated" ;;
+                        peers)        
+                            menu_items+="⬇️ Sort: Most Seeds\n⬆️ Sort: Fewest Seeds" ;;
+                        title)        
+                            menu_items+="⬇️ Sort: A-Z\n⬆️ Sort: Z-A" ;;
+                    esac
+                    
+                    local selected_action
+                    selected_action=$(echo -e "$menu_items" | fzf --height=20 --layout=reverse --border --prompt="Menu: " --header="View Options" 2>/dev/null)
+                    
+                    case "$selected_action" in
+                        "🎬 Browse Movies") 
+                            current_category="movies"; current_context="default" ;;
+                        "📺 Browse Shows") 
+                            current_category="shows" ;;
+                            
+                        # Context Filters
+                        "📅 Filter by Year...") 
+                            current_context="year"; current_sort="desc" 
+                            # Prompt Year
+                            local yr_list=$(seq $(date +%Y) -1 1950)
+                            local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " 2>/dev/null)
+                            [[ -n "$sel_yr" ]] && current_query="$sel_yr"
+                            ;;
+                        "⭐ Filter by Rating...") 
+                            current_context="rating"; current_sort="desc"
+                            local rat_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\nAny Rating"
+                            local sel_rat=$(echo -e "$rat_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " 2>/dev/null)
+                            case "$sel_rat" in
+                                "9+ Stars") current_min_rating=9 ;;
+                                "8+ Stars") current_min_rating=8 ;;
+                                "7+ Stars") current_min_rating=7 ;;
+                                "6+ Stars") current_min_rating=6 ;;
+                                "5+ Stars") current_min_rating=5 ;;
+                                *) current_min_rating=0 ;;
+                            esac
+                            ;;
+                        "🌱 Filter by Peers...") 
+                             current_context="peers"; current_sort="desc" ;;
+                        "🔤 Filter by Title...") 
+                             current_context="title"; current_sort="asc" 
+                             # Logic for title search is handled by query usually, but 'current_context=title' sets sort to title. 
+                             # Maybe prompt for search term? Or just switch mode.
+                             ;;
+                             
+                        # Sort Actions
+                        *"Newest First"|*"Highest Rated"|*"Most Seeds"|*"Z-A")
+                            current_sort="desc" ;;
+                        *"Oldest First"|*"Lowest Rated"|*"Fewest Seeds"|*"A-Z")
+                            current_sort="asc" ;;
+                    esac
+                    continue
+                    ;;
                 106)
                     # Genre dropdown: show FZF popup with genre list
                     local genre_list="All Genres\nAction\nAdventure\nAnimation\nComedy\nCrime\nDocumentary\nDrama\nFamily\nFantasy\nHorror\nMusic\nMystery\nRomance\nSci-Fi\nThriller\nWar\nWestern"
@@ -416,19 +440,6 @@ main() {
                         export CURRENT_GENRE="$selected_genre" # Use export for CURRENT_GENRE
                     else
                         export CURRENT_GENRE=""
-                    fi
-                    continue
-                    ;;
-                110)
-                    # Year dropdown (^Y)
-                    # Generate years from current year down to 1950
-                    local current_yr=$(date +%Y)
-                    local year_list=$(seq "$current_yr" -1 1950)
-                    local selected_year
-                    selected_year=$(echo "$year_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " --header="Filter by Year" 2>/dev/null)
-                    
-                    if [[ -n "$selected_year" ]]; then
-                        current_query="$selected_year"
                     fi
                     continue
                     ;;
