@@ -53,8 +53,8 @@ show_fzf_catalog() {
     
     # Display logo in Kitty mode (at top of screen)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # SCRIPT_DIR is modules/ui, so go up to bin/ then to lib/termflix/img/
-        local logo_file="${SCRIPT_DIR}/../../lib/termflix/img/logo.jpg"
+        # Use logo.png from lib/torrent/img/
+        local logo_file="${HOME}/.oh_my_bash/lib/torrent/img/logo.png"
         if [[ -f "$logo_file" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
                 --place=40x4@0x0 --scale-up --align=left \
