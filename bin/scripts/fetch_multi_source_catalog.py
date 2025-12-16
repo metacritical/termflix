@@ -435,6 +435,32 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
             if result:
                 results.append(result)
     
+    # Feature 8: Year-Based Sorting
+    # YTS API results are sorted by date_added (upload date), which mixes old/new movies.
+    # We sort by Year (DESC) to ensure Stremio-style "Latest = Newest Release".
+    import re
+    
+    def extract_year_from_combined(entry):
+        # Format: COMBINED|Title (YYYY)|...
+        try:
+            # Extract title part (2nd field)
+            parts = entry.split('|')
+            if len(parts) > 1:
+                title_part = parts[1]
+                # Regex for (YYYY)
+                match = re.search(r'\((\d{4})\)', title_part)
+                if match:
+                    return int(match.group(1))
+        except:
+            pass
+        return 0
+
+    # Sort by Year DESC, keeping original sort order for same-year items
+    # Python sort is stable, so secondary sort (date_added/rating) is preserved
+    # Sort by Year DESC, keeping original sort order for same-year items
+    # Python sort is stable, so secondary sort (date_added/rating) is preserved
+    results.sort(key=extract_year_from_combined, reverse=True)
+    
     return results
 
 # ═══════════════════════════════════════════════════════════════
