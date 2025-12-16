@@ -264,6 +264,57 @@ def extract_quality(name: str) -> str:
     return 'Unknown'
 
 # ═══════════════════════════════════════════════════════════════
+# TPB FALLBACK (when YTS is unavailable)
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_tpb_fallback_catalog(limit: int = 50) -> List[str]:
+    """
+    Fallback: Fetch movies directly from TPB top100 when YTS is unavailable.
+    Returns COMBINED format strings.
+    """
+    TPB_TOP100_URL = 'https://apibay.org/precompiled/data_top100_205.json'
+    
+    response = fetch_url(TPB_TOP100_URL, timeout=10)
+    if not response:
+        return []
+    
+    try:
+        data = json.loads(response)
+        results = []
+        
+        for item in data[:limit]:
+            info_hash = item.get('info_hash', '')
+            if not info_hash or info_hash == '0' * 40:
+                continue
+            
+            name = item.get('name', 'Unknown')
+            seeders = int(item.get('seeders', 0))
+            size_bytes = int(item.get('size', 0))
+            size_mb = size_bytes // (1024 * 1024)
+            size_str = f"{size_mb}MB" if size_mb < 1024 else f"{size_mb/1024:.1f}GB"
+            quality = extract_quality(name)
+            magnet = f"magnet:?xt=urn:btih:{info_hash}"
+            imdb = item.get('imdb', 'N/A')
+            
+            # Build COMBINED format line
+            combined = (
+                f"COMBINED|{name}|"
+                f"TPB|"  # Single source
+                f"{quality}|"
+                f"{seeders}|"
+                f"{size_str}|"
+                f"{magnet}|"
+                f"N/A|"  # No poster for TPB
+                f"{imdb}|"
+                f"1"  # torrent_count
+            )
+            results.append(combined)
+        
+        return results
+    except Exception:
+        return []
+
+# ═══════════════════════════════════════════════════════════════
 # MULTI-SOURCE AGGREGATION
 # ═══════════════════════════════════════════════════════════════
 
@@ -360,8 +411,9 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
     # Fetch movies from YTS with sort option
     movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by)
     
+    # FALLBACK: If YTS fails, use TPB precompiled top100 movies directly
     if not movies:
-        return []
+        return fetch_tpb_fallback_catalog(limit)
     
     results = []
     
