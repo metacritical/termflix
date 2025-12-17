@@ -236,6 +236,44 @@ def get_quality_sort_key(quality: str) -> int:
     return QUALITY_ORDER.get(quality, 99)
 
 
+def calculate_relevance_score(title: str, query: str) -> int:
+    """
+    Calculate relevance score for sorting search results.
+    
+    Returns:
+        1000 - Exact match
+        100  - Starts with query
+        10   - Contains query
+        0    - No match (shouldn't happen in search results)
+    
+    This ensures relevant results appear first instead of being scattered.
+    """
+    if not query:
+        return 0
+    
+    # Normalize for comparison
+    title_lower = title.lower().strip()
+    query_lower = query.lower().strip()
+    
+    # Exact match (highest priority)
+    if title_lower == query_lower:
+        return 1000
+    
+    # Starts with query (high priority for sequels/series)
+    if title_lower.startswith(query_lower):
+        return 100
+    
+    # Contains query (medium priority)
+    if query_lower in title_lower:
+        # Boost score if query is near the start
+        position = title_lower.find(query_lower)
+        # Score: 10-50 based on position (earlier = higher)
+        position_bonus = max(0, 40 - (position * 2))
+        return 10 + position_bonus
+    
+    return 0
+
+
 def print_combined(items: List[Dict], preferred_year: str = ""):
     """Print combined result for a group of items."""
     if not items:
@@ -310,6 +348,11 @@ def main():
     results = []
     seen_hashes: Set[str] = set()
     
+    # Get search query from command-line argument (optional)
+    search_query = ""
+    if len(sys.argv) > 1:
+        search_query = sys.argv[1]
+    
     # Read input
     try:
         for line in sys.stdin:
@@ -374,7 +417,9 @@ def main():
         group_key = f"{title}_{year}" if year else title
         title_groups[group_key].append(item)
     
-    # Second pass: Handle year ambiguity within groups
+    # Second pass: Handle year ambiguity within groups and collect for sorting
+    grouped_output: List[tuple] = []  # (relevance_score, total_seeds, items, preferred_year)
+    
     for group_key, items in title_groups.items():
         # Collect all non-empty years
         known_years = set(i['year'] for i in items if i['year'])
@@ -382,7 +427,16 @@ def main():
         if len(known_years) <= 1:
             # No year conflict - all belong to same movie
             preferred_year = list(known_years)[0] if known_years else ""
-            print_combined(items, preferred_year=preferred_year)
+            
+            # Calculate relevance score for this group
+            # Use the normalized title from the first item for scoring
+            group_title = items[0]['name'] if items else ""
+            relevance = calculate_relevance_score(group_title, search_query)
+            
+            # Calculate total seeds for secondary sorting
+            total_seeds = sum(i['seeds'] for i in items)
+            
+            grouped_output.append((relevance, total_seeds, items, preferred_year))
         else:
             # Multiple years found - split into separate movies
             by_year: Dict[str, List[Dict]] = defaultdict(list)
@@ -392,7 +446,20 @@ def main():
             
             for year_val, sub_items in by_year.items():
                 pref_year = year_val if year_val != "unknown" else ""
-                print_combined(sub_items, preferred_year=pref_year)
+                
+                # Calculate relevance and seeds for this sub-group
+                group_title = sub_items[0]['name'] if sub_items else ""
+                relevance = calculate_relevance_score(group_title, search_query)
+                total_seeds = sum(i['seeds'] for i in sub_items)
+                
+                grouped_output.append((relevance, total_seeds, sub_items, pref_year))
+    
+    # Sort by relevance (descending), then by seeds (descending)
+    grouped_output.sort(key=lambda x: (-x[0], -x[1]))
+    
+    # Print sorted results
+    for _, _, items, preferred_year in grouped_output:
+        print_combined(items, preferred_year=preferred_year)
 
 
 if __name__ == "__main__":

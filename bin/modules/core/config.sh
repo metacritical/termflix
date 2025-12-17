@@ -203,6 +203,58 @@ set_omdb_api_key() {
 }
 
 # ═══════════════════════════════════════════════════════════════
+# FEATURE FLAGS - Python Backend Migration
+# ═══════════════════════════════════════════════════════════════
+
+# Check if Python catalog backend should be used
+# Falls back to: ENV var → config file → default (false)
+# Usage: use_python_catalog && ... || ...
+use_python_catalog() {
+    # Check environment variable first
+    if [[ -n "${USE_PYTHON_CATALOG:-}" ]]; then
+        [[ "${USE_PYTHON_CATALOG}" == "true" ]] && return 0 || return 1
+    fi
+    
+    # Check config file
+    local value=$(config_get "USE_PYTHON_CATALOG" "false")
+    [[ "$value" == "true" ]] && return 0 || return 1
+}
+
+# Check if Python API backend should be used
+# Falls back to: ENV var → config file → default (false)
+# Usage: use_python_api && ... || ...
+use_python_api() {
+    # Check environment variable first
+    if [[ -n "${USE_PYTHON_API:-}" ]]; then
+        [[ "${USE_PYTHON_API}" == "true" ]] && return 0 || return 1
+    fi
+    
+    # Check config file
+    local value=$(config_get "USE_PYTHON_API" "false")
+    [[ "$value" == "true" ]] && return 0 || return 1
+}
+
+# Enable Python catalog backend
+enable_python_catalog() {
+    config_set "USE_PYTHON_CATALOG" "true"
+}
+
+# Disable Python catalog backend
+disable_python_catalog() {
+    config_set "USE_PYTHON_CATALOG" "false"
+}
+
+# Enable Python API backend
+enable_python_api() {
+    config_set "USE_PYTHON_API" "true"
+}
+
+# Disable Python API backend
+disable_python_api() {
+    config_set "USE_PYTHON_API" "false"
+}
+
+# ═══════════════════════════════════════════════════════════════
 # CONFIG VALIDATION
 # ═══════════════════════════════════════════════════════════════
 
@@ -286,6 +338,8 @@ get_config_default() {
         YTS_CACHE_TTL)  echo "3600" ;;  # 1 hour cache
         YTS_MAX_RETRIES) echo "3" ;;    # 3 retry attempts
         YTS_TIMEOUT)    echo "10" ;;    # 10 second timeout
+        USE_PYTHON_CATALOG) echo "true" ;;   # Feature flag: use Python catalog backend (DEFAULT: ENABLED as of Dec 2025)
+        USE_PYTHON_API) echo "true" ;;       # Feature flag: use Python API backend (DEFAULT: ENABLED as of Dec 2025)
         *)              echo "" ;;
     esac
 }
@@ -374,6 +428,9 @@ export -f get_player_preference set_player_preference
 export -f get_quality_preference set_quality_preference
 export -f get_tmdb_api_key set_tmdb_api_key get_tmdb_read_token
 export -f get_omdb_api_key set_omdb_api_key
+export -f use_python_catalog use_python_api
+export -f enable_python_catalog disable_python_catalog
+export -f enable_python_api disable_python_api
 export -f validate_api_key validate_config
 export -f config_get_default get_config_default list_config_defaults
 export -f clear_cache generate_cache_key is_cache_valid

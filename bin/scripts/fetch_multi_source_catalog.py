@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
 """
-Termflix - Multi-Source Catalog Fetcher
-Fetches movies from YTS and enriches with TPB torrents for more seeder options.
-
-Usage:
-    python3 fetch_multi_source_catalog.py [--limit N] [--page N]
-
-Output:
     COMBINED format: COMBINED|Title|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDB|Count
 """
 

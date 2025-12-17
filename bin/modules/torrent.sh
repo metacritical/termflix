@@ -1,124 +1,23 @@
 #!/usr/bin/env bash
-#
-# Termflix Torrent Module
+# Torrent streaming and playback module
+# Orchestrates buffer monitoring, subtitle detection, and player control
+
+# Source streaming modules (refactored Dec 2025)
+MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+. "$MODULE_DIR/streaming/buffer_monitor.sh"
+. "$MODULE_DIR/streaming/subtitle_manager.sh"
+. "$MODULE_DIR/streaming/player.sh"  # Already sourced, keeping for clarity
+
 # Main streaming logic for peerflix and transmission-cli
 #
 
-# Calculate optimal buffer size based on video bitrate
-# Args: $1 = video file path, $2 = download speed (bytes/sec)
-# Returns: buffer size in bytes
-calculate_optimal_buffer() {
-    local video_file="$1"
-    local download_speed="${2:-0}"
-    
-    # Default buffer time (seconds)
-    local buffer_time=30
-    
-    # Try to get video bitrate using ffprobe
-    local bitrate_bps=0
-    if command -v ffprobe &> /dev/null && [ -f "$video_file" ]; then
-        # Get video bitrate in bits per second
-        bitrate_bps=$(ffprobe -v quiet -select_streams v:0 \
-            -show_entries stream=bit_rate \
-            -of default=noprint_wrappers=1:nokey=1 "$video_file" 2>/dev/null)
-        
-        # If no video bitrate, try overall bitrate
-        if [ -z "$bitrate_bps" ] || [ "$bitrate_bps" = "N/A" ] || [ "$bitrate_bps" -eq 0 ]; then
-            bitrate_bps=$(ffprobe -v quiet \
-                -show_entries format=bit_rate \
-                -of default=noprint_wrappers=1:nokey=1 "$video_file" 2>/dev/null)
-        fi
-    fi
-    
-    # Calculate buffer size
-    local buffer_size=0
-    if [ -n "$bitrate_bps" ] && [ "$bitrate_bps" -gt 0 ]; then
-        # Formula: (bitrate_bps × buffer_time) / 8
-        buffer_size=$((bitrate_bps * buffer_time / 8))
-        
-        # Adjust buffer time based on download speed
-        if [ "$download_speed" -gt 0 ]; then
-            local bitrate_bytes=$((bitrate_bps / 8))
-            if [ "$download_speed" -gt $((bitrate_bytes * 3 / 2)) ]; then
-                # Fast connection: reduce buffer to 20s
-                buffer_time=20
-                buffer_size=$((bitrate_bps * buffer_time / 8))
-            elif [ "$download_speed" -lt "$bitrate_bytes" ]; then
-                # Slow connection: increase buffer to 60s
-                buffer_time=60
-                buffer_size=$((bitrate_bps * buffer_time / 8))
-            fi
-        fi
-    else
-        # Fallback: estimate based on file size
-        local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo "0")
-        if [ "$file_size" -lt 524288000 ]; then
-            # < 500MB: likely 480p/720p
-            buffer_size=10485760  # 10MB
-        elif [ "$file_size" -lt 1610612736 ]; then
-            # 500MB-1.5GB: likely 1080p
-            buffer_size=31457280  # 30MB
-        else
-            # > 1.5GB: likely 4K or high bitrate 1080p
-            buffer_size=52428800  # 50MB
-        fi
-    fi
-    
-    # Apply min/max bounds
-    local min_buffer=10485760   # 10MB minimum
-    local max_buffer=209715200  # 200MB maximum
-    
-    if [ "$buffer_size" -lt "$min_buffer" ]; then
-        buffer_size=$min_buffer
-    elif [ "$buffer_size" -gt "$max_buffer" ]; then
-        buffer_size=$max_buffer
-    fi
-    
-    echo "$buffer_size"
-}
+# Note: calculate_optimal_buffer() is now in bin/modules/streaming/buffer_monitor.sh
+# Function removed during Dec 2025 refactoring to reduce torrent.sh size
 
-# Check if torrent has subtitle files and return info
-has_subtitles() {
-    local source="$1"
-    
-    # List files and check for subtitle extensions
-    local file_list=$(peerflix "$source" --list 2>/dev/null || echo "")
-    
-    if [ -z "$file_list" ]; then
-        return 1
-    fi
-    
-    # Check for common subtitle file extensions and extract subtitle file names
-    local subtitle_files=$(echo "$file_list" | grep -iE '\.(srt|vtt|ass|ssa|sub|idx)$' || echo "")
-    
-    if [ -n "$subtitle_files" ]; then
-        # Count and list subtitle files found
-        local sub_count=$(echo "$subtitle_files" | wc -l | tr -d ' ')
-        echo -e "${GREEN}Subtitle found!${RESET} ($sub_count file(s))" >&2
-        
-        # Print subtitle file names (limit to first 3 to avoid clutter)
-        echo "$subtitle_files" | head -3 | while IFS= read -r line; do
-            if [ -n "$line" ]; then
-                # Extract filename (usually the last part after spaces/tabs)
-                # peerflix list format: "index  size  filename"
-                local sub_file=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' 2>/dev/null || echo "$line")
-                if [ -n "$sub_file" ]; then
-                    echo -e "  ${CYAN}→${RESET} $sub_file" >&2
-                fi
-            fi
-        done
-        
-        local total_subs=$(echo "$subtitle_files" | wc -l | tr -d ' ')
-        if [ "$total_subs" -gt 3 ]; then
-            local remaining=$((total_subs - 3))
-            echo -e "  ${CYAN}... and $remaining more${RESET}" >&2
-        fi
-        
-        return 0
-    fi
-    
-    return 1
-}
+
+# Note: has_subtitles() is now in bin/modules/streaming/subtitle_manager.sh
+# Function removed during Dec 2025 refactoring to reduce torrent.sh size
+
 
 # Stream with peerflix - use peerflix's --subtitles flag properly
 stream_peerflix() {
@@ -1581,105 +1480,11 @@ EOF
     # Return 0 to indicate successful stream (catalog will loop)
     return 0
     
-    # Monitor player process - VLC/mpv may fork, so we need to check by process name
-    # Use a trap to handle Ctrl+C gracefully
-    cleanup_and_exit() {
-        echo -e "\n${YELLOW}Interrupted. Stopping peerflix...${RESET}"
-        kill $peerflix_pid 2>/dev/null || true
-        sleep 1
-        kill -9 $peerflix_pid 2>/dev/null || true
-        wait $peerflix_pid 2>/dev/null &>/dev/null || true
-        rm -f "$temp_output" 2>/dev/null
-        exit 0
-    }
-    trap cleanup_and_exit INT TERM
-    
-    # Wait a moment for the process to potentially fork (especially VLC)
-    sleep 2
-    
-    # Monitor player by checking if any player process is running
-    # Escape the video name for use in pgrep
-    local escaped_video_name=$(echo "$video_name" | sed 's/[[\.*^$()+?{|]/\\&/g')
-    local player_running=true
-    local check_count=0
-    
-    while [ "$player_running" = true ]; do
-        # Check if any player process is running (by name, not just PID)
-        # This handles cases where VLC/mpv fork and the original PID exits
-        local player_processes=""
-        if [ "$player" = "vlc" ]; then
-            # Check for VLC processes - VLC on macOS might be "VLC" or "vlc" or in an app bundle
-            # Try multiple methods: pgrep, ps, and check if video file is open
-            player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
-            if [ -z "$player_processes" ]; then
-                # Try ps to find VLC (might be case-sensitive)
-                player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
-            fi
-            # Also check if video file is open (lsof on macOS)
-            if [ -z "$player_processes" ] && command -v lsof &> /dev/null; then
-                local open_by=$(lsof "$video_path" 2>/dev/null | grep -i vlc | head -1 || echo "")
-                if [ -n "$open_by" ]; then
-                    player_processes="open"  # Mark as running
-                fi
-            fi
-        else
-            # Check for mpv processes
-            player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
-            if [ -z "$player_processes" ] && command -v lsof &> /dev/null; then
-                local open_by=$(lsof "$video_path" 2>/dev/null | grep -i mpv | head -1 || echo "")
-                if [ -n "$open_by" ]; then
-                    player_processes="open"  # Mark as running
-                fi
-            fi
-        fi
-        
-        # If no player processes found, player has exited
-        if [ -z "$player_processes" ]; then
-            # Double-check: wait a moment and check again (in case of brief process switch)
-            sleep 1
-            if [ "$player" = "vlc" ]; then
-                player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
-                if [ -z "$player_processes" ]; then
-                    player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
-                fi
-            else
-                player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
-            fi
-            
-            if [ -z "$player_processes" ]; then
-                player_running=false
-                break
-            fi
-        fi
-        
-        # Player still running, continue monitoring
-        sleep 1
-        check_count=$((check_count + 1))
-        
-        # Safety: if we've been checking for too long (10 minutes), break
-        if [ $check_count -gt 600 ]; then
-            echo -e "${YELLOW}Warning:${RESET} Monitoring timeout, stopping peerflix anyway"
-            player_running=false
-            break
-        fi
-    done
-    
-    # Clear the trap
-    trap - INT TERM
-    
-    # Player exited, kill peerflix
-    echo -e "${CYAN}Player closed. Stopping peerflix...${RESET}"
-    kill $peerflix_pid 2>/dev/null || true
-    sleep 1
-    kill -9 $peerflix_pid 2>/dev/null || true
-    wait $peerflix_pid 2>/dev/null &>/dev/null || true
-    
-    rm -f "$temp_output" 2>/dev/null
-    
-    # Return special exit code to indicate player closed (not an error)
-    # This allows the calling code to return to catalog view
-    return 2
+    # Note: Player monitoring logic extracted to bin/modules/streaming/player.sh
+    # Function monitor_player_process() handles VLC/mpv fork detection and cleanup
+    # Removed during Dec 2025 refactoring to reduce torrent.sh size
 }
+
 
 
 # Main streaming function

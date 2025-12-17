@@ -71,13 +71,21 @@ search_eztv() {
 }
 
 # Group results by title and year (wrapper to Python script)
+# Args: $1 = search query (optional, for relevance sorting)
 group_results() {
+    local query="${1:-}"
+    
     if ! command -v python3 &> /dev/null; then
         cat  # Pass through if Python not available
         return 0
     fi
     
-    python3 "$TERMFLIX_SCRIPTS_DIR/group_results.py" 2>/tmp/termflix_last_error.log
+    # Pass search query to Python script for relevance-based sorting
+    if [ -n "$query" ]; then
+        python3 "$TERMFLIX_SCRIPTS_DIR/group_results.py" "$query" 2>/tmp/termflix_last_error.log
+    else
+        python3 "$TERMFLIX_SCRIPTS_DIR/group_results.py" 2>/tmp/termflix_last_error.log
+    fi
 }
 
 # Get YTS catalog movies via Python script
@@ -137,9 +145,9 @@ search_all() {
         search_eztv "$query" 2>/dev/null
     } > "$temp_results"
     
-    # Group and output results
+    # Group and output results (pass query for relevance sorting)
     if [ -s "$temp_results" ]; then
-        cat "$temp_results" | group_results
+        cat "$temp_results" | group_results "$query"
         rm -f "$temp_results"
         return 0
     fi
@@ -231,12 +239,12 @@ search_torrent() {
     
     rm -f "$temp_file" 2>/dev/null
     
-    # Group results
+    # Group results (pass query for relevance sorting)
     local grouped_results=()
     if [ ${#all_results[@]} -gt 0 ]; then
         local group_input=$(mktemp)
         printf "%s\n" "${all_results[@]}" > "$group_input"
-        local group_output=$(cat "$group_input" | group_results)
+        local group_output=$(cat "$group_input" | group_results "$query")
         if [ -n "$group_output" ]; then
              while IFS= read -r line || [ -n "$line" ]; do
                  grouped_results+=("$line")
