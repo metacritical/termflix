@@ -1,9 +1,81 @@
 #!/usr/bin/env bash
 #
 # Termflix Torrent Module
-# Torrent streaming, player integration, and download functions
+# Main streaming logic for peerflix and transmission-cli
 #
 
+# Calculate optimal buffer size based on video bitrate
+# Args: $1 = video file path, $2 = download speed (bytes/sec)
+# Returns: buffer size in bytes
+calculate_optimal_buffer() {
+    local video_file="$1"
+    local download_speed="${2:-0}"
+    
+    # Default buffer time (seconds)
+    local buffer_time=30
+    
+    # Try to get video bitrate using ffprobe
+    local bitrate_bps=0
+    if command -v ffprobe &> /dev/null && [ -f "$video_file" ]; then
+        # Get video bitrate in bits per second
+        bitrate_bps=$(ffprobe -v quiet -select_streams v:0 \
+            -show_entries stream=bit_rate \
+            -of default=noprint_wrappers=1:nokey=1 "$video_file" 2>/dev/null)
+        
+        # If no video bitrate, try overall bitrate
+        if [ -z "$bitrate_bps" ] || [ "$bitrate_bps" = "N/A" ] || [ "$bitrate_bps" -eq 0 ]; then
+            bitrate_bps=$(ffprobe -v quiet \
+                -show_entries format=bit_rate \
+                -of default=noprint_wrappers=1:nokey=1 "$video_file" 2>/dev/null)
+        fi
+    fi
+    
+    # Calculate buffer size
+    local buffer_size=0
+    if [ -n "$bitrate_bps" ] && [ "$bitrate_bps" -gt 0 ]; then
+        # Formula: (bitrate_bps × buffer_time) / 8
+        buffer_size=$((bitrate_bps * buffer_time / 8))
+        
+        # Adjust buffer time based on download speed
+        if [ "$download_speed" -gt 0 ]; then
+            local bitrate_bytes=$((bitrate_bps / 8))
+            if [ "$download_speed" -gt $((bitrate_bytes * 3 / 2)) ]; then
+                # Fast connection: reduce buffer to 20s
+                buffer_time=20
+                buffer_size=$((bitrate_bps * buffer_time / 8))
+            elif [ "$download_speed" -lt "$bitrate_bytes" ]; then
+                # Slow connection: increase buffer to 60s
+                buffer_time=60
+                buffer_size=$((bitrate_bps * buffer_time / 8))
+            fi
+        fi
+    else
+        # Fallback: estimate based on file size
+        local file_size=$(stat -f%z "$video_file" 2>/dev/null || stat -c%s "$video_file" 2>/dev/null || echo "0")
+        if [ "$file_size" -lt 524288000 ]; then
+            # < 500MB: likely 480p/720p
+            buffer_size=10485760  # 10MB
+        elif [ "$file_size" -lt 1610612736 ]; then
+            # 500MB-1.5GB: likely 1080p
+            buffer_size=31457280  # 30MB
+        else
+            # > 1.5GB: likely 4K or high bitrate 1080p
+            buffer_size=52428800  # 50MB
+        fi
+    fi
+    
+    # Apply min/max bounds
+    local min_buffer=10485760   # 10MB minimum
+    local max_buffer=209715200  # 200MB maximum
+    
+    if [ "$buffer_size" -lt "$min_buffer" ]; then
+        buffer_size=$min_buffer
+    elif [ "$buffer_size" -gt "$max_buffer" ]; then
+        buffer_size=$max_buffer
+    fi
+    
+    echo "$buffer_size"
+}
 
 # Check if torrent has subtitle files and return info
 has_subtitles() {
@@ -129,7 +201,7 @@ stream_peerflix() {
         return 1
     fi
     
-    local args=("-p" "0")
+    local args=("-p" "8888")  # Fixed port for HTTP streaming
     
     if [ -n "$index" ]; then
         args+=("-i" "$index")
@@ -1207,18 +1279,21 @@ EOF
     echo
     
     # Buffer video before starting player (wait for 3-4 minutes of content)
-    # Estimate: assume average bitrate of 2-3 Mbps for 1080p, so 3-4 minutes = ~45-60 MB
-    # We'll wait for at least 50MB to be downloaded
+    # Smart buffering: Download initial chunk to analyze video
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${CYAN}Buffering video...${RESET}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    local target_buffer_size=52428800  # 50MB (3-4 minutes at ~2Mbps)
+    
+    # Phase 1: Download 2MB for analysis
+    local analysis_size=2097152  # 2MB
+    local target_buffer_size=0
+    local buffer_calculated=false
     local buffer_wait=0
     local max_buffer_wait=300  # 5 minutes max wait
     local last_size=0
     local stalled_count=0
     local connected_peers=0
-    local total_peers=0
+    total_peers=0
     
     while [ $buffer_wait -lt $max_buffer_wait ]; do
         if [ ! -f "$video_path" ]; then
@@ -1228,6 +1303,51 @@ EOF
         fi
         
         local current_size=$(stat -f%z "$video_path" 2>/dev/null || stat -c%s "$video_path" 2>/dev/null || echo "0")
+        
+        # Phase 1: Analyze video after 2MB downloaded
+        if [ "$buffer_calculated" = false ] && [ "$current_size" -ge "$analysis_size" ]; then
+            echo ""
+            echo -e "${YELLOW}Analyzing video bitrate...${RESET}"
+            
+            # Calculate download speed so far
+            local download_speed=0
+            if [ $buffer_wait -gt 0 ]; then
+                download_speed=$((current_size / buffer_wait))
+            fi
+            
+            # Calculate optimal buffer
+            target_buffer_size=$(calculate_optimal_buffer "$video_path" "$download_speed")
+            buffer_calculated=true
+            
+            # Convert to MB for display
+            local buffer_mb=$((target_buffer_size / 1048576))
+            echo -e "${GREEN}✓ Buffer target: ${buffer_mb} MB${RESET}"
+            echo ""
+            
+            # Write analysis status
+            if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+                local progress_percent=$((current_size * 100 / analysis_size))
+                [ $progress_percent -gt 100 ] && progress_percent=100
+                local speed_bytes=$download_speed
+                local size_mb=$((current_size / 1048576))
+                echo "${progress_percent}|${speed_bytes}|${connected_peers}|${total_peers}|${size_mb}|ANALYZING" > "$TERMFLIX_BUFFER_STATUS"
+            fi
+        fi
+        
+        # Skip rest if we haven't calculated buffer yet
+        if [ "$buffer_calculated" = false ]; then
+            sleep 1
+            buffer_wait=$((buffer_wait + 1))
+            
+            # Write initial analyzing status
+            if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+                local progress_percent=$((current_size * 100 / analysis_size))
+                [ $progress_percent -gt 100 ] && progress_percent=100
+                local size_mb=$((current_size / 1048576))
+                echo "${progress_percent}|0|0|0|${size_mb}|ANALYZING" > "$TERMFLIX_BUFFER_STATUS"
+            fi
+            continue
+        fi
         
         # Extract peer information from peerflix output
         if [ -f "$temp_output" ] && [ -s "$temp_output" ]; then
@@ -1396,39 +1516,35 @@ EOF
     fi
     
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo -e "${GREEN}Launching $player from local directory...${RESET}"
-    echo -e "  ${CYAN}Directory:${RESET} $video_dir"
-    echo -e "  ${CYAN}Video:${RESET} $video_name"
+    echo -e "${GREEN}Launching $player with peerflix stream...${RESET}"
+    echo -e "  ${CYAN}Stream URL:${RESET} http://localhost:8888/"
     if [ -n "$subtitle_arg" ]; then
-        echo -e "  ${CYAN}Subtitle:${RESET} $subtitle_arg"
+        echo -e "  ${CYAN}Subtitle:${RESET} $subtitle_arg (from $video_dir)"
     fi
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo
     
-    # Launch player from the video directory
+    # Launch player with HTTP stream URL (allows seeking ahead)
     local player_pid=""
-    cd "$video_dir" || {
-        echo -e "${RED}Error:${RESET} Could not change to video directory"
-        kill $peerflix_pid 2>/dev/null || true
-        rm -f "$temp_output" 2>/dev/null
-        return 1
-    }
+    local stream_url="http://localhost:8888/"
     
     if [ "$player" = "vlc" ]; then
         if [ -n "$subtitle_arg" ]; then
-            echo -e "${YELLOW}Command:${RESET} vlc \"$video_name\" --sub-file=\"$subtitle_arg\""
-            vlc "$video_name" --sub-file="$subtitle_arg" >/dev/null 2>&1 &
+            local sub_path="$video_dir/$subtitle_arg"
+            echo -e "${YELLOW}Command:${RESET} vlc \"$stream_url\" --sub-file=\"$sub_path\""
+            vlc "$stream_url" --sub-file="$sub_path" > /dev/null 2>&1 &
             player_pid=$!
         else
-            vlc "$video_name" >/dev/null 2>&1 &
+            vlc "$stream_url" > /dev/null 2>&1 &
             player_pid=$!
         fi
     else
-        # mpv
-        local mpv_args=("$video_name")
+        # mpv - use HTTP URL for better seeking
+        local mpv_args=("$stream_url")
         if [ -n "$subtitle_arg" ]; then
-            echo -e "${YELLOW}Command:${RESET} mpv \"$video_name\" --sub-file=\"$subtitle_arg\" --sid=1 --sub-visibility=yes"
-            mpv_args+=("--sub-file=$subtitle_arg")
+            local sub_path="$video_dir/$subtitle_arg"
+            echo -e "${YELLOW}Command:${RESET} mpv \"$stream_url\" --sub-file=\"$sub_path\" --sid=1 --sub-visibility=yes"
+            mpv_args+=("--sub-file=$sub_path")
             mpv_args+=("--sid=1")
             mpv_args+=("--sub-visibility=yes")
         fi

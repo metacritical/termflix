@@ -1,6 +1,11 @@
 # Termflix Code Review and Refactor Notes
 
-This document captures a static version of the analysis done in the assistant conversation, plus an additional pass focused on SOLID‑oriented refactoring opportunities.
+This document captures a snapshot of the current Termflix codebase, focusing on:
+
+- Large/complex files that are likely refactor candidates.
+- Unused, duplicate, or overlapping functionality.
+- Modules that are being actively replaced by newer Python backends.
+- Prime refactor targets with SOLID‑style guidance (adapted for Bash/Python).
 
 ---
 
@@ -17,45 +22,63 @@ These files are long and/or mix many responsibilities, and are good candidates f
 - `bin/scripts/fetch_multi_source_catalog.py` (~583 lines) – multi‑source catalog fetcher combining YTS + TPB with caching and aggregation.
 - `bin/termflix` (~569 lines) – main CLI entrypoint that wires modules, config, and flows.
 - `bin/modules/ui/fzf_catalog.sh` (~522 lines) – FZF catalog UI, navigation, staging files, preview wiring.
-- `bin/modules/api/omdb.sh` (~459 lines) – OMDB API client and parsing helpers.
-- `bin/modules/api/tmdb.sh` (~442 lines) – TMDB API client and parsing helpers.
+- `lib/termflix/scripts/api.py` (~460 lines) – unified Python metadata API (OMDB/TMDB/YTS) with caching; intended to replace shell OMDB/TMDB logic.
+- `bin/modules/api/omdb.sh` (~459 lines) – OMDB API client and parsing helpers (being superseded by `lib/termflix/scripts/api.py`).
+- `bin/modules/api/tmdb.sh` (~442 lines) – TMDB API client and parsing helpers (also being superseded by `lib/termflix/scripts/api.py`).
 - `bin/modules/ui/preview_fzf.sh` (~413 lines) – rich preview UI (posters, metadata, descriptions).
+- `lib/termflix/scripts/poster_cache.py` (~410 lines) – Python poster cache/viu pre‑renderer.
 - `bin/scripts/group_results.py` (~399 lines) – torrent result grouping/deduplication into `COMBINED` lines.
 - `bin/modules/core/config.sh` (~379 lines) – config discovery, parsing, and caching.
 - `bin/scripts/search_eztv.py` (~350 lines) – EZTV search with caching and heuristics.
 - `bin/modules/api/eztv.sh` (~343 lines) – Bash EZTV API integration.
+- `bin/modules/streaming/buffer_ui.sh` (~315 lines) – buffer status UI for streaming.
 
 These are not necessarily “bad,” but they’re the primary hot‑spots for complexity and duplication.
 
-### 1. Poster Fetching – Duplicate Implementations
+### 1. Poster / Metadata APIs – Bash Stack vs New Python API Module
 
 Files:
 
-- `bin/scripts/get_poster.py`
-- `lib/termflix/scripts/get_poster.py`
-- `bin/modules/posters.sh`
-- `bin/modules/ui/preview_fzf.sh`
+- Legacy/primary runtime:
+  - `bin/modules/posters.sh`
+  - `bin/modules/ui/preview_fzf.sh`
+  - `bin/modules/api/omdb.sh`
+  - `bin/modules/api/tmdb.sh`
+  - `bin/scripts/get_poster.py`
+  - `bin/scripts/google_poster.py`
+- New Python API backend:
+  - `lib/termflix/scripts/api.py`
+  - `lib/termflix/scripts/get_metadata.py`
+  - `lib/termflix/scripts/get_poster.py`
 
 Observations:
 
-- Both `get_poster.py` scripts implement nearly the same pipeline:
-  1. OMDb (best for title search)
-  2. YTS (public API)
-  3. TMDB
-  4. Google Images scraping
-- The **older** implementation is `bin/scripts/get_poster.py`: simple, sequential calls with minimal parsing.
-- The **newer** implementation is `lib/termflix/scripts/get_poster.py`: pre‑compiled regexes, shared SSL context, better year extraction, and parallel API calls via `ThreadPoolExecutor`.
-- Bash code (`bin/modules/posters.sh`, `bin/modules/ui/preview_fzf.sh`) references `"$TERMFLIX_SCRIPTS_DIR/get_poster.py"`, which resolves into the *bin/scripts* version, not the newer library version.
+- The runtime path for Termflix still uses the older Bash + script pipeline:
+  - `bin/termflix` sets `TERMFLIX_SCRIPTS_DIR="$SCRIPT_DIR/scripts"` and exports it.
+  - `bin/modules/posters.sh` and `bin/modules/ui/preview_fzf.sh` use:
+    - `"$TERMFLIX_SCRIPTS_DIR/get_poster.py"` (i.e., `bin/scripts/get_poster.py`).
+    - `"$TERMFLIX_SCRIPTS_DIR/google_poster.py"`.
+  - `preview_fzf.sh` gets detailed metadata via `bin/modules/api/omdb.sh` (and implicitly TMDB via the shell modules).
+- Meanwhile, in `lib/termflix/scripts`:
+  - `api.py` defines `TermflixAPI`, a unified Python wrapper for OMDB, TMDB, YTS with file caching, exposed as both module and CLI (search/poster/description).
+  - `get_metadata.py` provides a separate metadata‑only pipeline that normalizes OMDB/TMDB/YTS/Google into an OMDB‑like shape.
+  - `get_poster.py` (in `lib/termflix/scripts/`) is an optimized poster fetcher (parallel calls, better parsing).
+- None of these new Python API helpers are currently referenced from `bin/termflix` or its modules.
 
 Conclusion:
 
-- There are two poster fetchers with overlapping behavior; the older one is the one actually used.
+- There are two overlapping stacks for metadata/posters:
+  - The current runtime uses Bash `omdb.sh`/`tmdb.sh` + `bin/scripts/get_poster.py`.
+  - A richer Python metadata API (`lib/termflix/scripts/api.py` + `get_metadata.py` + `lib/.../get_poster.py`) exists but is not yet wired into the Termflix CLI.
 
 Recommendation:
 
-- Standardize on the newer `lib/termflix/scripts/get_poster.py`.
-- Adjust `TERMFLIX_SCRIPTS_DIR` and call sites so that Bash modules call the library version.
-- Once everything uses the new script and behavior is validated, deprecate or remove `bin/scripts/get_poster.py`.
+- Decide which layer should be canonical:
+  - If you want to consolidate logic in Python:
+    - Add lightweight Bash wrappers that call `api.py` for `movie_info`, `poster`, and `description`.
+    - Gradually remove or slim down `omdb.sh`, `tmdb.sh`, `bin/scripts/get_poster.py`, and metadata logic in `preview_fzf.sh`.
+  - If you prefer to keep metadata in Bash:
+    - Explicitly mark `lib/termflix/scripts/api.py`, `get_metadata.py`, and `lib/.../get_poster.py` as experimental or future replacements so contributors understand the split.
 
 ### 2. Catalog Fetching – Bash Stack vs Python Catalog Engine
 
@@ -72,22 +95,22 @@ Observations:
   - Bash functions in `bin/modules/catalog/fetching.sh` expose:
     - `get_latest_movies`, `get_trending_movies`, `get_popular_movies`,
       `get_catalog_by_genre`, `get_latest_shows`, `get_new_48h_movies`.
-  - Those functions call `bin/scripts/fetch_multi_source_catalog.py` (YTS+TPB combination) when possible; otherwise they fall back to curl/jq against YTS/EZTV/TPB.
-  - `bin/termflix` uses `bin/modules/catalog.sh`, which pulls in `fetching.sh`, i.e. this Bash+Python script stack is the active backend.
+  - These functions call `bin/scripts/fetch_multi_source_catalog.py` (YTS+TPB combination) when possible; otherwise they fall back to curl/jq against YTS/EZTV/TPB.
+  - `bin/termflix` uses `bin/modules/catalog.sh`, which imports `fetching.sh`, so this Bash+Python script stack remains the active backend.
 - The Python catalog engine:
   - `lib/termflix/scripts/catalog.py` defines `CatalogFetcher` with rich logic:
-    - YTS, TPB, EZTV integration.
-    - Local caching in `~/.cache/termflix`.
-    - Genre mapping and various catalog operations (latest, trending, popular, genre, etc.).
-  - It includes a CLI `main()` that outputs pipe‑formatted lines suitable for Bash.
-  - The docstring explicitly says it “replaces catalog.sh fetching functions”.
-- However, there are no references from the `bin/termflix` Bash stack into `lib/termflix/scripts/catalog.py`.
+    - YTS, TPB, EZTV integration and caching under `~/.cache/termflix`.
+    - Genre mapping and various catalog operations (latest, trending, popular, genre, shows, search, enriched catalogs).
+  - `lib/termflix/scripts/category_loader.py` is a companion script that:
+    - Uses `CatalogFetcher` to fetch category‑specific lists.
+    - Outputs FZF‑compatible lines (`display|idx|pipe_format`).
+  - These are currently self‑contained; there are no references from the Bash modules to `category_loader.py` or the `CatalogFetcher` CLI.
 
 Conclusion:
 
 - There are effectively **two catalog engines**:
-  - The legacy Bash+`fetch_multi_source_catalog.py` path (currently used).
-  - The newer Python `CatalogFetcher` engine (not wired in yet).
+  - The legacy Bash + `fetch_multi_source_catalog.py` path (actively used).
+  - The newer Python `CatalogFetcher` engine + `category_loader.py` (not yet wired into Termflix runtime).
 
 Recommendation:
 
@@ -116,13 +139,13 @@ Files:
 
 Observations:
 
-- `bin/modules/search.sh` wires termflix search to these per‑site Python scripts and handles aggregation and grouping.
+- `bin/modules/search.sh` wires Termflix search to the per‑site Python scripts and handles aggregation and grouping.
 - `lib/termflix/scripts/generic_torrent_scraper.py` is an abstraction intended to implement a site scraper from a config (selectors, patterns, parsing helpers).
-- There are no obvious references to `generic_torrent_scraper.py` in the termflix runtime path; all live search traffic goes through the custom scripts.
+- There are still no references to `generic_torrent_scraper.py` in the Termflix runtime path; all live search traffic continues to go through the custom scripts.
 
 Conclusion:
 
-- `generic_torrent_scraper.py` overlaps in responsibility with the per‑site scripts but is not used.
+- `generic_torrent_scraper.py` overlaps in responsibility with the per‑site scripts but remains unused in production flows.
 
 Recommendation:
 
@@ -144,12 +167,12 @@ Observations:
   - Cache directory discovery (`~/.config/termflix/cache/viu_renders`).
   - Cache key generation (`viu_cache_key`).
   - Existence checks, pre‑rendering via `viu`, `display_cached_viu`, batch pre‑render, and cleanup.
-- `lib/termflix/scripts/poster_cache.py` implements a `PosterCache` class with essentially the same responsibilities from the Python side.
-- The Bash UI code (`grid.sh`, `posters.sh`, `preview_*`) currently uses the Bash cache functions; there is no runtime use of `poster_cache.py`.
+- `lib/termflix/scripts/poster_cache.py` implements a `PosterCache` class and related CLI that provide similar functionality from Python.
+- The Bash UI code (`grid.sh`, `posters.sh`, `preview_*`) currently uses the Bash cache functions; there is still no runtime use of `poster_cache.py` inside `bin/termflix` flows.
 
 Conclusion:
 
-- There are two implementations of the same caching concept, one in Bash and one in Python.
+- There are two implementations of the same caching concept, one in Bash and one in Python; the Python one looks like a reusable backend but has not yet been integrated.
 
 Recommendation:
 
@@ -184,52 +207,19 @@ Recommendation:
   - If Python is required, rely on `group_results.py` for deduplication and simplify the Bash fallback.
   - If Python is optional, keep the Bash dedupe only for the “no Python” path and avoid double‑deduplication when the Python script runs successfully.
 
-### 6. Metadata / Poster Enrichment in Multiple Layers
+### 6. Likely Unused or “Next Gen” Modules
 
-Files:
-
-- Bash + API modules:
-  - `bin/modules/ui/preview_fzf.sh`
-  - `bin/modules/posters.sh`
-  - `bin/modules/api/omdb.sh`, `bin/modules/api/tmdb.sh`
-  - `bin/scripts/google_poster.py`
-- Python metadata:
-  - `lib/termflix/scripts/get_metadata.py`
-
-Observations:
-
-- `preview_fzf.sh`:
-  - Fetches OMDB metadata (genre, runtime, rating, year) via `omdb.sh`.
-  - Also falls back to TMDB and Google‑style lookups for descriptions.
-- `posters.sh`:
-  - Performs enrichment of catalog entries missing posters by invoking `get_poster.py` or `google_poster.py`.
-- `get_metadata.py`:
-  - Provides a unified Python pipeline to get structured metadata (OMDb, TMDB, YTS, Google).
-- There is no clear single source of truth for “metadata enrichment”; logic is spread across Bash, multiple scripts, and a separate Python module.
-
-Conclusion:
-
-- Metadata enrichment is duplicated across Bash and Python, increasing maintenance cost.
-
-Recommendation:
-
-- Centralize metadata enrichment:
-  - Option A – Bash‑first:
-    - Keep `omdb.sh`/`tmdb.sh`/`google_poster.py` and make `get_metadata.py` explicitly “experimental”.
-  - Option B – Python‑first:
-    - Adopt `get_metadata.py` as the central pipeline and call it from Bash wherever detailed metadata is needed, removing redundant logic from `preview_fzf.sh` and `posters.sh`.
-
-### 7. Likely Unused Modules
-
-Based on ripgrep searches and wiring from `bin/termflix`, the following modules appear to have no active call sites in the current termflix flow:
+Based on `rg` searches and wiring from `bin/termflix`, the following modules still appear to have no active call sites in the current Termflix CLI flow:
 
 - `lib/termflix/scripts/generic_torrent_scraper.py`
-- `lib/termflix/scripts/catalog.py` (as a backend; not referenced from the Bash entrypoints)
+- `lib/termflix/scripts/catalog.py` (as a backend; not referenced from Bash entrypoints)
+- `lib/termflix/scripts/category_loader.py` (not wired into FZF/gum/catalog modules yet)
 - `lib/termflix/scripts/get_metadata.py`
 - `lib/termflix/scripts/poster_cache.py`
 - `lib/termflix/scripts/get_poster.py` (newer implementation, not wired in)
+- `lib/termflix/scripts/api.py` (unified metadata API, not yet used by `bin/termflix`)
 
-These may be experiments or refactor prototypes. If they are not part of the planned architecture, consider marking or removing them to reduce cognitive load.
+These look like “next‑gen” Python backends intended to replace portions of the Bash stack. If they are part of the roadmap, keep them but document that they are not hooked up yet; otherwise, consider pruning or consolidating.
 
 ---
 
@@ -420,4 +410,3 @@ If you decide to make `CatalogFetcher` the canonical backend:
   - `bin/modules/ui/gum_catalog.sh`
   - `bin/modules/search.sh`
 - For each, target SRP first: pull out small, testable helpers (even in Bash) and define clear function‑level contracts to approximate SOLID in a shell‑based codebase.
-

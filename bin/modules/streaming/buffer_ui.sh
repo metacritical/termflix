@@ -91,7 +91,9 @@ fi
 # Activity indicator in top-right (like Stage 1)
 activity=""
 if [[ "$state" == "STARTING" ]]; then
-    activity="${spinner} Initializing..."
+    activity="${spinner} Connecting to peers..."
+elif [[ "$state" == "ANALYZING" ]]; then
+    activity="${spinner} Analyzing video (${buffered_mb} MB)..."
 elif [[ "$state" == "BUFFERING" ]]; then
     activity="${spinner} Downloading"
 elif [[ "$state" == "READY" ]]; then
@@ -114,10 +116,15 @@ GREEN="\033[38;5;46m"
 YELLOW="\033[38;5;226m"
 GRAY="\033[38;5;240m"
 CYAN="\033[38;5;51m"
+BRIGHT_CYAN="\033[38;2;94;234;212m"  # Charm Bracelet cyan #5EEAD4
 RESET="\033[0m"
 
-# Activity indicator at top (colored)
-echo -e "${GRAY}${activity}${RESET}"
+# Activity indicator at top-right (colored bright cyan)
+# Calculate position for right-alignment (assume 80 char width)
+activity_len=${#activity}
+padding=$((80 - activity_len))
+printf "%${padding}s" ""  # Right padding
+echo -e "${BRIGHT_CYAN}${activity}${RESET}"
 echo ""
 
 # Movie info header
@@ -244,10 +251,10 @@ PREVIEW_EOF
     # Generate random port for FZF API (between 10000 and 20000)
     local fzf_port=$((10000 + RANDOM % 10000))
     
-    # Start background refresh loop (Sidecar)
+    # Start background refresh loop (Sidecar) - refresh every 0.3s for smooth updates
     {
         while kill -0 "$stream_pid" 2>/dev/null; do
-            sleep 1
+            sleep 0.3
             curl -s -X POST -d 'refresh-preview' "http://localhost:${fzf_port}" >/dev/null 2>&1
         done
     } &
