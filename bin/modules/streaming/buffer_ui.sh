@@ -138,13 +138,20 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Poster display (fixed aspect ratio) - AFTER text to prevent overlay
-if [[ -f "$poster" ]] && command -v viu &> /dev/null; then
-    viu -w 40 "$poster" 2>/dev/null
-    echo ""
-elif [[ -f "$poster" ]] && [[ "$TERM" == "xterm-kitty" ]]; then
-    # Removed --place to prevent absolute positioning overlay
-    # Image will flow naturally after the text
-    kitten icat --align left "$poster" 2>/dev/null
+if [[ -f "$poster" ]]; then
+    # Direct image display (can't source modules from /tmp preview script)
+    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
+        # Kitty terminal - use kitten icat
+        kitten icat --align left --width 40 "$poster" 2>/dev/null
+    elif command -v viu &> /dev/null; then
+        # VIU - Unicode-based image viewer
+        viu -w 40 "$poster" 2>/dev/null
+    elif command -v chafa &> /dev/null; then
+        # Chafa - Block graphics fallback
+        TERM=xterm-256color chafa --symbols=block --size="40x30" "$poster" 2>/dev/null
+    else
+        echo "[POSTER]"
+    fi
     echo ""
     echo ""
     echo ""

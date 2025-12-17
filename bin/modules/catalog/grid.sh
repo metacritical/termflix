@@ -101,19 +101,28 @@ draw_grid_row() {
                 # Kitty inline graphics – used in dedicated grid mode
                 is_kitty[$i]=1
                 has_image[$i]=1
-            elif check_viu >/dev/null 2>&1; then
-                # Pre-render image with viu and capture output line by line
+            else
+                # Use universal image display helper for non-kitty terminals
+                # Source the helper module
+                local grid_script_dir="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+                source "${grid_script_dir}/../ui/image_display.sh"
+                
+                # Pre-render image and capture output line by line
                 local rendered_file="${temp_dir}/rendered_${i}.txt"
-                viu -w "$img_width" -h "$img_height" "$image_file" 2>/dev/null > "$rendered_file"
-                # Sanitize VIU output: remove cursor movement codes but keep colors
-                if command -v perl &> /dev/null; then
-                    perl -i -pe "s/\x1b\[[0-9;]*[A-HJKSTf]//g" "$rendered_file" 2>/dev/null
-                fi
-                if [ $? -eq 0 ] && [ -s "$rendered_file" ]; then
-                    image_line_files[$i]="$rendered_file"
-                    has_image[$i]=1
-                else
-                    rm -f "$rendered_file" 2>/dev/null
+                
+                # Use viu if available, otherwise display_image will handle fallback
+                if command -v viu &> /dev/null; then
+                    viu -w "$img_width" -h "$img_height" "$image_file" 2>/dev/null > "$rendered_file"
+                    # Sanitize VIU output: remove cursor movement codes but keep colors
+                    if command -v perl &> /dev/null; then
+                        perl -i -pe "s/\x1b\[[0-9;]*[A-HJKSTf]//g" "$rendered_file" 2>/dev/null
+                    fi
+                    if [ $? -eq 0 ] && [ -s "$rendered_file" ]; then
+                        image_line_files[$i]="$rendered_file"
+                        has_image[$i]=1
+                    else
+                        rm -f "$rendered_file" 2>/dev/null
+                    fi
                 fi
             fi
         fi

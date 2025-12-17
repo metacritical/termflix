@@ -47,9 +47,7 @@ source "$SCRIPT_DIR/modules/core/deps.sh"
 
 # UI Modules
 source "$SCRIPT_DIR/modules/ui/status.sh"
-
 source "$SCRIPT_DIR/modules/ui/help.sh"
-source "$SCRIPT_DIR/modules/ui/gum_catalog.sh"
 source "$SCRIPT_DIR/modules/ui/fzf_catalog.sh"
 
 # Feature Modules

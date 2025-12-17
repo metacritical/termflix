@@ -411,7 +411,7 @@ handle_fzf_selection() {
 
               if [[ "$TERM" == "xterm-kitty" ]]; then
                   # KITTY MODE: Poster/Sources/Exports already prepared above
-                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_kitty.sh"
+                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
                   
                   # 5. Run FZF w/ Left Pane Preview (Picker on Right)
                   ver_pick=$(printf "%s" "$options" | fzf \
@@ -441,7 +441,7 @@ handle_fzf_selection() {
               else
                   # BLOCK MODE: Preview on LEFT
                   # Must pass env vars explicitly since FZF subprocess doesn't inherit them
-                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2_block.sh"
+                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
                   
                   ver_pick=$(STAGE2_POSTER="$poster_file" \
                              STAGE2_TITLE="$c_name" \
