@@ -1,118 +1,308 @@
 #!/usr/bin/env bash
 #
-# Termflix Buffer UI Module
-# Reusable progress bar and buffering status display
+# Termflix Buffering UI Module
+# Updates Stage 2 preview window with buffering status
 #
 
-# Source colors if not already loaded
-if [[ -z "$C_RESET" ]]; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    [[ -f "${SCRIPT_DIR}/../core/colors.sh" ]] && source "${SCRIPT_DIR}/../core/colors.sh"
+show_inline_buffer_ui() {
+    local title="$1"
+    local poster="$2"
+    local plot="$3"
+    local magnet="$4"
+    local source="$5"
+    local quality="$6"
+    local selected_idx="${7:-0}"
+    
+    # Normalize TMPDIR (macOS adds trailing slash)
+    local tmpdir="${TMPDIR:-/tmp}"
+    tmpdir="${tmpdir%/}"  # Remove trailing slash
+    
+    # Setup file paths
+    local status_file="$tmpdir/termflix_buffer_status.txt"
+    local stream_log="$tmpdir/termflix_stream_debug.log"
+    echo "0|0|0|0|0|STARTING" > "$status_file"
+    
+    echo "=== Buffer UI Started ===" > "$stream_log"
+    echo "Time: $(date)" >> "$stream_log"
+    echo "Magnet: ${magnet:0:60}..." >> "$stream_log"
+    echo "Status file: $status_file" >> "$stream_log"
+    echo "Starting stream_torrent in background..." >> "$stream_log"
+    
+    {
+        export TERMFLIX_BUFFER_STATUS="$status_file"
+        echo "Calling stream_torrent..." >> "$stream_log" 2>&1
+        stream_torrent "$magnet" "" false false >> "$stream_log" 2>&1
+        echo "stream_torrent exited with code: $?" >> "$stream_log" 2>&1
+    } &
+    local stream_pid=$!
+    
+    # Setup cleanup
+    local preview_script="$tmpdir/termflix_buffer_preview.sh"
+    
+    # Cleanup function
+    cleanup_stream() {
+        tput cnorm
+        if kill -0 "$stream_pid" 2>/dev/null; then
+            kill -9 "$stream_pid" 2>/dev/null
+            wait "$stream_pid" 2>/dev/null
+        fi
+        rm -f "$status_file" "$preview_script" 2>/dev/null
+    }
+    
+    trap cleanup_stream EXIT INT TERM
+    
+    # Export environment for preview script
+    export TERMFLIX_BUFFER_STATUS="$status_file"
+    export TERMFLIX_STREAM_LOG="$stream_log"
+    export TERMFLIX_MAGNET="$magnet"
+    
+    # Generate random port for FZF API (between 10000 and 20000)
+    local fzf_port=$((10000 + RANDOM % 10000))
+    export FZF_API_PORT="$fzf_port"
+    cat > "$preview_script" << 'PREVIEW_EOF'
+#!/usr/bin/env bash
+# Buffering preview - updates continuously
+
+# Movie metadata from environment
+status_file="$TERMFLIX_BUFFER_STATUS"
+stream_log="$TERMFLIX_STREAM_LOG"
+poster="$STAGE2_POSTER"
+title="$STAGE2_TITLE"
+plot="$STAGE2_PLOT"
+sources="$STAGE2_SOURCES"
+
+# Read status file
+state="STARTING"
+progress=0
+speed_bytes=0
+connected_peers=0
+total_peers=0
+buffered_mb=0
+
+# Spinner frames
+spinner_frames=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+frame_idx=$((EPOCHSECONDS % 10))
+spinner="${spinner_frames[$frame_idx]}"
+
+if [[ -f "$TERMFLIX_BUFFER_STATUS" ]]; then
+    IFS='|' read -r progress speed_bytes connected_peers total_peers buffered_mb state < "$TERMFLIX_BUFFER_STATUS"
 fi
 
-# Draw a progress bar
-# Usage: draw_buffer_bar <percent> <width>
-# Returns: Progress bar string like "🟩🟩🟩⬜⬜⬜"
-draw_buffer_bar() {
-    local percent="${1:-0}"
-    local width="${2:-20}"
-    
-    # Ensure percent is integer
-    percent=$(echo "$percent" | cut -d. -f1)
-    [[ -z "$percent" ]] && percent=0
-    [[ "$percent" -gt 100 ]] && percent=100
-    [[ "$percent" -lt 0 ]] && percent=0
-    
-    local filled=$((percent * width / 100))
-    [[ "$filled" -gt "$width" ]] && filled=$width
-    
-    local bar=""
-    local i=0
-    while [[ $i -lt $filled ]]; do
-        bar="${bar}🟩"
-        ((i++))
-    done
-    while [[ $i -lt $width ]]; do
-        bar="${bar}⬜"
-        ((i++))
-    done
-    
-    echo "$bar"
-}
+# Activity indicator in top-right (like Stage 1)
+activity=""
+if [[ "$state" == "STARTING" ]]; then
+    activity="${spinner} Initializing..."
+elif [[ "$state" == "BUFFERING" ]]; then
+    activity="${spinner} Downloading"
+elif [[ "$state" == "READY" ]]; then
+    activity="✓ Ready"
+fi
 
-# Draw a colored line progress bar (like image 2)
-# Uses ━ character with colors
-# Usage: draw_line_bar <percent> <width>
-draw_line_bar() {
-    local percent="${1:-0}"
-    local width="${2:-40}"
-    
-    percent=$(echo "$percent" | cut -d. -f1)
-    [[ -z "$percent" ]] && percent=0
-    [[ "$percent" -gt 100 ]] && percent=100
-    
-    local filled=$((percent * width / 100))
-    [[ "$filled" -gt "$width" ]] && filled=$width
-    
-    local bar=""
-    local i=0
-    
-    # Filled portion (magenta/purple gradient)
-    while [[ $i -lt $filled ]]; do
-        bar="${bar}\033[38;5;129m━\033[0m"
-        ((i++))
-    done
-    # Unfilled portion (gray)
-    while [[ $i -lt $width ]]; do
-        bar="${bar}\033[38;5;240m━\033[0m"
-        ((i++))
-    done
-    
-    echo -e "$bar"
-}
+# Get latest activity from stream log (last 3 lines, filtered)
+recent_activity=""
+if [[ -f "$TERMFLIX_STREAM_LOG" ]]; then
+    recent_activity=$(tail -10 "$TERMFLIX_STREAM_LOG" 2>/dev/null | \
+        grep -i "peer\|connect\|download\|path\|buffer" | \
+        tail -3 | \
+        sed 's/^.*: //' | \
+        cut -c1-50)
+fi
 
-# Format download stats
-# Usage: format_download_stats <bytes_per_sec> <peers_connected> <peers_total>
-format_download_stats() {
-    local speed="$1"
-    local peers_conn="${2:-0}"
-    local peers_total="${3:-0}"
+# Colors
+PINK="\033[38;5;212m"
+GREEN="\033[38;5;46m"
+YELLOW="\033[38;5;226m"
+GRAY="\033[38;5;240m"
+CYAN="\033[38;5;51m"
+RESET="\033[0m"
+
+# Activity indicator at top (colored)
+echo -e "${GRAY}${activity}${RESET}"
+echo ""
+
+# Movie info header
+echo -e "${PINK}${title}${RESET}"
+echo ""
+echo "Sources: ${sources}"
+echo ""
+echo "🧲 Magnet: $TERMFLIX_MAGNET"
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# Poster display (fixed aspect ratio) - AFTER text to prevent overlay
+if [[ -f "$poster" ]] && command -v viu &> /dev/null; then
+    viu -w 40 "$poster" 2>/dev/null
+    echo ""
+elif [[ -f "$poster" ]] && [[ "$TERM" == "xterm-kitty" ]]; then
+    # Removed --place to prevent absolute positioning overlay
+    # Image will flow naturally after the text
+    kitten icat --align left "$poster" 2>/dev/null
+    echo ""
+    echo ""
+    echo ""
+else
+    echo "[POSTER]"
+    echo ""
+fi
+
+# Debug info
+if [[ -f "$stream_log" ]]; then
+    # Filter out error messages and verification loops
+    last_log=$(tail -5 "$stream_log" 2>/dev/null | grep -v "transmission\|error\|Error\|Verifying" | head -1)
+    if [[ -n "$last_log" ]]; then
+        echo -e "${GRAY}Debug: ${last_log:0:50}...${RESET}"
+        echo ""
+    fi
+fi
+
+# Buffering status (live)
+if [[ -f "$status_file" ]]; then
+    status_line=$(cat "$status_file")
+    IFS='|' read -r progress speed_bytes peers total_peers size state <<< "$status_line"
     
-    local speed_display=""
-    if [[ "$speed" -gt 1048576 ]]; then
-        speed_display="$(echo "scale=1; $speed / 1048576" | bc 2>/dev/null || echo "$((speed / 1048576))") MB/s"
-    elif [[ "$speed" -gt 1024 ]]; then
-        speed_display="$(echo "scale=1; $speed / 1024" | bc 2>/dev/null || echo "$((speed / 1024))") KB/s"
-    elif [[ "$speed" -gt 0 ]]; then
-        speed_display="${speed} B/s"
+    # Provide defaults
+    progress="${progress:-0}"
+    speed_bytes="${speed_bytes:-0}"
+    peers="${peers:-0}"
+    total_peers="${total_peers:-0}"
+    size="${size:-0}"
+    state="${state:-BUFFERING}"
+    
+    # Format speed from bytes/sec to human readable
+    speed="0"
+    if [[ $speed_bytes -gt 1048576 ]]; then
+        # MB/s
+        speed=$(awk "BEGIN {printf \"%.2f MB/s\", $speed_bytes / 1048576}")
+    elif [[ $speed_bytes -gt 1024 ]]; then
+        # KB/s
+        speed=$(awk "BEGIN {printf \"%.2f KB/s\", $speed_bytes / 1024}")
+    elif [[ $speed_bytes -gt 0 ]]; then
+        speed="${speed_bytes} B/s"
     fi
     
-    local stats=""
-    [[ -n "$speed_display" ]] && stats="Down: ${speed_display}"
-    [[ "$peers_total" -gt 0 ]] && stats="${stats}  S/L: ${peers_conn}/${peers_total}"
+    echo -e "${YELLOW}Status: ${state}${RESET}"
+    echo ""
     
-    echo "$stats"
+    if [[ "$state" == "READY" ]]; then
+        echo -e "${GREEN}✓ Buffer complete! Auto-playing...${RESET}"
+        echo ""
+        # Trigger FZF accept via API
+        if [[ -n "$FZF_API_PORT" ]]; then
+            curl -s -X POST -d 'accept' "http://localhost:${FZF_API_PORT}" >/dev/null 2>&1
+        fi
+    else
+        # Progress bar
+        bar_len=30
+        filled=$((progress * bar_len / 100))
+        
+        bar="${PINK}"
+        for ((i=0; i<filled; i++)); do bar+="━"; done
+        bar+="${GRAY}"
+        for ((i=filled; i<bar_len; i++)); do bar+="━"; done
+        bar+="${RESET}"
+        
+        echo -e "⬇  ${YELLOW}Downloading & Buffering${RESET}"
+        echo ""
+        echo -e "${bar} ${progress}%"
+        echo ""
+        printf "%-15s %s\n" "Speed:" "$speed"
+        printf "%-15s %d/%d\n" "Peers:" "${connected_peers:-0}" "${total_peers:-0}"
+        printf "%-15s %d MB\n" "Buffered:" "${buffered_mb:-0}"
+        echo ""
+        echo -e "${GRAY}Press ESC to cancel${RESET}"
+    fi
+else
+    echo -e "${YELLOW}Initializing stream...${RESET}"
+    echo ""
+    echo "Status file: $status_file"
+    if [[ -f "$stream_log" ]]; then
+        echo ""
+        echo "Recent log:"
+        tail -5 "$stream_log" 2>/dev/null | sed 's/^/  /'
+    fi
+fi
+PREVIEW_EOF
+    
+    chmod +x "$preview_script"
+    
+    # Export env vars for preview
+    export STAGE2_POSTER="$poster"
+    export STAGE2_TITLE="$title"
+    export STAGE2_PLOT="$plot"
+    export STAGE2_SOURCES="[$source]"
+    
+    # Read versions list
+    local options_file="${TMPDIR:-/tmp}/termflix_stage2_options.txt"
+    local options=""
+    if [[ -f "$options_file" ]]; then
+        options=$(cat "$options_file")
+    else
+        options="0|${quality} - ${source}|$title"
+    fi
+    
+    # Generate random port for FZF API (between 10000 and 20000)
+    local fzf_port=$((10000 + RANDOM % 10000))
+    
+    # Start background refresh loop (Sidecar)
+    {
+        while kill -0 "$stream_pid" 2>/dev/null; do
+            sleep 1
+            curl -s -X POST -d 'refresh-preview' "http://localhost:${fzf_port}" >/dev/null 2>&1
+        done
+    } &
+    local refresh_pid=$!
+    
+    # Update cleanup to kill refresh loop
+    cleanup_stream() {
+        if kill -0 "$refresh_pid" 2>/dev/null; then kill "$refresh_pid" 2>/dev/null; fi
+        tput cnorm
+        if kill -0 "$stream_pid" 2>/dev/null; then
+            kill -9 "$stream_pid" 2>/dev/null
+            wait "$stream_pid" 2>/dev/null
+        fi
+        rm -f "$status_file" "$preview_script" 2>/dev/null
+    }
+    
+    # Launch Stage 2 FZF with listen port for API updates
+    printf "%s" "$options" | fzf \
+        --ansi \
+        --delimiter='|' \
+        --with-nth=2 \
+        --height=100% \
+        --layout=reverse \
+        --border=rounded \
+        --margin=1 \
+        --padding=1 \
+        --prompt='⬇ Buffering ' \
+        --pointer='▶' \
+        --header="Streaming: ${title}" \
+        --header-first \
+        --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+        --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+        --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
+        --listen "$fzf_port" \
+        --preview "$preview_script" \
+        --preview-window=left:55%:wrap:border-right \
+        --bind='enter:accept' \
+        --bind='esc:abort' \
+        --bind='ctrl-c:abort' \
+        >/dev/null 2>&1
+    
+    local fzf_exit=$?
+    
+    # Cleanup exports
+    unset STAGE2_POSTER STAGE2_TITLE STAGE2_PLOT STAGE2_SOURCES
+    
+    # If user cancelled, cleanup and return
+    if [[ $fzf_exit -ne 0 ]]; then
+        cleanup_stream
+        return 1
+    fi
+    
+    # Stream is ready, bring player to foreground
+    if kill -0 "$stream_pid" 2>/dev/null; then
+        tput cnorm
+        fg %1 2>/dev/null || wait "$stream_pid"
+    fi
 }
-
-# Display full buffering status line
-# Usage: render_buffer_status <percent> <speed> <peers_conn> <peers_total> [<size_mb>]
-render_buffer_status() {
-    local percent="${1:-0}"
-    local speed="${2:-0}"
-    local peers_conn="${3:-0}"
-    local peers_total="${4:-0}"
-    local size_mb="${5:-}"
-    
-    local bar=$(draw_line_bar "$percent" 30)
-    local stats=$(format_download_stats "$speed" "$peers_conn" "$peers_total")
-    
-    local size_display=""
-    [[ -n "$size_mb" ]] && size_display="Size: ${size_mb} MB"
-    
-    echo -e "${bar}  ${percent}%"
-    [[ -n "$stats" ]] && echo -e "${stats}"
-    [[ -n "$size_display" ]] && echo -e "${size_display}"
-}
-
-# Export functions
-export -f draw_buffer_bar draw_line_bar format_download_stats render_buffer_status

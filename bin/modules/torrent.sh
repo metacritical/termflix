@@ -271,21 +271,37 @@ stream_peerflix() {
     # Don't use peerflix auto-launch - play file directly from local directory
     # Start peerflix in background to download files
     # Note: Remove -q temporarily to get path info, or check output more carefully
+    echo "DEBUG: Past subtitle check, preparing peerflix launch"
     local temp_output=$(mktemp 2>/dev/null || echo "/tmp/peerflix_output_$$")
     local peerflix_pid
+    
+    # Extract hash from magnet to clean specific cache
+    if [[ "$source" =~ ^magnet: ]]; then
+        local torrent_hash=$(echo "$source" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | tr '[:upper:]' '[:lower:]' | head -1)
+        if [ -n "$torrent_hash" ]; then
+            # Clean this specific torrent's cache to prevent verification loop
+            rm -rf "/tmp/torrent-stream/$torrent_hash" 2>/dev/null
+            rm -f "/tmp/torrent-stream/${torrent_hash}.torrent" 2>/dev/null
+            echo -e "${YELLOW}Cleared cache for torrent: ${torrent_hash:0:8}...${RESET}"
+        fi
+    fi
     
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo -e "${YELLOW}Starting peerflix to download torrent files...${RESET}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    # Remove quiet flag temporarily to see path output (we need "info path" line)
+    
+    # Build peerflix arguments - add --remove to clean up on exit
     local temp_args=()
     for arg in "${args[@]}"; do
-        if [ "$arg" != "-q" ]; then
+        if [[ "$arg" != "-q" ]]; then
             temp_args+=("$arg")
         fi
     done
+    temp_args+=("--remove")  # Clean up files when done
+    echo "DEBUG: Launching peerflix command: peerflix \"$source\" \"${temp_args[@]}\""
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
+    echo "DEBUG: Peerflix launched with PID: $peerflix_pid"
     
     # Check if peerflix started successfully (wait a moment, then check if process is still running)
     sleep 2
@@ -884,24 +900,13 @@ EOF
                         return 1
                     }
                     
-                    if [ "$player" = "vlc" ]; then
-                        if [ -n "$subtitle_arg" ]; then
-                            vlc "$video_name" --sub-file="$subtitle_arg" >/dev/null 2>&1 &
-                        else
-                            vlc "$video_name" >/dev/null 2>&1 &
-                        fi
-                        player_pid=$!
-                    else
-                        # mpv
-                        local mpv_args=("$video_name")
-                        if [ -n "$subtitle_arg" ]; then
-                            mpv_args+=("--sub-file=$subtitle_arg")
-                            mpv_args+=("--sid=1")
-                            mpv_args+=("--sub-visibility=yes")
-                        fi
-                        mpv "${mpv_args[@]}" >/dev/null 2>&1 &
-                        player_pid=$!
+                    if [ -z "$player" ]; then
+                         player=$(get_active_player)
                     fi
+
+                    # Launch player using centralized module (returns PID)
+                    # We capture the output carefully as launch_player echoes the PID
+                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "Termflix: $video_name")
                     
                     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
                         echo -e "${RED}Error:${RESET} Failed to launch player"
@@ -924,41 +929,20 @@ EOF
                     local check_count=0
                     
                     trap 'echo -e "\n${YELLOW}Interrupted. Stopping transmission...${RESET}"; kill $transmission_pid 2>/dev/null || true; kill $player_pid 2>/dev/null || true; if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then cp "$config_backup" "$transmission_config" 2>/dev/null; rm -f "$config_backup" 2>/dev/null; fi; rm -f "$transmission_output" 2>/dev/null; return 2' INT TERM
-                    
-                    while [ "$player_running" = true ]; do
-                        local player_processes=""
-                        if [ "$player" = "vlc" ]; then
-                            player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
-                            if [ -z "$player_processes" ]; then
-                                player_processes=$(ps aux | grep -i "[V]LC" | grep -v grep | awk '{print $2}' | head -1 || echo "")
-                            fi
-                        else
-                            player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
-                        fi
-                        
-                        if [ -z "$player_processes" ]; then
-                            sleep 1
-                            if [ "$player" = "vlc" ]; then
-                                player_processes=$(pgrep -i "vlc" 2>/dev/null | head -1 || echo "")
-                            else
-                                player_processes=$(pgrep "mpv" 2>/dev/null | head -1 || echo "")
-                            fi
-                            
-                            if [ -z "$player_processes" ]; then
-                                player_running=false
-                                break
-                            fi
-                        fi
-                        
+
+                    # Generic PID-based monitoring (works for mpv, vlc, iina, etc.)
+                    while kill -0 "$player_pid" 2>/dev/null; do
                         sleep 1
                         check_count=$((check_count + 1))
                         
-                        if [ $check_count -gt 600 ]; then
-                            echo -e "${YELLOW}Warning:${RESET} Monitoring timeout, stopping transmission anyway"
-                            player_running=false
+                        # 4 hour timeout to prevent zombie loops
+                        if [ $check_count -gt 14400 ]; then
+                            echo -e "${YELLOW}Warning:${RESET} Max play time reached, stopping monitoring"
                             break
                         fi
                     done
+                    
+                    player_running=false
                     
                     trap - INT TERM
                     
@@ -1030,14 +1014,14 @@ EOF
                     torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | head -1 | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}' | sed 's/[[:space:]]*$//' | awk '{print $1}')
                 fi
                 
-                # Try finding /tmp/torrent-stream/ pattern (more flexible regex)
+                # Try finding torrent-stream path (generic)
                 if [ -z "$torrent_path" ]; then
-                    torrent_path=$(echo "$output_content" | grep -oE "/tmp/torrent-stream/[a-zA-Z0-9]+" "$temp_output" 2>/dev/null | head -1)
+                    torrent_path=$(echo "$output_content" | grep -oE "(/[a-zA-Z0-9_.-]+)+/torrent-stream/[a-zA-Z0-9]+" | head -1)
                 fi
                 
-                # Try finding any /tmp path after "info path"
+                # Try finding any path after "info path" (generic)
                 if [ -z "$torrent_path" ]; then
-                    torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | grep -oE "/tmp/[^[:space:]]+" | head -1)
+                    torrent_path=$(echo "$output_content" | grep "info path" 2>/dev/null | grep -oE "(/[a-zA-Z0-9_.-]+)+" | grep -v "info path" | head -1)
                 fi
                 
                 # Verify it's a directory
@@ -1303,6 +1287,20 @@ EOF
                 i=$((i + 1))
             done
             
+            # Calculate download speed (bytes per second)
+            local bytes_per_sec=0
+            if [ $buffer_wait -gt 0 ]; then
+                bytes_per_sec=$((current_size / buffer_wait))
+            fi
+            
+            # Convert size to MB
+            local size_mb=$((current_size / 1048576))
+            
+            # Write status to file for inline buffering UI
+            if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+                echo "${progress_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|BUFFERING" > "$TERMFLIX_BUFFER_STATUS"
+            fi
+            
             # Show peers if available, otherwise show percentage
             if [ "$total_peers" -gt 0 ]; then
                 printf "\r${CYAN}Buffering:${RESET} %s %d%% (%d/%d peers) " "$bar" "$progress_percent" "$connected_peers" "$total_peers"
@@ -1310,6 +1308,11 @@ EOF
                 printf "\r${CYAN}Buffering:${RESET} %s %d%% " "$bar" "$progress_percent"
             fi
         else
+            # Write initial status
+            if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+                echo "0|0|${connected_peers}|${total_peers}|0|BUFFERING" > "$TERMFLIX_BUFFER_STATUS"
+            fi
+            
             if [ "$total_peers" -gt 0 ]; then
                 printf "\r${CYAN}Buffering...${RESET} [0%%] (%d/%d peers) " "$connected_peers" "$total_peers"
             else
@@ -1326,6 +1329,18 @@ EOF
                 echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
             fi
             echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            
+            # Write READY status with final metrics
+            if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+                local final_percent=100
+                local size_mb=$((current_size / 1048576))
+                local bytes_per_sec=0
+                if [ $buffer_wait -gt 0 ]; then
+                    bytes_per_sec=$((current_size / buffer_wait))
+                fi
+                echo "${final_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|READY" > "$TERMFLIX_BUFFER_STATUS"
+            fi
+            
             break
         fi
         
@@ -1343,6 +1358,18 @@ EOF
             echo -e "${CYAN}Connected to ${connected_peers}/${total_peers} peers${RESET}"
         fi
         echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        
+        # Write READY status even though buffer isn't full (player is starting)
+        if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+            local final_percent=$((final_size * 100 / target_buffer_size))
+            [ $final_percent -gt 100 ] && final_percent=100
+            local size_mb=$((final_size / 1048576))
+            local bytes_per_sec=0
+            if [ $buffer_wait -gt 0 ]; then
+                bytes_per_sec=$((final_size / buffer_wait))
+            fi
+            echo "${final_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|READY" > "$TERMFLIX_BUFFER_STATUS"
+        fi
     fi
     echo
     
@@ -1405,7 +1432,11 @@ EOF
             mpv_args+=("--sid=1")
             mpv_args+=("--sub-visibility=yes")
         fi
-        mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+        
+        # Use TMPDIR for logs
+        local mpv_log="${TMPDIR:-/tmp}/termflix_mpv_debug.log"
+        echo -e "DEBUG: Launching mpv to log: $mpv_log"
+        mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
         player_pid=$!
     fi
     
@@ -1417,7 +1448,22 @@ EOF
     fi
     
     echo -e "${CYAN}Player started (PID: $player_pid). Peerflix running (PID: $peerflix_pid)${RESET}"
-    echo
+    echo ""
+    
+    # Monitor player - when it exits, clean up peerflix
+    trap 'echo -e "\n${YELLOW}Interrupted. Stopping peerflix...${RESET}"; kill $peerflix_pid 2>/dev/null || true; return 130' INT TERM
+    
+    # Wait for player to finish
+    wait "$player_pid" 2>/dev/null
+    local player_exit=$?
+    
+    # Player finished - cleanup peerflix
+    echo -e "${CYAN}Playback finished. Cleaning up...${RESET}"
+    kill "$peerflix_pid" 2>/dev/null || true
+    wait "$peerflix_pid" 2>/dev/null || true
+    
+    # Return 0 to indicate successful stream (catalog will loop)
+    return 0
     
     # Monitor player process - VLC/mpv may fork, so we need to check by process name
     # Use a trap to handle Ctrl+C gracefully

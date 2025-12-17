@@ -342,6 +342,9 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
             magnet = f"magnet:?xt=urn:btih:{info_hash}"
             imdb = item.get('imdb', 'N/A')
             
+            # Determine Genre/Category string
+            cat_str = "Movies" if category in [201, 207, 209, 202] else "Shows"
+            
             # Build COMBINED format line
             combined = (
                 f"COMBINED|{name}|"
@@ -352,6 +355,7 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
                 f"{magnet}|"
                 f"N/A|"  # No poster for TPB
                 f"{imdb}|"
+                f"{cat_str}|" # Genre
                 f"1"  # torrent_count
             )
             results.append(combined)
@@ -426,6 +430,10 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
     # Format rating for display
     rating_str = f"{rating}/10" if rating else 'N/A'
     
+    # Extract Genres
+    genres = movie.get('genres', [])
+    genre_str = ', '.join(genres) if genres else 'Unknown'
+    
     # Build COMBINED line
     display_title = f"{title} ({year})"
     combined = (
@@ -437,6 +445,7 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
         f"{'^'.join(magnets)}|"
         f"{poster}|"
         f"{rating_str}|"
+        f"{genre_str}|"
         f"{len(all_torrents)}"
     )
     

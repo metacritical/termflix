@@ -98,6 +98,7 @@ draw_grid_row() {
         if [[ -n "$image_file" ]] && [[ -f "$image_file" ]]; then
             # Check if we're using kitty (which handles positioning differently)
             if [[ "$TERM" == "xterm-kitty" ]] && command -v kitty &> /dev/null; then
+                # Kitty inline graphics – used in dedicated grid mode
                 is_kitty[$i]=1
                 has_image[$i]=1
             elif check_viu >/dev/null 2>&1; then
@@ -130,8 +131,7 @@ draw_grid_row() {
                     # For kitty, render once on first row only
                     if [[ "$row" -eq 0 ]]; then
                         local image_file="${image_files[$i]}"
-                        # DISABLED: This causes Kitty protocol errors to leak into FZF
-                        # kitty +kitten icat --align left --place "${img_width}x${img_height}@${x_pos}x$((start_row + 1))" "$image_file" 2>/dev/null
+                        kitty +kitten icat --align left --place "${img_width}x${img_height}@${x_pos}x$((start_row + 1))" "$image_file" 2>/dev/null
                     fi
                 else
                     # For viu: Read specific row from pre-rendered file and draw at correct position
@@ -518,6 +518,187 @@ draw_grid_row() {
     
     # Return the next row position via stderr (so it doesn't mix with stdout output)
     echo "$next_row" >&2
+}
+
+display_catalog_grid_mode() {
+    local title="$1"
+    local cached_results_ref="$2"  # Name of array variable containing cached results
+
+    # Get the cached results array
+    eval "local all_results=(\"\${${cached_results_ref}[@]}\")"
+
+    if [ ${#all_results[@]} -eq 0 ]; then
+        echo -e "${RED}No results found${RESET}"
+        return 1
+    fi
+
+    local per_page=50
+    local total="${#all_results[@]}"
+    local page="${CATALOG_PAGE:-1}"
+    local total_pages=$(( (total + per_page - 1) / per_page ))
+    if [ "$total_pages" -eq 0 ]; then total_pages=1; fi
+    if [ "$page" -lt 1 ]; then page=1; fi
+    if [ "$page" -gt "$total_pages" ]; then page="$total_pages"; fi
+
+    while true; do
+        export CATALOG_PAGE="$page"
+        redraw_catalog_page "$title" "$cached_results_ref" "$page" "$per_page" "$total"
+
+        echo
+        echo -e "${BOLD}Navigation:${RESET}"
+        if [ "$page" -lt "$total_pages" ]; then
+            echo "  n / next  - Next page"
+        fi
+        if [ "$page" -gt 1 ]; then
+            echo "  p / prev  - Previous page"
+        fi
+        echo "  1-${total} - Select torrent"
+        echo "  q         - Quit"
+        echo
+
+        # Prompt for selection
+        printf "%b" "${CYAN}Select a torrent (1-${total}), 'n'/'p' for page, or 'q' to quit:${RESET} "
+        local selection
+        IFS= read -r selection
+
+        # Trim whitespace
+        selection="$(echo -n "$selection" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
+        case "${selection,,}" in
+            ""|"q"|"quit")
+                unset CATALOG_PAGE
+                return 0
+                ;;
+            "n"|"next")
+                if [ "$page" -lt "$total_pages" ]; then
+                    page=$((page + 1))
+                    continue
+                else
+                    echo -e "${YELLOW}Already on last page.${RESET}"
+                    continue
+                fi
+                ;;
+            "p"|"prev")
+                if [ "$page" -gt 1 ]; then
+                    page=$((page - 1))
+                    continue
+                else
+                    echo -e "${YELLOW}Already on first page.${RESET}"
+                    continue
+                fi
+                ;;
+        esac
+
+        if [[ "$selection" =~ ^[0-9]+$ ]]; then
+            local sel_num="$selection"
+            if [ "$sel_num" -lt 1 ] || [ "$sel_num" -gt "$total" ]; then
+                echo -e "${RED}Invalid selection${RESET}"
+                continue
+            fi
+
+            local sel_idx=$((sel_num - 1))
+            local selected_result
+            eval "selected_result=\"\${${cached_results_ref}[$sel_idx]}\""
+
+            if [ -z "$selected_result" ]; then
+                echo -e "${RED}Invalid selection${RESET}"
+                continue
+            fi
+
+            IFS='|' read -r source name magnet quality size extra poster_url <<< "$selected_result"
+
+            # Handle COMBINED entries (multiple sources/versions)
+            local final_magnet="$magnet"
+            local final_source="$source"
+            local final_quality="$quality"
+            local final_size="$size"
+
+            if [[ "$source" == "COMBINED" ]]; then
+                # COMBINED|Name|Sources|Seeds|Qualities|Sizes|Magnets|Poster
+                IFS='|' read -r _ c_name c_sources c_seeds c_qualities c_sizes c_magnets c_poster <<< "$selected_result"
+                local sources_arr=()
+                local seeds_arr=()
+                local qualities_arr=()
+                local sizes_arr=()
+                local magnets_arr=()
+                IFS='^' read -ra sources_arr <<< "$c_sources"
+                IFS='^' read -ra seeds_arr <<< "$c_seeds"
+                IFS='^' read -ra qualities_arr <<< "$c_qualities"
+                IFS='^' read -ra sizes_arr <<< "$c_sizes"
+                IFS='^' read -ra magnets_arr <<< "$c_magnets"
+
+                echo -e "\n${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+                echo -e "${CYAN}Multiple versions found for:${RESET} ${BOLD}${YELLOW}$c_name${RESET}"
+                echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
+
+                local selected_idx=0
+                if command -v gum &> /dev/null; then
+                    echo -e "${GREEN}Select a version:${RESET}"
+                    local gum_opts=()
+                    for i in "${!sources_arr[@]}"; do
+                        local src="${sources_arr[$i]}"
+                        local qty="${qualities_arr[$i]}"
+                        local sz="${sizes_arr[$i]}"
+                        local sd="${seeds_arr[$i]}"
+                        gum_opts+=("$((i+1)). [${src}] ${qty} - ${sz} (${sd} seeds)")
+                    done
+                    local choice
+                    choice=$(printf "%s\n" "${gum_opts[@]}" | gum choose --height=10 --cursor="➤ " --header="Available Versions" --header.foreground="212")
+                    if [ -z "$choice" ]; then
+                        echo -e "${YELLOW}Selection cancelled. Returning to grid.${RESET}"
+                        continue
+                    fi
+                    local choice_num
+                    choice_num=$(echo "$choice" | grep -oE '^[0-9]+' | head -1)
+                    if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
+                        selected_idx=$((choice_num - 1))
+                    else
+                        echo -e "${YELLOW}Invalid selection. Returning to grid.${RESET}"
+                        continue
+                    fi
+                else
+                    for i in "${!sources_arr[@]}"; do
+                        local src="${sources_arr[$i]}"
+                        local qty="${qualities_arr[$i]}"
+                        local sz="${sizes_arr[$i]}"
+                        local sd="${seeds_arr[$i]}"
+                        echo "$((i+1)). [${src}] ${qty} - ${sz} (${sd} seeds)"
+                    done
+                    echo -n "Select (1-${#sources_arr[@]}): "
+                    local choice_num
+                    read -r choice_num
+                    if [[ "$choice_num" =~ ^[0-9]+$ ]] && [ "$choice_num" -ge 1 ] && [ "$choice_num" -le "${#sources_arr[@]}" ]; then
+                        selected_idx=$((choice_num - 1))
+                    else
+                        echo -e "${YELLOW}Invalid selection. Returning to grid.${RESET}"
+                        continue
+                    fi
+                fi
+
+                final_source="${sources_arr[$selected_idx]}"
+                final_magnet="${magnets_arr[$selected_idx]}"
+                final_quality="${qualities_arr[$selected_idx]}"
+                final_size="${sizes_arr[$selected_idx]}"
+                name="$c_name"
+            fi
+
+            # Validate and stream
+            final_magnet=$(echo "$final_magnet" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+            if [ -z "$final_magnet" ] || [[ ! "$final_magnet" =~ ^magnet: ]]; then
+                echo -e "${RED}Error:${RESET} Invalid or missing magnet link for selected torrent"
+                continue
+            fi
+
+            echo
+            echo -e "${GREEN}Streaming:${RESET} $name [${final_source}]"
+            echo
+
+            stream_torrent "$final_magnet" "" false false
+            return 0
+        else
+            echo -e "${RED}Invalid selection${RESET}"
+        fi
+    done
 }
 
 redraw_catalog_page() {

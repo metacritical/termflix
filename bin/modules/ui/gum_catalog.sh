@@ -585,7 +585,10 @@ display_catalog_page_gum() {
             # Use gum input for a better experience
             local selection
             selection=$(gum input --placeholder="Enter number (1-${total}) or 'q' to quit" --value="" 2>/dev/null)
-            
+
+            # Trim whitespace so 'q ' or '  q' works
+            selection="$(echo -n "$selection" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+
             if [[ "$selection" == "q" || "$selection" == "Q" ]]; then
                 unset CATALOG_PAGE
                 return 0

@@ -51,8 +51,12 @@ echo
 
 # --- 4. Handle COMBINED vs Regular Entries ---
 if [[ "$source" == "COMBINED" ]]; then
-    # Parse NEW COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
-    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating plot_text <<< "$rest"
+    # Parse NEW COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Genre|Count
+    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating genre_text torrent_count <<< "$rest"
+    
+    # Init Metadata from parsed fields
+    movie_genre="${genre_text}"
+    [[ -z "$movie_genre" ]] && movie_genre="Unknown"
     
     # Split into arrays
     IFS='^' read -ra sources_arr <<< "$sources"

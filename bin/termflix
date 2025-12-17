@@ -49,6 +49,7 @@ source "$SCRIPT_DIR/modules/core/deps.sh"
 source "$SCRIPT_DIR/modules/ui/status.sh"
 
 source "$SCRIPT_DIR/modules/ui/help.sh"
+source "$SCRIPT_DIR/modules/ui/gum_catalog.sh"
 source "$SCRIPT_DIR/modules/ui/fzf_catalog.sh"
 
 # Feature Modules
@@ -56,6 +57,7 @@ source "$SCRIPT_DIR/modules/posters.sh"
 source "$SCRIPT_DIR/modules/search.sh"
 source "$SCRIPT_DIR/modules/catalog.sh"
 source "$SCRIPT_DIR/modules/torrent.sh"
+source "$SCRIPT_DIR/modules/streaming/player.sh"
 
 # Initialize directories
 init_termflix_dirs
@@ -126,8 +128,9 @@ main() {
                 shift
                 ;;
             -g|--grid)
-                USE_GUM_MODE=true
-                export USE_GUM_MODE
+                # Enable legacy poster grid mode (viu/kitty)
+                USE_GRID_MODE=true
+                export USE_GRID_MODE
                 shift
                 ;;
             --clear)
@@ -365,31 +368,44 @@ main() {
                      ;;
                 104) 
                     # Type Menu (^T) - Select Category & Context
-                    local menu_items="🎬 Browse Movies\n📺 Browse Shows\n"
+                    # Indicators
+                    local ind_mov="○"; [[ "$current_category" == "movies" ]] && ind_mov="●"
+                    local ind_sho="○"; [[ "$current_category" == "shows" ]] && ind_sho="●"
+                    
+                    local ind_ctx_def=" "; [[ "$current_context" == "default" ]] && ind_ctx_def="●"
+                    local ind_ctx_year=" "; [[ "$current_context" == "year" ]] && ind_ctx_year="●"
+                    local ind_ctx_rate=" "; [[ "$current_context" == "rating" ]] && ind_ctx_rate="●"
+                    local ind_ctx_peer=" "; [[ "$current_context" == "peers" ]] && ind_ctx_peer="●"
+                    local ind_ctx_title=" "; [[ "$current_context" == "title" ]] && ind_ctx_title="●"
+
+                    local menu_items="${ind_mov} 🎬 Browse Movies\n${ind_sho} 📺 Browse Shows\n"
                     menu_items+="\n-- 🔍 Switch Context --\n"
-                    menu_items+="📅 By Year (Mode)...\n"
-                    menu_items+="⭐ By Rating (Mode)...\n"
-                    menu_items+="🌱 By Peers (Mode)...\n"
-                    menu_items+="🔤 By Title (Mode)...\n"
+                    menu_items+="${ind_ctx_year} 📅 By Year (Mode)...\n"
+                    menu_items+="${ind_ctx_rate} ⭐ By Rating (Mode)...\n"
+                    menu_items+="${ind_ctx_peer} 🌱 By Peers (Mode)...\n"
+                    menu_items+="${ind_ctx_title} 🔤 By Title (Mode)...\n"
                     
                     local selected_action
-                    selected_action=$(echo -e "$menu_items" | fzf --height=15 --layout=reverse --border --prompt="Type: " --header="Select Content Mode" 2>/dev/null)
+                    selected_action=$(echo -e "$menu_items" | fzf --height=16 --layout=reverse --border --prompt="Type > " --header="Select Content Mode (Current marks: ●)" 2>/dev/null)
                     
+                    # Handle Esc/Cancel (Empty selection) - Just continue to re-render without changing state
+                    [[ -z "$selected_action" ]] && continue
+
                     case "$selected_action" in
-                        "🎬 Browse Movies") 
+                        *"Browse Movies") 
                             current_category="movies"; current_context="default" ;;
-                        "📺 Browse Shows") 
+                        *"Browse Shows") 
                             current_category="shows" ;;
                             
                         # Context Switching - Immediately Prompts for Filter Value
-                        "📅 By Year (Mode)...") 
+                        *"By Year (Mode)...") 
                             current_context="year"; current_sort="desc" 
                             # Initial Prompt
                             local yr_list=$(seq $(date +%Y) -1 1950)
                             local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " --header="Set Initial Year" 2>/dev/null)
                             [[ -n "$sel_yr" ]] && current_query="$sel_yr"
                             ;;
-                        "⭐ By Rating (Mode)...") 
+                        *"By Rating (Mode)...") 
                             current_context="rating"; current_sort="desc"
                             local rat_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\nAny Rating"
                             local sel_rat=$(echo -e "$rat_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " --header="Set Initial Rating" 2>/dev/null)
@@ -402,9 +418,9 @@ main() {
                                 *) current_min_rating=0 ;;
                             esac
                             ;;
-                        "🌱 By Peers (Mode)...") 
+                        *"By Peers (Mode)...") 
                              current_context="peers"; current_sort="desc" ;;
-                        "🔤 By Title (Mode)...") 
+                        *"By Title (Mode)...") 
                              current_context="title"; current_sort="asc" ;;
                     esac
                     continue
@@ -488,6 +504,24 @@ main() {
                 109)
                     # Refresh: Force reload of catalog data
                     export FORCE_REFRESH=true
+                    continue
+                    ;;
+                110)
+                    # Search UI
+                    local search_query=""
+                    if command -v gum &> /dev/null; then
+                        search_query=$(gum input --placeholder "Search Movies/Shows..." --prompt "🔍 " --width 60 --header "Search Termflix Catalog")
+                    else
+                         # Fallback: Use FZF as an input box
+                         # We pipe dummy input, use print-query to get user typing, and capture first line
+                         search_query=$(echo "" | fzf --print-query --prompt="Search > " --header="Type and press Enter" --height=8 --layout=reverse --border | head -1)
+                    fi
+                    
+                    if [[ -n "$search_query" ]]; then
+                        current_query="$search_query"
+                        # Switch to default sort for relevance
+                        current_context="default" 
+                    fi
                     continue
                     ;;
                 *)   break ;;  # User cancelled or streamed

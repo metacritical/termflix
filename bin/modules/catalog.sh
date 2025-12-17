@@ -17,15 +17,21 @@ source "$(dirname "${BASH_SOURCE[0]}")/catalog/grid.sh"
 display_catalog() {
     local title="$1"
     local use_gum=false
+    local use_grid=false
     local all_results=()
     local page="${CATALOG_PAGE:-1}"
     local per_page=20
     shift
 
-    # Check if 'gum' is the next argument OR if --grid flag was used
-    if [ "$1" = "gum" ] || [ "$USE_GUM_MODE" = "true" ]; then
+    # Check if 'gum' is explicitly requested via argument
+    if [ "$1" = "gum" ]; then
         use_gum=true
-        [ "$1" = "gum" ] && shift
+        shift
+    fi
+
+    # Grid mode is enabled via the CLI --grid flag
+    if [ "$USE_GRID_MODE" = "true" ]; then
+        use_grid=true
     fi
     
     # Store original arguments for pagination navigation
@@ -260,9 +266,20 @@ display_catalog() {
         fi
     fi
 
-    # Use gum interface if requested
+    # Use gum interface if explicitly requested
     if [ "$use_gum" = true ]; then
         display_catalog_gum "$title" "${original_args[@]}"
+        return $?
+    fi
+
+    # Use poster grid interface if grid mode is enabled
+    if [ "$use_grid" = true ]; then
+        # Pass results by reference into grid renderer
+        local grid_results_ref="catalog_grid_results_$$"
+        # shellcheck disable=SC2034  # referenced via eval in grid module
+        eval "local -a ${grid_results_ref}=()"
+        eval "${grid_results_ref}=(\"\${all_results[@]}\")"
+        display_catalog_grid_mode "$title" "$grid_results_ref"
         return $?
     fi
 
@@ -353,4 +370,3 @@ display_catalog() {
 # - get_latest_shows
 # - get_catalog_by_genre
 # - get_new_48h_movies
-

@@ -104,6 +104,7 @@ show_fzf_catalog() {
         *"Movies"*)     hl_movies="o" ;;
         *"Shows"*|*"TV"*) hl_shows="o" ;;
         *"Watchlist"*|*"Library"*) hl_watchlist="o" ;;
+        *"Search"*)     hl_search="o" ;;
         *)              hl_movies="o" ;; # Default
     esac
     
@@ -181,7 +182,7 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+R:Refresh \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+R:Refresh \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-d:preview-down,ctrl-u:preview-up'
@@ -222,7 +223,7 @@ show_fzf_catalog() {
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
         
@@ -241,7 +242,8 @@ show_fzf_catalog() {
             ctrl-w) return 103 ;;  # Watchlist
             ctrl-t) return 104 ;;  # Type dropdown
             ctrl-v) return 105 ;;  # Sort dropdown
-            ctrl-g) return 106 ;;  # Genre dropdown (kept for now or merged?) -> Kept as direct genre jump if user wants it, or remove? Plan said remove V/Y. I'll leave G for now unless requested.
+            ctrl-g) return 106 ;;  # Genre dropdown
+            ctrl-f) return 110 ;;  # Search
             ctrl-r) return 109 ;;  # Refresh
             ">"|ctrl-right) return 107 ;;  # Next page
             "<"|ctrl-left) return 108 ;;   # Previous page
@@ -275,8 +277,8 @@ handle_fzf_selection() {
     export STAGE2_SELECTED_INDEX="$index"
     
     # Now parse rest_data which starts with source
-    local source name magnet quality size seeds poster
-    IFS='|' read -r source name magnet quality size seeds poster <<< "$rest_data"
+    local source name magnet quality size seeds poster imdb plot
+    IFS='|' read -r source name magnet quality size seeds poster imdb plot <<< "$rest_data"
 
      # Check if item is COMBINED (multiple sources)
      if [[ "$source" == "COMBINED" ]]; then
@@ -403,6 +405,9 @@ handle_fzf_selection() {
               export STAGE2_AVAIL="$q_disp"
               export STAGE2_PLOT="$c_plot"
               export STAGE2_IMDB="$c_imdb"
+              
+              # Save options to file for Buffer UI reconstruction
+              echo "$options" > "${TMPDIR:-/tmp}/termflix_stage2_options.txt"
 
               if [[ "$TERM" == "xterm-kitty" ]]; then
                   # KITTY MODE: Poster/Sources/Exports already prepared above
@@ -491,19 +496,26 @@ handle_fzf_selection() {
      # Write initial buffering status
      echo "0|0|0|0|0|BUFFERING" > "$BUFFER_STATUS_FILE"
      
-     tput reset 2>/dev/null || clear
-     echo -e "${GREEN}Streaming:${RESET} $name"
-     echo -e "${CYAN}Source:${RESET} $source  ${CYAN}Size:${RESET} $size  ${CYAN}Quality:${RESET} $quality"
-     echo
-     
      if [ -z "$TORRENT_TOOL" ]; then
           check_deps
      fi
      
      # Export buffer status file path for streaming module
      export TERMFLIX_BUFFER_STATUS="$BUFFER_STATUS_FILE"
-     
-     stream_torrent "$magnet" "" false false
+          # Use Inline Buffering UI if available
+      if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
+          source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
+          # Use c_plot if available (Combined), else plot (Simple)
+          local plot_text="${c_plot:-$plot}"
+          # Extract index from ver_pick (format: idx|display|...)
+          local ver_idx=""
+          if [[ -n "$ver_pick" ]]; then
+              ver_idx=$(echo "$ver_pick" | cut -d'|' -f1)
+          fi
+          show_inline_buffer_ui "$name" "${poster_file:-$poster}" "$plot_text" "$magnet" "$source" "$quality" "$ver_idx"
+      else
+          stream_torrent "$magnet" "" false false
+      fi
      
      # Clean up buffer status after streaming ends
      rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
