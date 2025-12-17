@@ -231,7 +231,15 @@ else
 fi
 PREVIEW_EOF
     
+    # Make preview script executable and verify
+    if [[ ! -f "$preview_script" ]]; then
+        echo "ERROR: Failed to create preview script: $preview_script" >> "$stream_log"
+        echo "ERROR: Failed to create preview script at $preview_script"
+        return 1
+    fi
+    
     chmod +x "$preview_script"
+    echo "✓ Preview script created: $preview_script" >> "$stream_log"
     
     # Export env vars for preview
     export STAGE2_POSTER="$poster"
@@ -240,7 +248,7 @@ PREVIEW_EOF
     export STAGE2_SOURCES="[$source]"
     
     # Read versions list
-    local options_file="${TMPDIR:-/tmp}/termflix_stage2_options.txt"
+    local options_file="$tmpdir/termflix_stage2_options.txt"
     local options=""
     if [[ -f "$options_file" ]]; then
         options=$(cat "$options_file")
