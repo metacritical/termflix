@@ -271,11 +271,20 @@ stream_peerflix() {
         fi
     done
     temp_args+=("--remove")  # Clean up files when done
-    # Force HTTP mode if splash is active
-    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
-        temp_args+=("--mode" "http")
-        echo -e "${CYAN}Forcing HTTP streaming mode for splash screen${RESET}"
+    
+    # Force HTTP mode if splash is active (required for IPC transition)
+    echo "DEBUG: Checking TERMFLIX_SPLASH_SOCKET=${TERMFLIX_SPLASH_SOCKET:-NOT_SET}" >&2
+    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]]; then
+        if [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+            temp_args+=("--mode" "http")
+            echo -e "${CYAN}Forcing HTTP streaming mode for splash screen compatibility${RESET}"
+        else
+            echo "DEBUG: Socket variable set but file doesn't exist: $TERMFLIX_SPLASH_SOCKET" >&2
+        fi
+    else
+        echo "DEBUG: TERMFLIX_SPLASH_SOCKET not set, using default peerflix mode" >&2
     fi
+    
     echo "DEBUG: Launching peerflix command: peerflix \"$source\" \"${temp_args[@]}\""
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
@@ -883,25 +892,29 @@ EOF
                     fi
                     
                     
-                    # Check if we have a splash screen to close
-                    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]]; then
-                        # Find splash MPV PID and kill it
-                        local splash_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
-                        if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
-                            echo -e "${GREEN}Closing splash screen...${RESET}"
-                            kill "$splash_pid" 2>/dev/null
-                            sleep 0.3
+                    # Check if we have a splash screen MPV to transition
+                    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+                        # Use existing MPV splash screen - transition to video
+                        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
+                        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$video_name" "$subtitle_arg"
+                        # Find MPV PID from socket
+                        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+                        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
                         fi
-                    fi
-                    
-                    # Launch new player (no IPC - direct file mode)
-                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
-                    
-                    if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
-                        echo -e "${RED}Error:${RESET} Failed to launch player"
-                        rm -f "$transmission_output" 2>/dev/null
-                        rm -f "$temp_output" 2>/dev/null
-                        return 1
+                    else
+                        # No splash screen - launch new player as normal
+                        player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
+                        
+                        if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Failed to launch player"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
                     fi
                     
                     echo -e "${CYAN}Player started (PID: $player_pid). Transmission running (PID: $transmission_pid)${RESET}"
@@ -1485,7 +1498,8 @@ EOF
         echo -e "DEBUG: Launching mpv to log: $mpv_log"
         mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
         player_pid=$!
-	    fi  # End of splash check
+    fi
+    fi  # End of splash check
     
     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
         echo -e "${RED}Error:${RESET} Failed to launch player"
