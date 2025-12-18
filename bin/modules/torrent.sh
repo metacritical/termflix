@@ -1536,8 +1536,13 @@ EOF
     # Monitor player - when it exits, clean up peerflix
     trap 'echo -e "\n${YELLOW}Interrupted. Stopping peerflix...${RESET}"; kill $peerflix_pid 2>/dev/null || true; return 130' INT TERM
     
-    # Wait for player to finish
-    wait "$player_pid" 2>/dev/null
+    # Wait for player to exit
+    # IMPORTANT: If player_pid is the splash screen (IPC transition), it is NOT a child process of this shell.
+    # The 'wait' command will return immediately for non-child processes.
+    # We must use a polling loop to wait for the process to exit.
+    while kill -0 "$player_pid" 2>/dev/null; do
+        sleep 1
+    done
     local player_exit=$?
     
     # Player finished - cleanup peerflix
