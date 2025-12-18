@@ -272,12 +272,12 @@ stream_peerflix() {
     done
     temp_args+=("--remove")  # Clean up files when done
     
-    # ALWAYS use HTTP mode for continuous streaming support
-    # Direct file mode causes playback to stop when buffer is exhausted
-    temp_args+=("--mode" "http")
-    echo -e "${CYAN}Using HTTP streaming mode for continuous playback${RESET}"
+    # Peerflix uses HTTP streaming by default when -p (port) is specified
+    # The -p 8888 flag is already in args array, which enables HTTP mode
+    # No need for --mode flag (may not be supported in all versions)
+    echo -e "${CYAN}Peerflix will stream via HTTP on port 8888${RESET}"
     
-    echo "DEBUG: Launching peerflix command: peerflix \"$source\" \"${temp_args[@]}\""
+    echo "DEBUG: Peerflix args: ${temp_args[@]}" >&2
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
     echo "DEBUG: Peerflix launched with PID: $peerflix_pid"
