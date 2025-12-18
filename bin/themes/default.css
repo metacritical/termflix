@@ -1,0 +1,36 @@
+/* Default Theme for Termflix */
+/* Classic terminal colors with modern touch */
+
+:root {
+    /* Primary */
+    --glow: #FF79C6;
+    --purple: #BD93F9;
+    --lavender: #D9B3FF;
+
+    /* Semantic */
+    --success: #50FA7B;
+    --error: #FF5555;
+    --warning: #F1FA8C;
+    --info: #8BE9FD;
+
+    /* UI */
+    --fg: #F8F8F2;
+    --fg-muted: #6272A4;
+    --fg-subtle: #44475A;
+    --bg: #282A36;
+    --bg-selection: #44475A;
+    --bg-surface: #383A59;
+
+    /* Sources */
+    --yts: #50FA7B;
+    --tpb: #F1FA8C;
+    --x1337: #FF79C6;
+    --eztv: #8BE9FD;
+
+    /* Special */
+    --border: #BD93F9;
+    --pointer: #FF79C6;
+    --prompt: #50FA7B;
+    --spinner: #FFB86C;
+    --header: #6272A4;
+}
