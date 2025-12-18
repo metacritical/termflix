@@ -45,6 +45,21 @@ show_inline_buffer_ui() {
     local splash_socket=""
     echo "DEBUG: Checking splash screen preconditions..." >&2
     echo "DEBUG: backdrop_image=$backdrop_image" >&2
+    
+    # Check if backdrop is a URL and download it if needed
+    if [[ "$backdrop_image" =~ ^https?:// ]]; then
+        echo "DEBUG: Backdrop is a URL, downloading..." >&2
+        local temp_bg="${tmpdir}/termflix_backdrop_$$.jpg"
+        if curl -sL "$backdrop_image" -o "$temp_bg" --max-time 5; then
+            echo "DEBUG: Downloaded to $temp_bg" >&2
+            backdrop_image="$temp_bg"
+            # Cleanup temp background on exit
+            trap 'rm -f "$temp_bg" 2>/dev/null; cleanup_stream' EXIT INT TERM
+        else
+            echo "DEBUG: Failed to download backdrop URL" >&2
+        fi
+    fi
+    
     echo "DEBUG: launch_splash_screen available: $(command -v launch_splash_screen || echo 'NOT FOUND')" >&2
     
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
