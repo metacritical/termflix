@@ -1352,7 +1352,7 @@ EOF
             # Write status to file for inline buffering UI
             # Write status to file for inline buffering UI
             if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
-                echo "${progress_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|BUFFERING|${stream_url}" > "$TERMFLIX_BUFFER_STATUS"
+                echo "${progress_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|BUFFERING|${stream_url}|${peerflix_pid}" > "$TERMFLIX_BUFFER_STATUS"
             fi
             
             # Show peers if available, otherwise show percentage
@@ -1365,7 +1365,7 @@ EOF
             # Write initial status
             # Write initial status
             if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
-                echo "0|0|${connected_peers}|${total_peers}|0|BUFFERING|${stream_url}" > "$TERMFLIX_BUFFER_STATUS"
+                echo "0|0|${connected_peers}|${total_peers}|0|BUFFERING|${stream_url}|${peerflix_pid}" > "$TERMFLIX_BUFFER_STATUS"
             fi
             
             if [ "$total_peers" -gt 0 ]; then

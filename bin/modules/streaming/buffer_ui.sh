@@ -146,7 +146,7 @@ frame_idx=$((EPOCHSECONDS % 10))
 spinner="${spinner_frames[$frame_idx]}"
 
 if [[ -f "$TERMFLIX_BUFFER_STATUS" ]]; then
-    IFS='|' read -r progress speed_bytes connected_peers total_peers buffered_mb state stream_url < "$TERMFLIX_BUFFER_STATUS"
+    IFS='|' read -r progress speed_bytes connected_peers total_peers buffered_mb state stream_url peerflix_pid < "$TERMFLIX_BUFFER_STATUS"
 fi
 
 # Activity indicator in top-right (like Stage 1)
@@ -234,7 +234,7 @@ fi
 # Buffering status (live)
 if [[ -f "$status_file" ]]; then
     status_line=$(cat "$status_file")
-    IFS='|' read -r progress speed_bytes peers total_peers size state stream_url <<< "$status_line"
+    IFS='|' read -r progress speed_bytes peers total_peers size state stream_url peerflix_pid <<< "$status_line"
     
     # Provide defaults
     progress="${progress:-0}"
@@ -286,6 +286,13 @@ if [[ -f "$status_file" ]]; then
         printf "%-15s %d MB\n" "Buffered:" "${buffered_mb:-0}"
         if [[ -n "$stream_url" ]]; then
              printf "%-15s %s\n" "Stream URL:" "$stream_url"
+        fi
+        if [[ -n "$peerflix_pid" ]]; then
+             if kill -0 "$peerflix_pid" 2>/dev/null; then
+                 printf "%-15s %s\n" "Peerflix:" "${GREEN}Running ($peerflix_pid)${RESET}"
+             else
+                 printf "%-15s %s\n" "Peerflix:" "${RED}DIED ($peerflix_pid)${RESET}"
+             fi
         fi
         echo ""
         echo -e "${GRAY}Press ESC to cancel${RESET}"
