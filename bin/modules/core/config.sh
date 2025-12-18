@@ -215,8 +215,8 @@ use_python_catalog() {
         [[ "${USE_PYTHON_CATALOG}" == "true" ]] && return 0 || return 1
     fi
     
-    # Check config file
-    local value=$(config_get "USE_PYTHON_CATALOG" "false")
+    # Check config file (default TRUE to enable web scraper)
+    local value=$(config_get "USE_PYTHON_CATALOG" "true")
     [[ "$value" == "true" ]] && return 0 || return 1
 }
 

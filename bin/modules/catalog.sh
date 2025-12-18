@@ -102,11 +102,15 @@ display_catalog() {
     
     # Only fetch if cache was not used
     if [ "$goto_pagination" != "true" ]; then
-        echo -e "${CYAN}Fetching data from sources (all pages)...${RESET}"
+        echo -e "${CYAN}Fetching data from sources...${RESET}"
         
-        # CRITICAL: Fetch ALL pages at once and cache in memory
-        # Fetch pages 1-10 in parallel to get all results
-        local max_pages=10
+        # SMART PREFETCH STRATEGY:
+        # Phase 1: Load pages 1-5 synchronously (fast startup ~5 sec)
+        # Phase 2: Background fetch pages 6-15 (10 more pages)
+        # Midpoint triggers: At page 10→fetch 16-25, page 20→fetch 26-35, etc.
+        
+        local initial_pages=10          # Load 5 pages upfront (250 results)
+        local batch_size=10
         local page_pids=()
         local page_files=()
         
@@ -115,14 +119,15 @@ display_catalog() {
         arg_idx=$((arg_idx + 1))
         local source_name=$(get_source_name "$func")
         
-        # Call the function with remaining arguments
+        # === PHASE 1: Load First 5 Pages Synchronously ===
+        # Load more upfront for better UX (250 results vs 100)
         local current_page_pids=()
         if [ $arg_idx -lt ${#args_copy[@]} ] && [[ "${args_copy[$arg_idx]}" =~ ^[0-9]+$ ]]; then
             local limit="${args_copy[$arg_idx]}"
             arg_idx=$((arg_idx + 1))
             
-            # Fetch all pages (1-10) in parallel for this function
-            for p in $(seq 1 $max_pages); do
+            # Fetch initial 5 pages
+            for p in $(seq 1 $initial_pages); do
                 local page_file="${temp_file}.${source_name}.page${p}"
                 page_files+=("$page_file")
                 ($func "$limit" "$p" >> "$page_file" 2>&1) &
@@ -130,8 +135,8 @@ display_catalog() {
                 page_pids+=($!)
             done
         else
-            # Fetch all pages (1-10) in parallel for this function
-            for p in $(seq 1 $max_pages); do
+            # Fetch initial 5 pages (no limit arg)
+            for p in $(seq 1 $initial_pages); do
                 local page_file="${temp_file}.${source_name}.page${p}"
                 page_files+=("$page_file")
                 ($func "$p" >> "$page_file" 2>&1) &
@@ -140,7 +145,7 @@ display_catalog() {
             done
         fi
         
-        # Wait for this source's page fetches to complete with dual spinner (spinning in opposite directions)
+        # Wait for initial pages with spinner
         local spinner_chars=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
         local spinner_idx1=0
         local spinner_idx2=0
@@ -154,24 +159,46 @@ display_catalog() {
                     fi
                 done
                 [ "$any_running" = false ] && break
-                # Charm-style dual spinner: magenta goes backward, cyan goes forward
-                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Fetching from ${PINK}${source_name}${RESET}..."
+                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Loading ${PINK}${source_name}${RESET} (pages 1-5)..."
                 spinner_idx1=$(( (spinner_idx1 - 1 + ${#spinner_chars[@]}) % ${#spinner_chars[@]} ))
                 spinner_idx2=$(( (spinner_idx2 + 1) % ${#spinner_chars[@]} ))
                 sleep 0.1
             done
-            printf "\r${GREEN}✓${RESET} Fetched from ${PINK}${source_name}${RESET}                    \n"
+            printf "\r${GREEN}✓${RESET} Loaded ${PINK}${source_name}${RESET} (pages 1-5)                    \n"
         ) &
         local spinner_pid=$!
         
-        # Wait for this source's page fetches to complete
+        # Wait for initial pages
         for pid in "${current_page_pids[@]}"; do
             wait "$pid" 2>/dev/null || true
         done
-        
-        # Stop spinner
         kill "$spinner_pid" 2>/dev/null || true
         wait "$spinner_pid" 2>/dev/null || true
+        
+        # === PHASE 2: Background Prefetch Pages 6-15 ===
+        local batch_end=$((initial_pages + batch_size))
+        echo -e "${GRAY}📥 Prefetching pages 11-${batch_end} in background...${RESET}"
+        
+        (
+            for p in $(seq $((initial_pages + 1)) $batch_end); do
+                # Append directly to main temp file (not individual page files)
+                if [ $arg_idx -gt 0 ] && [[ -n "${limit:-}" ]]; then
+                    $func "$limit" "$p" >> "$temp_file" 2>&1
+                else
+                    $func "$p" >> "$temp_file" 2>&1
+                fi
+            done
+        ) &
+        local prefetch_pid=$!
+        
+        # Export state for navigation handler and midpoint trigger
+        export TERMFLIX_PREFETCH_PID=$prefetch_pid
+        export TERMFLIX_BATCH_END=$batch_end
+        export TERMFLIX_SOURCE_NAME="$source_name"
+        export TERMFLIX_FUNC_NAME="$func"
+        export TERMFLIX_FUNC_LIMIT="${limit:-}"
+        export TERMFLIX_TEMP_FILE="$temp_file"
+        export TERMFLIX_INITIAL_PAGES=$initial_pages
     done
         
         # Combine all page files into one temp file
@@ -202,7 +229,8 @@ display_catalog() {
             done < "$temp_file"
         fi
         
-        rm -f "$temp_file" 2>/dev/null
+        # DON'T delete temp file - background fetch needs to append to it!
+        # rm -f "$temp_file" 2>/dev/null
         
         printf "\r${GREEN}✓ Parsed ${result_count} results${RESET}                    \n"
     fi
@@ -283,79 +311,175 @@ display_catalog() {
         return $?
     fi
 
-    # FZF Catalog Logic
+    # FZF Catalog Logic - Page-Based Navigation with Background Prefetch
     # -------------------------------------------------------------------------
-    # Use FZF for browsing, filtering, and Preview (replacing sidebar picker)
     
-    # Pagination state
+    local total_pages_loaded=10  # Initial pages loaded
     local current_page=1
     local items_per_page=50
-    local total_items=${#all_results[@]}
-    local total_pages=$(( (total_items + items_per_page - 1) / items_per_page ))
-    [[ $total_pages -lt 1 ]] && total_pages=1
-    local last_selected_pos=1  # Track cursor position for restoration
+    local last_selected_index=1
     
-    # FZF Catalog Logic with Navigation Loop
-    # -------------------------------------------------------------------------
     while true; do
-        # Slice array for current page
+        # CHECK: Reload if background fetch completed (check BEFORE showing FZF)
+        if [ -n "${TERMFLIX_PREFETCH_PID:-}" ]; then
+            if ! kill -0 "$TERMFLIX_PREFETCH_PID" 2>/dev/null; then
+                # Background complete - reload
+                local temp_combined="${TERMFLIX_TEMP_FILE:-$temp_file}"
+                if [[ -f "$temp_combined" ]]; then
+                    all_results=()
+                    while IFS= read -r line || [ -n "$line" ]; do
+                        if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                            all_results+=("$line")
+                        fi
+                    done < "$temp_combined"
+                    
+                    # Trigger next batch
+                    if [[ "${TERMFLIX_NO_MORE_PAGES:-}" != "true" ]]; then
+                        local next_start=$((TERMFLIX_BATCH_END + 1))
+                        local next_end=$((next_start + 9))
+                        ( for p in $(seq $next_start $next_end); do
+                            if [[ -n "${TERMFLIX_FUNC_LIMIT}" ]]; then
+                                ${TERMFLIX_FUNC_NAME} "${TERMFLIX_FUNC_LIMIT}" "$p" >> "${TERMFLIX_TEMP_FILE}" 2>&1
+                            else
+                                ${TERMFLIX_FUNC_NAME} "$p" >> "${TERMFLIX_TEMP_FILE}" 2>&1
+                            fi
+                        done ) &
+                        export TERMFLIX_PREFETCH_PID=$!
+                        export TERMFLIX_BATCH_END=$next_end
+                    fi
+                fi
+            fi
+        fi
+        
+        # Calculate total available pages
+        local total_items=${#all_results[@]}
+        local total_pages=$(( (total_items + items_per_page - 1) / items_per_page ))
+        [[ $total_pages -lt 1 ]] && total_pages=1
+        
+        # DEBUG: Log item counts (only if DEBUG_MODE=1)
+        if [[ "${DEBUG_MODE:-0}" == "1" ]]; then
+            echo "[DEBUG] Current page: $current_page | Total items: $total_items | Total pages: $total_pages | Background PID: ${TERMFLIX_PREFETCH_PID:-none}" >&2
+        fi
+        
+        # Add "+" if background is still fetching
+        local total_display="$total_pages"
+        if [ -n "${TERMFLIX_PREFETCH_PID:-}" ]; then
+            if kill -0 "$TERMFLIX_PREFETCH_PID" 2>/dev/null; then
+                total_display="${total_pages}+"
+                [[ "${DEBUG_MODE:-0}" == "1" ]] && echo "[DEBUG] Background still running, showing ${total_pages}+" >&2
+            else
+                [[ "${DEBUG_MODE:-0}" == "1" ]] && echo "[DEBUG] Background completed" >&2
+            fi
+        fi
+        
+        # Slice current page
         local start_idx=$(( (current_page - 1) * items_per_page ))
         local page_results=("${all_results[@]:$start_idx:$items_per_page}")
         
+        [[ "${DEBUG_MODE:-0}" == "1" ]] && echo "[DEBUG] Sliced page $current_page: start_idx=$start_idx, showing ${#page_results[@]} items" >&2
+        
+        # Show FZF with current page only
         local selection_line
-        selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_pages" "$last_selected_pos")
+        selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_display" "$last_selected_index")
         local fzf_ret=$?
         
-        # Handle category switching return codes (101-108)
-        # Keybindings: ^O=Movies, ^S=Shows, ^W=Watchlist, ^T=Type, ^R=Sort, ^G=Genre, >/<=Page
+        # Handle category switching and page navigation
         case $fzf_ret in
-            101) return 101 ;;  # Movies (^O)
-            102) return 102 ;;  # Shows (^S)
-            103) return 103 ;;  # Watchlist (^W)
-            104) return 104 ;;  # Type dropdown (^T)
-            105) return 105 ;;  # Sort dropdown (^V)
-            106) return 106 ;;  # Genre dropdown (^G)
-            109) return 109 ;;  # Refresh (^R) -> FORCE_REFRESH
-            110) return 110 ;;  # Year dropdown (^Y)
-            107)  # Next page (> or Ctrl+Right)
+            101) return 101 ;;  # Movies
+            102) return 102 ;;  # Shows
+            103) return 103 ;;  # Watchlist
+            104) return 104 ;;  # Type dropdown
+            105) return 105 ;;  # Sort dropdown
+            106) return 106 ;;  # Genre dropdown
+            109) return 109 ;;  # Refresh
+            110) return 110 ;;  # Year dropdown
+            107)  # Next page (>)
                 if [[ $current_page -lt $total_pages ]]; then
                     ((current_page++))
                 fi
                 continue
                 ;;
-            108)  # Previous page (< or Ctrl+Left)
+            108)  # Previous page (<)
                 if [[ $current_page -gt 1 ]]; then
                     ((current_page--))
                 fi
                 continue
                 ;;
-            1)   return 0 ;;    # FZF cancelled (Esc/Ctrl-C)
         esac
         
-        # Normal selection handling (fzf_ret=0 with output)
+        # Extract selection index for cursor restoration
         if [ -n "$selection_line" ]; then
-             # Extract index from selection to remember cursor position
-             # Format: "key|index|rest_data..."
-             local sel_idx
-             sel_idx=$(echo "$selection_line" | cut -d'|' -f2)
-             [[ "$sel_idx" =~ ^[0-9]+$ ]] && last_selected_pos="$sel_idx"
-             
-             handle_fzf_selection "$selection_line"
-             local ret_code=$?
-             
-             if [ $ret_code -eq 10 ]; then
-                 # User pressed Ctrl+H / Back in nested picker -> Loop again
-                 continue
-             elif [ $ret_code -eq 0 ]; then
-                 # Successful stream -> Exit function
-                 return 0
-             else
-                 # Error or Cancel -> Break
-                 break
-             fi
+            local sel_idx
+            sel_idx=$(echo "$selection_line" | cut -d'|' -f2)
+            [[ "$sel_idx" =~ ^[0-9]+$ ]] && last_selected_index="$sel_idx"
+            
+            handle_fzf_selection "$selection_line"
+            local ret_code=$?
+            
+            if [ $ret_code -eq 10 ]; then
+                # User pressed Ctrl+H / Back - continue loop (restart FZF)
+                continue
+            elif [ $ret_code -eq 0 ]; then
+                # Successful stream - exit
+                return 0
+            else
+                # Error or cancel
+                break
+            fi
         else
-             # No selection -> cancelled
-             break
+            # No selection - cancelled
+            break
+        fi
+        
+        # After user action, check if background fetch completed
+        # If yes, reload all results and restart with cursor preserved
+        local should_restart=false
+        
+        if [ -n "${TERMFLIX_PREFETCH_PID:-}" ]; then
+            # Check if background fetch finished
+            if ! kill -0 "$TERMFLIX_PREFETCH_PID" 2>/dev/null; then
+                # Background complete - reload data
+                local temp_combined="${TERMFLIX_TEMP_FILE:-$temp_file}"
+                if [[ -f "$temp_combined" ]]; then
+                    all_results=()
+                    while IFS= read -r line || [ -n "$line" ]; do
+                        if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                            all_results+=("$line")
+                        fi
+                    done < "$temp_combined"
+                    
+                    # Update loaded page count
+                    total_pages_loaded=$(( ${#all_results[@]} / 50 ))
+                    [[ $total_pages_loaded -lt 1 ]] && total_pages_loaded=1
+                    
+                    # Trigger next batch fetch if not at end
+                    if [[ "${TERMFLIX_NO_MORE_PAGES:-}" != "true" ]]; then
+                        local next_batch_start=$((TERMFLIX_BATCH_END + 1))
+                        local next_batch_end=$((next_batch_start + 9))
+                        
+                        (  # Background fetch next 10 pages
+                            for p in $(seq $next_batch_start $next_batch_end); do
+                                if [[ -n "${TERMFLIX_FUNC_LIMIT}" ]]; then
+                                    ${TERMFLIX_FUNC_NAME} "${TERMFLIX_FUNC_LIMIT}" "$p" >> "${TERMFLIX_TEMP_FILE}" 2>&1
+                                else
+                                    ${TERMFLIX_FUNC_NAME} "$p" >> "${TERMFLIX_TEMP_FILE}" 2>&1
+                                fi
+                            done
+                        ) &
+                        
+                        export TERMFLIX_PREFETCH_PID=$!
+                        export TERMFLIX_BATCH_END=$next_batch_end
+                    fi
+                    
+                    # Restart FZF with new data
+                    should_restart=true
+                fi
+            fi
+        fi
+        
+        # If background completed, restart to show new data
+        if [ "$should_restart" = true ]; then
+            continue
         fi
     done
 }

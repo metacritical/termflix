@@ -262,7 +262,8 @@ enrich_missing_posters() {
     fi
     
     # Use get_poster.py which has priority: TMDB → YTS → OMDb → Google
-    local poster_script="${TERMFLIX_SCRIPTS_DIR}/get_poster.py"
+    # Using newer implementation from lib/termflix/scripts/
+    local poster_script="${SCRIPT_DIR}/../lib/termflix/scripts/get_poster.py"
     
     # Parallel enrichment with limit
     {

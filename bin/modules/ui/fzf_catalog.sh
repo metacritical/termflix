@@ -168,6 +168,14 @@ show_fzf_catalog() {
         fzf_colors+=",border:#5865f2,gutter:#1e1e2e"            # Blue border
     fi
     
+    # Build page indicator: show '+' if still prefetching or more pages might exist
+    local page_suffix=""
+    if [[ -n "${TERMFLIX_PREFETCH_PID:-}" ]] && kill -0 "$TERMFLIX_PREFETCH_PID" 2>/dev/null; then
+        page_suffix="?"  # Currently prefetching
+    elif [[ "${TERMFLIX_NO_MORE_PAGES:-}" != "true" ]]; then
+        page_suffix="+"  # More pages might exist
+    fi
+    
     export FZF_DEFAULT_OPTS="
       --ansi
       --color=${fzf_colors}
@@ -177,7 +185,7 @@ show_fzf_catalog() {
       --margin=1
       --padding=1
       --info=hidden
-      --prompt=\"< Page ${current_page}/${total_pages} > \"
+      --prompt=\"< Page ${current_page}/${total_pages}${page_suffix} > \"
       --pointer='▶'
       --header=\"$menu_header\"
       --header-first

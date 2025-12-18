@@ -10,6 +10,17 @@ get_latest_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    # Check if Python catalog backend is enabled
+    if command -v use_python_catalog &>/dev/null && use_python_catalog; then
+        local catalog_script="${TERMFLIX_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../lib/termflix}/scripts/catalog.py"
+        
+        if [[ -f "$catalog_script" ]] && command -v python3 &>/dev/null; then
+            python3 "$catalog_script" latest "$limit" "$page" 2>/dev/null && return 0
+        fi
+        # Fallback to legacy if Python script not found
+    fi
+    
+    # Legacy implementation: fetch_multi_source_catalog.py
     local extra_args=""
     [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
     [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
@@ -61,6 +72,16 @@ get_trending_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    # Check if Python catalog backend is enabled
+    if command -v use_python_catalog &>/dev/null && use_python_catalog; then
+        local catalog_script="${TERMFLIX_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../lib/termflix}/scripts/catalog.py"
+        
+        if [[ -f "$catalog_script" ]] && command -v python3 &>/dev/null; then
+            python3 "$catalog_script" trending "$limit" "$page" 2>/dev/null && return 0
+        fi
+    fi
+    
+    # Legacy implementation
     local extra_args=""
     [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
     [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
@@ -106,6 +127,16 @@ get_popular_movies() {
     local limit="${1:-50}"
     local page="${2:-1}"
     
+    # Check if Python catalog backend is enabled
+    if command -v use_python_catalog &>/dev/null && use_python_catalog; then
+        local catalog_script="${TERMFLIX_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../lib/termflix}/scripts/catalog.py"
+        
+        if [[ -f "$catalog_script" ]] && command -v python3 &>/dev/null; then
+            python3 "$catalog_script" popular "$limit" "$page" 2>/dev/null && return 0
+        fi
+    fi
+    
+    # Legacy implementation
     local extra_args=""
     [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
     [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
@@ -158,6 +189,17 @@ get_popular_movies() {
 get_latest_shows() {
     local limit="${1:-50}"
     local page="${2:-1}"
+    
+    # Check if Python catalog backend is enabled
+    if command -v use_python_catalog &>/dev/null && use_python_catalog; then
+        local catalog_script="${TERMFLIX_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../lib/termflix}/scripts/catalog.py"
+        
+        if [[ -f "$catalog_script" ]] && command -v python3 &>/dev/null; then
+            python3 "$catalog_script" shows "$limit" "$page" 2>/dev/null && return 0
+        fi
+    fi
+    
+    # Legacy implementation
     local has_results=false
     
     local eztv_domains=("eztvx.to" "eztv.wf" "eztv.yt" "eztv1.xyz" "eztv.tf" "eztv.re")
@@ -199,6 +241,16 @@ get_catalog_by_genre() {
     # If no genre provided, fall back to Action
     [[ -z "$genre_arg" ]] && genre_arg="Action"
     
+    # Check if Python catalog backend is enabled
+    if command -v use_python_catalog &>/dev/null && use_python_catalog; then
+        local catalog_script="${TERMFLIX_LIB_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../lib/termflix}/scripts/catalog.py"
+        
+        if [[ -f "$catalog_script" ]] && command -v python3 &>/dev/null; then
+            python3 "$catalog_script" genre "$genre_arg" "$limit" 2>/dev/null && return 0
+        fi
+    fi
+    
+    # Legacy implementation
     local extra_args=""
     [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
     # Ensure genre arg is passed

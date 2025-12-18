@@ -172,7 +172,7 @@ class CatalogFetcher:
     # YTS API
     # ═══════════════════════════════════════════════════════════════
     
-    def get_yts_movies(self, sort_by: str = "date_added", limit: int = 20, 
+    def get_yts_movies(self, sort_by: str = "date_added", limit: int = 50, 
                        page: int = 1, genre: str = "", 
                        min_rating: int = 0) -> List[CatalogItem]:
         """Fetch movies from YTS API - returns ALL torrents per movie"""
@@ -271,7 +271,7 @@ class CatalogFetcher:
         
         return items
     
-    def get_trending(self, limit: int = 20, page: int = 1) -> List[CatalogItem]:
+    def get_trending(self, limit: int = 50, page: int = 1) -> List[CatalogItem]:
         """Get trending movies (sorted by download count)"""
         items = self.get_yts_movies(
             sort_by='download_count',
@@ -285,7 +285,7 @@ class CatalogFetcher:
         
         return items
     
-    def get_popular(self, limit: int = 20, page: int = 1) -> List[CatalogItem]:
+    def get_popular(self, limit: int = 50, page: int = 1) -> List[CatalogItem]:
         """Get popular movies (sorted by rating, min 7.0)"""
         items = self.get_yts_movies(
             sort_by='rating',
@@ -300,7 +300,7 @@ class CatalogFetcher:
         
         return items
     
-    def get_by_genre(self, genre: str, limit: int = 20) -> List[CatalogItem]:
+    def get_by_genre(self, genre: str, limit: int = 50) -> List[CatalogItem]:
         """Get movies by genre"""
         return self.get_yts_movies(
             sort_by='date_added',
@@ -410,9 +410,64 @@ class CatalogFetcher:
         except:
             return []
     
-    def get_latest(self, limit: int = 20, page: int = 1) -> List[CatalogItem]:
-        """Get latest movies from TPB top 100"""
-        return self.get_tpb_catalog(TPB_TOP100_MOVIES, limit)
+    def get_latest(self, limit: int = 50, page: int = 1) -> List[CatalogItem]:
+        """Get latest movies - multi-source for page 1, web scraper for others"""
+        all_items = []
+        
+        # PAGE 1: Use all sources for diversity
+        if page == 1:
+            # SOURCE 1: TPB Top 100 (fast, diverse)
+            try:
+                tpb_items = self.get_tpb_catalog(TPB_TOP100_MOVIES, limit)
+                all_items.extend(tpb_items)
+            except:
+                pass
+            
+            # SOURCE 2: YTS API
+            try:
+                yts_items = self.get_yts_movies(sort_by='date_added', limit=limit, page=page)
+                all_items.extend(yts_items)
+            except:
+                pass
+        
+        # ALL PAGES: Web Scraper (reliable, unlimited)
+        import subprocess
+        import os
+        
+        scraper_path = os.path.join(os.path.dirname(__file__), 'yts_scraper.py')
+        try:
+            result = subprocess.run(
+                ['python3', scraper_path, str(page), 'date_added'],
+                capture_output=True, text=True, timeout=15
+            )
+            
+            if result.returncode == 0:
+                for line in result.stdout.strip().split('\n'):
+                    if not line:
+                        continue
+                    parts = line.split('|')
+                    if len(parts) >= 7:
+                        title, year, rating, genre, quality, imdb_id, poster = parts[:7]
+                        name = f"{title} ({year})" if year else title
+                        all_items.append(CatalogItem(
+                            source='yts_web', name=name, magnet='',
+                            quality=quality or '720p', size='', extra=imdb_id,
+                            poster=poster, rating=f"⭐ {rating}" if rating and rating != '0' else ''
+                        ))
+        except:
+            pass
+        
+        # Deduplicate only for page 1
+        if page == 1:
+            seen = set()
+            unique = []
+            for item in all_items:
+                if item.name not in seen:
+                    seen.add(item.name)
+                    unique.append(item)
+            return unique[:limit]
+        
+        return all_items[:limit]
     
     # ═══════════════════════════════════════════════════════════════
     # MULTI-SOURCE ENRICHMENT
@@ -446,7 +501,7 @@ class CatalogFetcher:
         
         return None, None
     
-    def get_enriched_catalog(self, limit: int = 20, 
+    def get_enriched_catalog(self, limit: int = 50, 
                              search_per_movie: int = 5) -> List[CatalogItem]:
         """
         Get enriched catalog with multi-source search (CACHED).
@@ -569,7 +624,7 @@ class CatalogFetcher:
     # EZTV API
     # ═══════════════════════════════════════════════════════════════
     
-    def get_shows(self, limit: int = 20, page: int = 1) -> List[CatalogItem]:
+    def get_shows(self, limit: int = 50, page: int = 1) -> List[CatalogItem]:
         """Get latest TV shows from TPB (EZTV API is blocked)"""
         # TPB TV Shows: category 205 (Video - TV Shows)
         url = TPB_TOP100_TV
@@ -605,7 +660,7 @@ class CatalogFetcher:
     # COMBINED CATALOG
     # ═══════════════════════════════════════════════════════════════
     
-    def get_all(self, catalog_type: str = "latest", limit: int = 20, 
+    def get_all(self, catalog_type: str = "latest", limit: int = 50, 
                 page: int = 1, genre: str = "") -> List[CatalogItem]:
         """
         Get catalog based on type.
@@ -645,7 +700,7 @@ def main():
     fetcher = CatalogFetcher()
     
     # Parse common args: limit and page
-    limit = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 20
+    limit = int(sys.argv[2]) if len(sys.argv) > 2 and sys.argv[2].isdigit() else 50
     page = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else 1
     
     items = []
@@ -667,7 +722,7 @@ def main():
             print("Usage: catalog.py genre <genre_name> [limit]", file=sys.stderr)
             sys.exit(1)
         genre = sys.argv[2]
-        limit = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else 20
+        limit = int(sys.argv[3]) if len(sys.argv) > 3 and sys.argv[3].isdigit() else 50
         items = fetcher.get_by_genre(genre, limit)
     
     elif command == 'enriched':

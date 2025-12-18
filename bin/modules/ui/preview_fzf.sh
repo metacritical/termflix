@@ -257,8 +257,8 @@ fi
 # --- 6. Display Poster + Description Side-by-Side ---
 # Fetch poster URL on-demand if not provided
 if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
-    # Try to fetch poster URL using get_poster.py
-    POSTER_SCRIPT="${TERMFLIX_SCRIPTS_DIR}/get_poster.py"
+    # Try to fetch poster URL using get_poster.py (newer lib version)
+    POSTER_SCRIPT="$(cd \"$SCRIPT_DIR/../../..\" 2>/dev/null && pwd)/lib/termflix/scripts/get_poster.py"
     if [[ -f "$POSTER_SCRIPT" ]] && command -v python3 &>/dev/null; then
         poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title ($movie_year)" 2>/dev/null)
     fi
