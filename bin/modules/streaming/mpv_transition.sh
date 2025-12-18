@@ -23,8 +23,16 @@ mpv_transition_to_video() {
     local load_cmd="{\"command\": [\"loadfile\", \"$video_url\", \"replace\"]}"
     echo "$load_cmd" | socat - "$ipc_socket" 2>/dev/null
     
-    # Wait for video to start, then set OSD level to minimal
-    sleep 0.5
+    # Configure streaming properties for continuous buffering
+    sleep 0.3  # Wait for loadfile to start
+    
+    # Enable and configure cache for HTTP streaming
+    echo '{ "command": ["set_property", "cache", "yes"] }' | socat - "$ipc_socket" 2>/dev/null
+    echo '{ "command": ["set_property", "cache-secs", 300] }' | socat - "$ipc_socket" 2>/dev/null
+    echo '{ "command": ["set_property", "demuxer-max-bytes", 536870912] }' | socat - "$ipc_socket" 2>/dev/null  # 512MB
+    echo '{ "command": ["set_property", "demuxer-max-back-bytes", 268435456] }' | socat - "$ipc_socket" 2>/dev/null  # 256MB
+    
+    # Set OSD level to minimal
     echo '{ "command": ["set_property", "osd-level", "1"] }' | socat - "$ipc_socket" 2>/dev/null
     
     # Add subtitle if provided
