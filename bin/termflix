@@ -137,6 +137,15 @@ main() {
                 export USE_GRID_MODE
                 shift
                 ;;
+            --theme)
+                if [ -n "$2" ]; then
+                    load_theme "$2"
+                    shift 2
+                else
+                    echo -e "${RED}Error:${RESET} Please specify a theme name"
+                    exit 1
+                fi
+                ;;
             --clear)
                 local cache_dir="$HOME/.config/termflix/cache"
                 if [ -d "$cache_dir" ]; then
@@ -179,13 +188,48 @@ main() {
                 local new_player="$2"
                 if [[ "$new_player" =~ ^(mpv|vlc)$ ]]; then
                     init_termflix_dirs
-                    local config_file=$(get_termflix_config_file)
-                    echo "PLAYER=$new_player" > "$config_file"
+                    set_player_preference "$new_player"
+                    local config_file=$(get_config_file)
                     echo -e "${GREEN}Player preference changed to:${RESET} $new_player"
                     echo -e "${CYAN}Config saved to:${RESET} $config_file"
                     exit 0
                 else
                     echo -e "${RED}Error:${RESET} Invalid player. Use 'mpv' or 'vlc'"
+                    exit 1
+                fi
+                ;;
+            theme)
+                # Change theme preference
+                if [ -z "$2" ]; then
+                    echo -e "${RED}Error:${RESET} Please specify a theme name"
+                    # Get list of themes from bundled and user dirs
+                    local bundled_themes=$(ls "$SCRIPT_DIR/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
+                    
+                    echo -e "${CYAN}Available themes:${RESET} $all_themes"
+                    echo "Usage: termflix theme <name>"
+                    exit 1
+                fi
+                local new_theme="$2"
+                
+                # Check if theme exists (using find_theme_file logic mostly)
+                local theme_found=false
+                if [[ -f "$SCRIPT_DIR/themes/${new_theme}.css" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.css" ]]; then
+                    theme_found=true
+                fi
+                
+                if [ "$theme_found" = true ]; then
+                    init_termflix_dirs
+                    set_theme_preference "$new_theme"
+                    local config_file=$(get_config_file)
+                    echo -e "${GREEN}Theme preference changed to:${RESET} $new_theme"
+                    echo -e "${CYAN}Config saved to:${RESET} $config_file"
+                    exit 0
+                else
+                    echo -e "${RED}Error:${RESET} Theme '$new_theme' not found"
+                    local bundled_themes=$(ls "$SCRIPT_DIR/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    echo -e "${CYAN}Available themes:${RESET} $(echo "$bundled_themes" | xargs)"
                     exit 1
                 fi
                 ;;

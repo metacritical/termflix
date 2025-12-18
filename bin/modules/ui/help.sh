@@ -55,6 +55,7 @@ show_help() {
     echo
     echo -e "${C_PINK}Commands:${RESET}"
     echo "  player <mpv|vlc>    Change default media player preference"
+    echo "  theme <name>        Change UI theme (charm, default, etc.)"
     echo
     echo -e "${C_PINK}Examples:${RESET}"
     echo "  termflix                                    # Show latest movies and shows"

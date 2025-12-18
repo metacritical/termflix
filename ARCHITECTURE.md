@@ -7,18 +7,18 @@ Termflix is evolving from a Bash-first application to a hybrid architecture wher
 ## Current State (December 2025) ✅ **Milestones 1-3 Complete**
 
 ### Active Components
-- **Bash Orchestration**: `bin/termflix` (535 lines) - Main CLI entry point
+- **Bash Orchestration**: `bin/termflix` (553 lines) - Main CLI entry point
 - **Core Modules**: colors, config, deps, logging (Bash)
 - **UI Modules**: FZF integration, preview system, grid rendering (Bash)
 - **Feature Modules**: search (relevance sorting), catalog, posters, torrent (Bash + Python backends)
 - **Python Backends** (DEFAULT): 
-  - `lib/termflix/scripts/catalog.py` (707 lines) - latest/trending/popular/shows/genre
+  - `lib/termflix/scripts/catalog.py` (761 lines) - latest/trending/popular/shows/genre
   - `lib/termflix/scripts/api.py` (461 lines) - unified metadata (OMDB/TMDB/YTS)
   - `bin/scripts/group_results.py` (relevance scoring)
   - Legacy: `fetch_multi_source_catalog.py` (deprecated with warnings)
 
 ### Streaming Modules (Refactored)
-- **`bin/modules/torrent.sh`** (1,552 lines, down from 1,748) - main orchestrator
+- **`bin/modules/torrent.sh`** (1,625 lines) - main orchestrator
 - **`bin/modules/streaming/buffer_monitor.sh`** (205 lines) - buffer calculation & monitoring
 - **`bin/modules/streaming/subtitle_manager.sh`** (174 lines) - subtitle detection & handling
 - **`bin/modules/streaming/player.sh`** (268 lines) - player launch & monitoring with fork detection

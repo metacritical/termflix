@@ -62,19 +62,19 @@ launch_splash_screen() {
     local image_path="$1"
     local movie_title="${2:-TermFlix™}"
     
-    echo "DEBUG [launch_splash_screen]: Called with image=$image_path, title=$movie_title" >&2
+    [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: Called with image=$image_path, title=$movie_title" >&2
     
     if [[ ! -f "$image_path" ]]; then
-        echo "DEBUG [launch_splash_screen]: Image file not found!" >&2
+        [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: Image file not found!" >&2
         log_error "Splash image not found: $image_path"
         return 1
     fi
     
-    echo "DEBUG [launch_splash_screen]: Image file exists" >&2
+    [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: Image file exists" >&2
     
     # Create IPC socket for MPV control
     local ipc_socket="${TMPDIR:-/tmp}/termflix_mpv_splash_$$.sock"
-    echo "DEBUG [launch_splash_screen]: IPC socket will be: $ipc_socket" >&2
+    [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: IPC socket will be: $ipc_socket" >&2
     
     # MPV args for splash screen with IPC
     local mpv_args=(
@@ -98,11 +98,10 @@ launch_splash_screen() {
         "$image_path"
     )
     
-    echo "DEBUG [launch_splash_screen]: Launching MPV..." >&2
     local mpv_error_log="${TMPDIR:-/tmp}/termflix_mpv_splash_error.log"
     mpv "${mpv_args[@]}" >"$mpv_error_log" 2>&1 &
     local splash_pid=$!
-    echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid, errors in: $mpv_error_log" >&2
+    [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid, errors in: $mpv_error_log" >&2
     
     # Wait for socket to be created (up to 2 seconds)
     local wait_count=0
@@ -111,17 +110,21 @@ launch_splash_screen() {
         ((wait_count++))
     done
     
-    echo "DEBUG [launch_splash_screen]: Waited ${wait_count}x100ms for socket" >&2
-    echo "DEBUG [launch_splash_screen]: Socket exists: $(test -S "$ipc_socket" && echo YES || echo NO)" >&2
-    echo "DEBUG [launch_splash_screen]: Process alive: $(kill -0 "$splash_pid" 2>/dev/null && echo YES || echo NO)" >&2
+
+    
+    if [[ "$TORRENT_DEBUG" == "true" ]]; then
+        echo "DEBUG [launch_splash_screen]: Waited ${wait_count}x100ms for socket" >&2
+        echo "DEBUG [launch_splash_screen]: Socket exists: $(test -S "$ipc_socket" && echo YES || echo NO)" >&2
+        echo "DEBUG [launch_splash_screen]: Process alive: $(kill -0 "$splash_pid" 2>/dev/null && echo YES || echo NO)" >&2
+    fi
     
     if kill -0 "$splash_pid" 2>/dev/null && [[ -S "$ipc_socket" ]]; then
         local result="${splash_pid}|${ipc_socket}"
-        echo "DEBUG [launch_splash_screen]: SUCCESS! Returning: $result" >&2
+        [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: SUCCESS! Returning: $result" >&2
         echo "$result"
         return 0
     else
-        echo "DEBUG [launch_splash_screen]: FAILED! Cleaning up..." >&2
+        [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: FAILED! Cleaning up..." >&2
         [[ -S "$ipc_socket" ]] && rm -f "$ipc_socket"
         return 1
     fi

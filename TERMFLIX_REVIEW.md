@@ -51,11 +51,18 @@ These files are long and/or mix many responsibilities, and are good candidates f
 - `bin/modules/torrent.sh` (~1,747 lines) – **MONOLITHIC**: Main streaming logic, HTTP streaming, VLC/MPV integration, subtitle handling, buffering, peer management, quality selection, player controls.
 - `bin/d.sh` (~1,390 lines) – Docker helper/“Swiss‑army knife” script with colorized output, table parsing, interactive selection, and multiple subcommands in a single file; good candidate for splitting by concern (parsing, formatting, per‑command logic).
 - `bin/modules/catalog/grid.sh` (~998 lines) – grid rendering, poster downloading, image rendering (kitty/viu), text layout, rating/genre lookup, cursor management.
-- `lib/termflix/scripts/catalog.py` (~706 lines) – Python catalog engine (YTS/TPB/EZTV, caching, genre handling, enrichment, CLI); **currently not invoked by `bin/termflix`**.
-- `bin/scripts/search_yts.py` (~651 lines) – YTS search client with config, caching, retry, logging; **actively used via `bin/modules/search.sh`**.
-- `bin/scripts/fetch_multi_source_catalog.py` (~583 lines) – multi‑source catalog fetcher combining YTS + TPB with caching and aggregation; **actively used via `bin/modules/catalog/fetching.sh`**.
-- `bin/termflix` (~535 lines) – **WELL-ARCHITECTURED**: main CLI entrypoint that wires modules, config, and flows with clean separation of concerns.
-- `bin/modules/ui/fzf_catalog.sh` (~522 lines) – FZF catalog UI, navigation, staging files, preview wiring.
+- `lib/termflix/scripts/catalog.py` (~761 lines) – Python catalog engine (YTS/TPB/EZTV, caching, genre handling, enrichment, CLI); **currently not invoked by `bin/termflix`**.
+- `bin/termflix` (~553 lines) – **WELL-ARCHITECTURED**: main CLI entrypoint that wires modules, config, and flows with clean separation of concerns.
+- `bin/modules/ui/fzf_catalog.sh` (~532 lines) – FZF catalog UI, navigation, staging files, preview wiring.
+- `bin/modules/catalog.sh` (~504 lines) – **Complex**: Handles catalog orchestration, caching stategy, and complex background prefetching logic (Smart Prefetch).
+- `lib/termflix/scripts/api.py` (~460 lines) – unified Python metadata API (OMDB/TMDB/YTS) with caching.
+- `bin/modules/streaming/buffer_ui.sh` (~451 lines) – buffer status UI for streaming.
+- `bin/modules/core/config.sh` (~449 lines) – config discovery, parsing, and caching.
+- `bin/modules/api/tmdb.sh` (~442 lines) – TMDB API client and parsing helpers.
+- `bin/modules/ui/preview_fzf.sh` (~413 lines) – rich preview UI (posters, metadata, descriptions).
+- `lib/termflix/scripts/poster_cache.py` (~410 lines) – Python poster cache/viu pre‑renderer.
+- `bin/scripts/fetch_multi_source_catalog.py` (~583 lines) – multi‑source catalog fetcher.
+- `bin/scripts/search_yts.py` (~651 lines) – YTS search client.
 - `lib/termflix/scripts/api.py` (~460 lines) – unified Python metadata API (OMDB/TMDB/YTS) with caching; intended to replace shell OMDB/TMDB logic but **not yet wired into runtime**.
 - `bin/modules/api/omdb.sh` (~459 lines) – OMDB API client and parsing helpers (still used by Bash UI; a future migration target to `lib/termflix/scripts/api.py`).
 - `bin/modules/api/tmdb.sh` (~442 lines) – TMDB API client and parsing helpers (also a future migration target).
@@ -604,6 +611,25 @@ streaming/
 
 **Impact**: Preview logic lives in one place, simplifying future refactors and avoiding confusion about which stage‑2 variant is active.
 
+#### **7. Redundant Grid Script** - ⚠️ **NEW FINDING**
+
+**Refactoring Target**: `lib/torrent/display/grid.sh` (330 lines)
+
+**Status**: **Redundant / Dead Code**
+- This Bash script duplicates logic found in `bin/modules/catalog/grid.sh`.
+- It uses slightly different parameters (`row_height=20` vs `21`) but is largely identical in structure (Pass 1-4 rendering).
+- **Recommendation**: Delete `lib/torrent/display/grid.sh` entirely.
+
+#### **8. Backup Files Cleanup** - ⚠️ **NEW FINDING**
+
+**Refactoring Target**: Remove `.bak` files
+
+**Status**: **Junk Files**
+- `bin/modules/torrent.sh.bak` (1596 lines)
+- `bin/modules/streaming/player.sh.bak` (346 lines)
+- `bin/modules/streaming/buffer_ui.sh.bak` (383 lines)
+- **Recommendation**: Delete these files immediately to reduce noise.
+
 ---
 
 ## Part 4 – **UPDATED SOLID ANALYSIS**
@@ -620,30 +646,42 @@ streaming/
 
 ### **Detailed SOLID Violations**
 
+### **Detailed SOLID Violations**
+
 #### **`torrent.sh` - Critical Issues**
 
 1. **SRP Violations**:
-   - Line 1200-1400: `stream_torrent()` handles networking, UI updates, and player control
-   - Line 800-900: Quality selection mixed with HTTP client logic
-   - Line 1500-1600: Subtitle detection embedded in streaming function
+   - Line 1200-1400: `stream_torrent()` handles networking, UI updates, and player control.
+   - Line 800-900: Quality selection mixed with HTTP client logic.
+   - Line 1500-1600: Subtitle detection embedded in streaming function.
 
 2. **OCP Violations**:
-   - Adding new subtitle formats requires editing `stream_torrent()`
-   - New player support requires scattered changes throughout the file
+   - Adding new subtitle formats requires editing `stream_torrent()`.
+   - New player support requires scattered changes throughout the file.
 
 3. **DIP Violations**:
-   - Direct calls: `transmission-remote`, `peerflix`, `vlc`, `mpv`
-   - No abstraction layer for streaming protocols
+   - Direct calls: `transmission-remote`, `peerflix`, `vlc`, `mpv`.
+   - No abstraction layer for streaming protocols.
 
 #### **`grid.sh` - Mixed Responsibilities**
 
 1. **Multiple Concerns in Single Functions**:
-   - `draw_grid_row()` (lines 200-400): Handles image rendering AND text layout
-   - `download_posters()` (lines 500-700): Downloads AND caches AND renders
+   - `draw_grid_row()` (lines 200-400): Handles image rendering AND text layout.
+   - `download_posters()` (lines 500-700): Downloads AND caches AND renders.
 
 2. **Hard Dependencies**:
-   - Direct `kitty`, `viu`, `chafa` commands without abstraction
-   - Terminal geometry calculations mixed with rendering
+   - Direct `kitty`, `viu`, `chafa` commands without abstraction.
+   - Terminal geometry calculations mixed with rendering.
+
+#### **`catalog.sh` - Orchestration Overload**
+
+1. **SRP Violations**:
+   - Handles cache management, background prefetching logic, spinner UI, AND navigation dispatch.
+   - The "Smart Prefetch Strategy" (lines 107-236) is complex process management logic mixed with UI code.
+
+2. **Refactor Opportunity**:
+   - Extract prefetch logic to `bin/modules/catalog/prefetch.sh`.
+   - Extract cache management to `bin/modules/catalog/cache.sh`.
 
 ---
 
