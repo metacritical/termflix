@@ -272,18 +272,10 @@ stream_peerflix() {
     done
     temp_args+=("--remove")  # Clean up files when done
     
-    # Force HTTP mode if splash is active (required for IPC transition)
-    echo "DEBUG: Checking TERMFLIX_SPLASH_SOCKET=${TERMFLIX_SPLASH_SOCKET:-NOT_SET}" >&2
-    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]]; then
-        if [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
-            temp_args+=("--mode" "http")
-            echo -e "${CYAN}Forcing HTTP streaming mode for splash screen compatibility${RESET}"
-        else
-            echo "DEBUG: Socket variable set but file doesn't exist: $TERMFLIX_SPLASH_SOCKET" >&2
-        fi
-    else
-        echo "DEBUG: TERMFLIX_SPLASH_SOCKET not set, using default peerflix mode" >&2
-    fi
+    # ALWAYS use HTTP mode for continuous streaming support
+    # Direct file mode causes playback to stop when buffer is exhausted
+    temp_args+=("--mode" "http")
+    echo -e "${CYAN}Using HTTP streaming mode for continuous playback${RESET}"
     
     echo "DEBUG: Launching peerflix command: peerflix \"$source\" \"${temp_args[@]}\""
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
