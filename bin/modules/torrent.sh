@@ -1437,6 +1437,21 @@ EOF
     local player_pid=""
     local stream_url="http://localhost:8888/"
     
+    # Check if we have a splash screen MPV to transition
+    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+        # Use existing MPV splash screen - transition to video
+        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
+        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$stream_url" ""
+        # Find MPV PID from socket
+        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
+            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
+            return 1
+        fi
+        echo -e "${CYAN}Transitioned to video (PID: $player_pid)${RESET}"
+    else
+        # No splash screen - launch new player as normal
+    
     if [ "$player" = "vlc" ]; then
         if [ -n "$subtitle_arg" ]; then
             local sub_path="$video_dir/$subtitle_arg"
@@ -1468,6 +1483,7 @@ EOF
         echo -e "DEBUG: Launching mpv to log: $mpv_log"
         mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
         player_pid=$!
+    fi  # End of splash check
     fi
     
     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
