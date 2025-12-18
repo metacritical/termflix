@@ -53,6 +53,8 @@ show_inline_buffer_ui() {
         if curl -sL "$backdrop_image" -o "$temp_bg" --max-time 5; then
             echo "DEBUG: Downloaded to $temp_bg" >&2
             backdrop_image="$temp_bg"
+            # Update poster variable too so the preview script (which checks -f) works
+            poster="$temp_bg"
             # Cleanup temp background on exit
             trap 'rm -f "$temp_bg" 2>/dev/null; cleanup_stream' EXIT INT TERM
         else
