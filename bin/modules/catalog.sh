@@ -319,9 +319,12 @@ display_catalog() {
     local items_per_page=50
     local last_selected_index=1
     
+    local skip_reload=false
+    
     while true; do
         # CHECK: Reload if background fetch completed (check BEFORE showing FZF)
-        if [ -n "${TERMFLIX_PREFETCH_PID:-}" ]; then
+        # Skip reload check if just returning from stage 2 (Ctrl+H)
+        if [[ "$skip_reload" != "true" ]] && [ -n "${TERMFLIX_PREFETCH_PID:-}" ]; then
             if ! kill -0 "$TERMFLIX_PREFETCH_PID" 2>/dev/null; then
                 # Background complete - reload
                 local temp_combined="${TERMFLIX_TEMP_FILE:-$temp_file}"
@@ -350,6 +353,9 @@ display_catalog() {
                 fi
             fi
         fi
+        
+        # Reset skip flag after first iteration
+        skip_reload=false
         
         # Calculate total available pages
         local total_items=${#all_results[@]}
@@ -417,7 +423,8 @@ display_catalog() {
             local ret_code=$?
             
             if [ $ret_code -eq 10 ]; then
-                # User pressed Ctrl+H / Back - continue loop (restart FZF)
+                # User pressed Ctrl+H / Back - skip reload on next iteration for speed
+                skip_reload=true
                 continue
             elif [ $ret_code -eq 0 ]; then
                 # Successful stream - exit
