@@ -1469,6 +1469,7 @@ EOF
         mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
         player_pid=$!
     fi  # End of splash check
+    fi
     
     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
         echo -e "${RED}Error:${RESET} Failed to launch player"
