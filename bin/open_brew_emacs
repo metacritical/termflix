@@ -1,5 +1,0 @@
-#!/usr/bin/env ruby
-ARGV << "-t /dev/tty"
-env = "env TERM=xterm-256color "
-commands = env + $stdin.read.chomp + "/bin/emacs " + ARGV.join(' ')
-$stdout.puts %x( #{commands} )
