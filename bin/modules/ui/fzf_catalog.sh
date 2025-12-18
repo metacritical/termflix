@@ -520,7 +520,9 @@ handle_fzf_selection() {
           if [[ -n "$ver_pick" ]]; then
               ver_idx=$(echo "$ver_pick" | cut -d'|' -f1)
           fi
-          show_inline_buffer_ui "$name" "${poster_file:-$poster}" "$plot_text" "$magnet" "$source" "$quality" "$ver_idx"
+          # Extract IMDB ID from selection for backdrop fetching
+          local imdb_id=$(echo "$selection" | grep -oE 'tt[0-9]{7,}' | head -1)
+          show_inline_buffer_ui "$name" "${poster_file:-$poster}" "$plot_text" "$magnet" "$source" "$quality" "$ver_idx" "$imdb_id"
       else
           stream_torrent "$magnet" "" false false
       fi

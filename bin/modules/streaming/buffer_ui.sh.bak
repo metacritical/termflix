@@ -12,6 +12,7 @@ show_inline_buffer_ui() {
     local source="$5"
     local quality="$6"
     local selected_idx="${7:-0}"
+    local imdb_id="${8:-}"
     
     # Normalize TMPDIR (macOS adds trailing slash)
     local tmpdir="${TMPDIR:-/tmp}"
@@ -22,8 +23,46 @@ show_inline_buffer_ui() {
     local stream_log="$tmpdir/termflix_stream_debug.log"
     echo "0|0|0|0|0|STARTING" > "$status_file"
     
+    # Source backdrop fetching module
+    local BACKDROP_MODULE="${BASH_SOURCE%/*}/../api/tmdb_backdrops.sh"
+    [[ -f "$BACKDROP_MODULE" ]] && source "$BACKDROP_MODULE"
+    
+    # Source player module for splash screen
+    local PLAYER_MODULE="${BASH_SOURCE%/*}/player.sh"
+    [[ -f "$PLAYER_MODULE" ]] && source "$PLAYER_MODULE"
+    
+    # Try to fetch backdrop if IMDB ID available
+    local backdrop_image="$poster"  # Default to poster
+    if [[ -n "$imdb_id" ]] && command -v get_tmdb_backdrop &>/dev/null; then
+        echo "Fetching backdrop for $imdb_id..." >&2
+        local fetched_backdrop=$(get_tmdb_backdrop "$imdb_id" 2>/dev/null)
+        if [[ -n "$fetched_backdrop" ]] && [[ -f "$fetched_backdrop" ]]; then
+            backdrop_image="$fetched_backdrop"
+            echo "✓ Using backdrop: $backdrop_image" >&2
+        else
+            echo "⚠ No backdrop found, using poster" >&2
+        fi
+    fi
+    
+    # Launch MPV splash screen with backdrop
+    local splash_pid=""
+    if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
+        echo "Launching splash screen..." >&2
+        splash_ splash_pid=$(launch_splash_screen "$backdrop_image" "$title" 2>/dev/null)
+        if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
+            echo "✓ Splash screen launched (PID: $splash_pid)" >&2
+        else
+            echo "⚠ Failed to launch splash screen" >&2
+            splash_pid=""
+        fi
+    fi
+    
     echo "=== Buffer UI Started ===" > "$stream_log"
     echo "Time: $(date)" >> "$stream_log"
+    echo "Title: $title" >> "$stream_log"
+    echo "IMDB ID: ${imdb_id:-N/A}" >> "$stream_log"
+    echo "Backdrop: $backdrop_image" >> "$stream_log"
+    echo "Splash PID: ${splash_pid:-N/A}" >> "$stream_log"
     echo "Magnet: ${magnet:0:60}..." >> "$stream_log"
     echo "Status file: $status_file" >> "$stream_log"
     echo "Starting stream_torrent in background..." >> "$stream_log"
@@ -137,9 +176,6 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-if [[ -f "$poster" ]]; then
-else
-fi
 
 # Poster display (fixed aspect ratio) - AFTER text to prevent overlay
 if [[ -f "$poster" ]]; then
