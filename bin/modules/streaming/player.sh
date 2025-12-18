@@ -67,7 +67,7 @@ launch_player() {
     
     case "$player" in
         "mpv")
-            local args=("--force-window=immediate" "--title=$title")
+            local args=("--force-window=immediate" "--title=TermFlix™" "--force-media-title=$title")
             if [ -n "$subtitle" ]; then
                 args+=("--sub-file=$subtitle" "--sub-visibility=yes")
             fi
@@ -115,7 +115,7 @@ launch_player() {
             ;;
             
         "mplayer")
-            local args=("-title" "$title")
+            local args=("-title" "TermFlix™ - $title") # Changed to include TermFlix™
             if [ -n "$subtitle" ]; then
                 args+=("-sub" "$subtitle")
             fi
