@@ -90,6 +90,8 @@ launch_splash_screen() {
         "--keep-open=yes"  # Don't close when image ends
         "--no-audio"  # No audio for images
         "--loop=inf"  # Loop image
+        "--fullscreen"  # Display fullscreen
+        "--panscan=1.0"  # Zoom to fill screen
         "$image_path"
     )
     
