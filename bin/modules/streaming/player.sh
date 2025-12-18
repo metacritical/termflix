@@ -85,7 +85,7 @@ launch_splash_screen() {
         "--osd-level=3"  # Show all OSD messages
         "--osd-msg1=Buffering..."  # Initial message
         "--osd-font-size=48"
-        "--osd-color='#00FF00'"
+        "--osd-color=#00FF00"
         "--osd-border-size=2"
         "--keep-open=yes"  # Don't close when image ends
         "--no-audio"  # No audio for images
