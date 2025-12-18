@@ -47,7 +47,7 @@ show_inline_buffer_ui() {
     
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
         echo "DEBUG: Launching splash screen..." >&2
-        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>&1)
+        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>&2)
         echo "DEBUG: splash_result=$splash_result" >&2
         if [[ -n "$splash_result" ]] && [[ "$splash_result" =~ \|  ]]; then
             splash_pid="${splash_result%|*}"
