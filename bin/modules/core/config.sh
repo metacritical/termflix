@@ -167,6 +167,17 @@ set_quality_preference() {
     config_set "QUALITY" "$quality"
 }
 
+# Get preferred theme
+get_theme_preference() {
+    config_get "THEME" "charm"
+}
+
+# Set preferred theme
+set_theme_preference() {
+    local theme="$1"
+    config_set "THEME" "$theme"
+}
+
 # Get TMDB API key
 get_tmdb_api_key() {
     local key=$(config_get "TMDB_API_KEY" "")
@@ -340,6 +351,7 @@ get_config_default() {
         YTS_TIMEOUT)    echo "10" ;;    # 10 second timeout
         USE_PYTHON_CATALOG) echo "true" ;;   # Feature flag: use Python catalog backend (DEFAULT: ENABLED as of Dec 2025)
         USE_PYTHON_API) echo "true" ;;       # Feature flag: use Python API backend (DEFAULT: ENABLED as of Dec 2025)
+        THEME)          echo "charm" ;;      # Default theme
         *)              echo "" ;;
     esac
 }
@@ -426,6 +438,7 @@ export -f get_config_dir get_config_file get_cache_dir
 export -f config_get config_set invalidate_config_cache
 export -f get_player_preference set_player_preference
 export -f get_quality_preference set_quality_preference
+export -f get_theme_preference set_theme_preference
 export -f get_tmdb_api_key set_tmdb_api_key get_tmdb_read_token
 export -f get_omdb_api_key set_omdb_api_key
 export -f use_python_catalog use_python_api

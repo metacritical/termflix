@@ -45,6 +45,13 @@ source "$SCRIPT_DIR/modules/core/colors.sh"
 source "$SCRIPT_DIR/modules/core/config.sh"
 source "$SCRIPT_DIR/modules/core/deps.sh"
 
+# Load Configured Theme
+# (theme.sh is loaded early by colors.sh with defaults, so we reload here if config overrides)
+CFG_THEME=$(get_theme_preference)
+if [[ -n "$CFG_THEME" && "$CFG_THEME" != "charm" ]]; then
+    load_theme "$CFG_THEME"
+fi
+
 # UI Modules
 source "$SCRIPT_DIR/modules/ui/status.sh"
 source "$SCRIPT_DIR/modules/ui/help.sh"
