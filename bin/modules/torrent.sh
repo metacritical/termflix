@@ -1440,7 +1440,12 @@ EOF
         fi
     else
         # mpv - use HTTP URL for better seeking
-        local mpv_args=("--title=TermFlix™" "--force-media-title=$movie_title" "$stream_url")
+        # Build window title with movie name if available
+        local window_title="TermFlix™"
+        if [ -n "$movie_title" ]; then
+            window_title="TermFlix™ - $movie_title"
+        fi
+        local mpv_args=("--title=$window_title" "$stream_url")
         if [ -n "$subtitle_arg" ]; then
             local sub_path="$video_dir/$subtitle_arg"
             echo -e "${YELLOW}Command:${RESET} mpv \"$stream_url\" --sub-file=\"$sub_path\" --sid=1 --sub-visibility=yes"
