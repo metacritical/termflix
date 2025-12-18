@@ -90,6 +90,11 @@ launch_splash_screen() {
         "--keep-open=yes"  # Don't close when image ends
         "--fullscreen"  # Display fullscreen
         "--panscan=1.0"  # Zoom to fill screen
+        # Pre-configure cache for video transition (essential for seamless playback)
+        "--cache=yes"
+        "--cache-secs=300"           # 5 minutes
+        "--demuxer-max-bytes=512M"   # 512MB
+        "--demuxer-max-back-bytes=256M" 
         "$image_path"
     )
     
