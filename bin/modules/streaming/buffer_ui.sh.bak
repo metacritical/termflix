@@ -137,6 +137,9 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+if [[ -f "$poster" ]]; then
+else
+fi
 
 # Poster display (fixed aspect ratio) - AFTER text to prevent overlay
 if [[ -f "$poster" ]]; then
