@@ -43,53 +43,61 @@ show_inline_buffer_ui() {
     # Launch MPV splash screen with backdrop (parallel to FZF buffering)
     local splash_pid=""
     local splash_socket=""
-    echo "DEBUG: Checking splash screen preconditions..." >&2
-    echo "DEBUG: backdrop_image=$backdrop_image" >&2
+    
+    # Debug helper
+    debug_log() {
+        if [[ "${TERMFLIX_DEBUG:-false}" == "true" ]]; then
+            echo "DEBUG: $1" >&2
+        fi
+    }
+    
+    debug_log "Checking splash screen preconditions..."
+    debug_log "backdrop_image=$backdrop_image"
     
     # Check if backdrop is a URL and download it if needed
     if [[ "$backdrop_image" =~ ^https?:// ]]; then
-        echo "DEBUG: Backdrop is a URL, downloading..." >&2
+        debug_log "Backdrop is a URL, downloading..."
         local temp_bg="${tmpdir}/termflix_backdrop_$$.jpg"
         if curl -sL "$backdrop_image" -o "$temp_bg" --max-time 5; then
-            echo "DEBUG: Downloaded to $temp_bg" >&2
+            debug_log "Downloaded to $temp_bg"
             backdrop_image="$temp_bg"
             # Update poster variable too so the preview script (which checks -f) works
             poster="$temp_bg"
             # Cleanup temp background on exit
             trap 'rm -f "$temp_bg" 2>/dev/null; cleanup_stream' EXIT INT TERM
         else
-            echo "DEBUG: Failed to download backdrop URL" >&2
+            debug_log "Failed to download backdrop URL"
         fi
     fi
     
-    echo "DEBUG: launch_splash_screen available: $(command -v launch_splash_screen || echo 'NOT FOUND')" >&2
+    debug_log "launch_splash_screen available: $(command -v launch_splash_screen || echo 'NOT FOUND')"
     
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
-        echo "DEBUG: Launching splash screen..." >&2
+        debug_log "Launching splash screen..."
         local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>&2)
-        echo "DEBUG: splash_result=$splash_result" >&2
+        debug_log "splash_result=$splash_result"
         if [[ -n "$splash_result" ]] && [[ "$splash_result" =~ \|  ]]; then
             splash_pid="${splash_result%|*}"
             splash_socket="${splash_result#*|}"
-            echo "DEBUG: Extracted PID=$splash_pid,Socket=$splash_socket" >&2
+            debug_log "Extracted PID=$splash_pid,Socket=$splash_socket"
             if ! kill -0 "$splash_pid" 2>/dev/null || [[ ! -S "$splash_socket" ]]; then
-                echo "DEBUG: Splash screen failed validation" >&2
+                debug_log "Splash screen failed validation"
                 splash_pid=""
                 splash_socket=""
             else
-                echo "DEBUG: Splash screen launched successfully!" >&2
+                debug_log "Splash screen launched successfully!"
             fi
         else
-            echo "DEBUG: splash_result doesn't match expected format" >&2
+            debug_log "splash_result doesn't match expected format"
         fi
     else
-        echo "DEBUG: Splash screen preconditions not met" >&2
+        debug_log "Splash screen preconditions not met"
     fi
     
     # Launch progress monitor if splash launched successfully
     if [[ -n "$splash_socket" ]] && [[ -S "$splash_socket" ]]; then
         monitor_splash_progress "$splash_socket" "$status_file" "$title" &>/dev/null &
-        echo "DEBUG: Progress monitor started" >&2
+        debug_log "Progress monitor started"
     fi
     
     echo "=== Buffer UI Started ===" > "$stream_log"
