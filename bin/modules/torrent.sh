@@ -1442,8 +1442,29 @@ EOF
     echo
     
     # Launch player with HTTP stream URL (allows seeking ahead)
-    local player_pid=""
-    local stream_url="http://localhost:8888/"
+    
+    # Parse streaming URL from peerflix output (it will print the HTTP URL)
+    # Wait for peerflix to show the URL
+    local stream_url=""
+    local wait_count=0
+    while [ -z "$stream_url" ] && [ $wait_count -lt 30 ]; do
+        if [ -f "$temp_output" ]; then
+            # Look for "Server running at http://..." in peerflix output
+            stream_url=$(grep -oE "http://[^[:space:]]+" "$temp_output" 2>/dev/null | head -1)
+        fi
+        if [[ -z "$stream_url" ]]; then
+            sleep 0.5
+            wait_count=$((wait_count + 1))
+        fi
+    done
+    
+    if [ -z "$stream_url" ]; then
+        echo -e "${RED}Error:${RESET} Could not get streaming URL from peerflix"
+        kill $peerflix_pid 2>/dev/null
+        return 1
+    fi
+    
+    echo -e "${GREEN}Peerflix streaming at:${RESET} $stream_url"
     
     # Check if we have a splash screen MPV to transition
     if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
