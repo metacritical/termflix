@@ -12,6 +12,7 @@ show_inline_buffer_ui() {
     local source="$5"
     local quality="$6"
     local selected_idx="${7:-0}"
+    local imdb_id="${8:-}"
     
     # Normalize TMPDIR (macOS adds trailing slash)
     local tmpdir="${TMPDIR:-/tmp}"
@@ -22,8 +23,34 @@ show_inline_buffer_ui() {
     local stream_log="$tmpdir/termflix_stream_debug.log"
     echo "0|0|0|0|0|STARTING" > "$status_file"
     
+    # Source modules for backdrop and splash screen
+    local BACKDROP_MODULE="${BASH_SOURCE%/*}/../api/tmdb_backdrops.sh"
+    local PLAYER_MODULE="${BASH_SOURCE%/*}/player.sh"
+    [[ -f "$BACKDROP_MODULE" ]] && source "$BACKDROP_MODULE"
+    [[ -f "$PLAYER_MODULE" ]] && source "$PLAYER_MODULE"
+    
+    # Fetch backdrop if IMDB ID available (background, non-blocking)
+    local backdrop_image="$poster"
+    if [[ -n "$imdb_id" ]] && command -v get_tmdb_backdrop &>/dev/null; then
+        local fetched_backdrop=$(get_tmdb_backdrop "$imdb_id" 2>/dev/null)
+        if [[ -n "$fetched_backdrop" ]] && [[ -f "$fetched_backdrop" ]]; then
+            backdrop_image="$fetched_backdrop"
+        fi
+    fi
+    
+    # Launch MPV splash screen with backdrop (parallel to FZF buffering)
+    local splash_pid=""
+    if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
+        splash_pid=$(launch_splash_screen "$backdrop_image" "$title" 2>/dev/null)
+        if [[ -z "$splash_pid" ]] || ! kill -0 "$splash_pid" 2>/dev/null; then
+            splash_pid=""
+        fi
+    fi
+    
     echo "=== Buffer UI Started ===" > "$stream_log"
     echo "Time: $(date)" >> "$stream_log"
+    echo "Backdrop: $backdrop_image" >> "$stream_log"
+    echo "Splash PID: ${splash_pid:-none}" >> "$stream_log"
     echo "Magnet: ${magnet:0:60}..." >> "$stream_log"
     echo "Status file: $status_file" >> "$stream_log"
     echo "Starting stream_torrent in background..." >> "$stream_log"
@@ -42,6 +69,10 @@ show_inline_buffer_ui() {
     # Cleanup function
     cleanup_stream() {
         tput cnorm
+        # Kill splash screen if still running
+        if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
+            kill "$splash_pid" 2>/dev/null
+        fi
         if kill -0 "$stream_pid" 2>/dev/null; then
             kill -9 "$stream_pid" 2>/dev/null
             wait "$stream_pid" 2>/dev/null
