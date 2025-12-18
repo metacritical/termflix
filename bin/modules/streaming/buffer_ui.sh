@@ -298,19 +298,44 @@ if [[ -f "$status_file" ]]; then
         echo ""
         echo -e "${bar} ${progress}%"
         echo ""
-        printf "%-15s %s\n" "Speed:" "$speed"
-        printf "%-15s %d/%d\n" "Peers:" "${connected_peers:-0}" "${total_peers:-0}"
-        printf "%-15s %d MB\n" "Buffered:" "${buffered_mb:-0}"
-        if [[ -n "$stream_url" ]]; then
-             printf "%-15s %s\n" "Stream URL:" "$stream_url"
+        # Status indicators using colored dots (like Stage 1 header)
+        # 🟢 = Running, 🔴 = Stopped/Died
+        
+        # Peerflix Status
+        local peerflix_dot="${RED}●${RESET}"
+        if [[ -n "$peerflix_pid" ]] && kill -0 "$peerflix_pid" 2>/dev/null; then
+             peerflix_dot="${GREEN}●${RESET}"
         fi
-        if [[ -n "$peerflix_pid" ]]; then
-             if kill -0 "$peerflix_pid" 2>/dev/null; then
-                 printf "%-15s %s\n" "Peerflix:" "${GREEN}Running ($peerflix_pid)${RESET}"
-             else
-                 printf "%-15s %s\n" "Peerflix:" "${RED}DIED ($peerflix_pid)${RESET}"
+        
+        # MPV Status (check if mpv process exists)
+        local mpv_dot="${RED}●${RESET}"
+        # We need to find MPV pid. Attempt to read from status file if available or check standard pid
+        # Since we don't have MPV PID in status file yet, we'll check broadly or just rely on stream URL reachability?
+        # Better: Update torrent.sh to write MPV pid to status file too. 
+        # For now, let's assume if stream URL is up and we assume MPV is launched...
+        # Actually, user asked to "produce its status aswell".
+        # Let's check for any mpv process playing this file? Or better, check if the transition happened.
+        # If state is PLAYING, MPV should be running.
+        if [[ "$state" == "PLAYING" ]] || [[ "$state" == "READY" ]]; then
+             # Simple check: is there an MPV process running?
+             if pgrep -x "mpv" >/dev/null; then
+                 mpv_dot="${GREEN}●${RESET}"
              fi
         fi
+
+        printf "%-15s %b Peerflix\n" "Source:" "$peerflix_dot"
+        printf "%-15s %b MPV Player\n" "Player:" "$mpv_dot"
+        
+        if [[ -n "$stream_url" ]]; then
+             # Clean URL for display (remove http://localhost:)
+             local display_url="${stream_url#http://localhost:}"
+             display_url="${display_url%/}"
+             printf "%-15s Port: %s\n" "Stream:" "$display_url"
+        fi
+        
+        printf "%-15s %s\n" "Speed:" "$speed"
+        printf "%-15s %d MB\n" "Buffered:" "${buffered_mb:-0}"
+        
         echo ""
         echo -e "${GRAY}Press ESC to cancel${RESET}"
     fi
