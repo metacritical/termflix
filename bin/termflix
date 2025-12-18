@@ -145,6 +145,23 @@ main() {
                 fi
                 exit 0
                 ;;
+            --remove)
+                local torrent_dir="/tmp/torrent-stream"
+                if [ -d "$torrent_dir" ]; then
+                    local file_count=$(find "$torrent_dir" -maxdepth 1 -type f -o -type d | wc -l | tr -d ' ')
+                    # Subtract 1 for the directory itself
+                    file_count=$((file_count - 1))
+                    rm -rf "$torrent_dir"/* 2>/dev/null
+                    if [ "$file_count" -gt 0 ]; then
+                        echo -e "${GREEN}✓ Removed ${file_count} torrent temp file(s) from $torrent_dir${RESET}"
+                    else
+                        echo -e "${YELLOW}No torrent files found to remove${RESET}"
+                    fi
+                else
+                    echo -e "${YELLOW}Torrent temp directory does not exist${RESET}"
+                fi
+                exit 0
+                ;;
             player)
                 # Change player preference
                 if [ -z "$2" ]; then
