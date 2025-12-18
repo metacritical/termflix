@@ -94,9 +94,10 @@ launch_splash_screen() {
     )
     
     echo "DEBUG [launch_splash_screen]: Launching MPV..." >&2
-    mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+    local mpv_error_log="${TMPDIR:-/tmp}/termflix_mpv_splash_error.log"
+    mpv "${mpv_args[@]}" >"$mpv_error_log" 2>&1 &
     local splash_pid=$!
-    echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid" >&2
+    echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid, errors in: $mpv_error_log" >&2
     
     # Wait for socket to be created (up to 2 seconds)
     local wait_count=0
