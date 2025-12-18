@@ -102,8 +102,9 @@ stream_peerflix() {
         return 1
     fi
     
-    local args=("-p" "8888")  # Fixed port for HTTP streaming
-    
+    # Let peerflix choose an available port (no -p flag = auto port selection)
+    # We'll parse the actual HTTP URL from peerflix output
+    local args=()
     if [ -n "$index" ]; then
         args+=("-i" "$index")
     fi
