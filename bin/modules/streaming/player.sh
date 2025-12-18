@@ -56,70 +56,43 @@ get_active_player() {
 
 
 # Launch MPV splash screen with backdrop image and title
-# Args: $1 = backdrop/poster image path, $2 = movie title
-# Returns: "PID|SOCKET_PATH" (pipe-separated)
+# Args: $1 = backdrop/poster image path, $2 = movie title  
+# Returns: MPV PID (or empty if failed)
 launch_splash_screen() {
     local image_path="$1"
     local movie_title="${2:-TermFlix™}"
     
-    echo "DEBUG [launch_splash_screen]: Called with image=$image_path, title=$movie_title" >&2
-    
     if [[ ! -f "$image_path" ]]; then
-        echo "DEBUG [launch_splash_screen]: Image file not found!" >&2
-        log_error "Splash image not found: $image_path"
         return 1
     fi
     
-    echo "DEBUG [launch_splash_screen]: Image file exists" >&2
-    
-    # Create IPC socket for MPV control
-    local ipc_socket="${TMPDIR:-/tmp}/termflix_mpv_splash_$$.sock"
-    echo "DEBUG [launch_splash_screen]: IPC socket will be: $ipc_socket" >&2
-    
-    # MPV args for splash screen with IPC
+    # Simple MPV launch - no IPC, just display image fullscreen
     local mpv_args=(
-        "--input-ipc-server=$ipc_socket"  # Enable IPC for loadfile command
-        "--image-display-duration=inf"  # Keep showing indefinitely
         "--title=TermFlix™ - $movie_title"
         "--force-media-title=$movie_title"
-        "--osd-level=3"  # Show all OSD messages
-        "--osd-msg1=Buffering..."  # Initial message
-        "--osd-font-size=48"
-        "--osd-color='#00FF00'"
-        "--osd-border-size=2"
-        "--keep-open=yes"  # Don't close when image ends
-        "--no-audio"  # No audio for images
-        "--loop=inf"  # Loop image
-        "--fullscreen"  # Display fullscreen
-        "--panscan=1.0"  # Zoom to fill screen
+        "--osd-level=3"
+        "--osd-msg1=Downloading & Buffering..."
+        "--osd-font-size=60"
+        "--osd-color='#FFD700'"
+        "--osd-border-size=3"
+        "--keep-open=yes"
+        "--no-audio"
+        "--loop=inf"
+        "--fullscreen"
+        "--panscan=1.0"
+        "--image-display-duration=inf"
         "$image_path"
     )
     
-    echo "DEBUG [launch_splash_screen]: Launching MPV..." >&2
-    local mpv_error_log="${TMPDIR:-/tmp}/termflix_mpv_splash_error.log"
-    mpv "${mpv_args[@]}" >"$mpv_error_log" 2>&1 &
+    mpv "${mpv_args[@]}" >/dev/null 2>&1 &
     local splash_pid=$!
-    echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid, errors in: $mpv_error_log" >&2
     
-    # Wait for socket to be created (up to 2 seconds)
-    local wait_count=0
-    while [[ ! -S "$ipc_socket" ]] && [[ $wait_count -lt 20 ]]; do
-        sleep 0.1
-        ((wait_count++))
-    done
-    
-    echo "DEBUG [launch_splash_screen]: Waited ${wait_count}x100ms for socket" >&2
-    echo "DEBUG [launch_splash_screen]: Socket exists: $(test -S "$ipc_socket" && echo YES || echo NO)" >&2
-    echo "DEBUG [launch_splash_screen]: Process alive: $(kill -0 "$splash_pid" 2>/dev/null && echo YES || echo NO)" >&2
-    
-    if kill -0 "$splash_pid" 2>/dev/null && [[ -S "$ipc_socket" ]]; then
-        local result="${splash_pid}|${ipc_socket}"
-        echo "DEBUG [launch_splash_screen]: SUCCESS! Returning: $result" >&2
-        echo "$result"
+    # Simple validation - just check if process started
+    sleep 0.3
+    if kill -0 "$splash_pid" 2>/dev/null; then
+        echo "$splash_pid"
         return 0
     else
-        echo "DEBUG [launch_splash_screen]: FAILED! Cleaning up..." >&2
-        [[ -S "$ipc_socket" ]] && rm -f "$ipc_socket"
         return 1
     fi
 }
