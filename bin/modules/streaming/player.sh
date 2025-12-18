@@ -57,7 +57,7 @@ get_active_player() {
 
 # Launch MPV splash screen with backdrop image and title
 # Args: $1 = backdrop/poster image path, $2 = movie title
-# Returns: MPV PID
+# Returns: "PID|SOCKET_PATH" (pipe-separated)
 launch_splash_screen() {
     local image_path="$1"
     local movie_title="${2:-TermFlix™}"
@@ -67,28 +67,41 @@ launch_splash_screen() {
         return 1
     fi
     
-    # MPV args for splash screen
+    # Create IPC socket for MPV control
+    local ipc_socket="${TMPDIR:-/tmp}/termflix_mpv_splash_$$.sock"
+    
+    # MPV args for splash screen with IPC
     local mpv_args=(
+        "--input-ipc-server=$ipc_socket"  # Enable IPC for loadfile command
         "--image-display-duration=inf"  # Keep showing indefinitely
         "--title=TermFlix™ - $movie_title"
         "--force-media-title=$movie_title"
-        " --osd-level=3"  # Show all OSD messages
+        "--osd-level=3"  # Show all OSD messages
         "--osd-msg1=Buffering..."  # Initial message
         "--osd-font-size=48"
         "--osd-color='#00FF00'"
         "--osd-border-size=2"
         "--keep-open=yes"  # Don't close when image ends
         "--no-audio"  # No audio for images
+        "--loop=inf"  # Loop image
         "$image_path"
     )
     
     mpv "${mpv_args[@]}" >/dev/null 2>&1 &
     local splash_pid=$!
     
-    if kill -0 "$splash_pid" 2>/dev/null; then
-        echo "$splash_pid"
+    # Wait for socket to be created (up to 2 seconds)
+    local wait_count=0
+    while [[ ! -S "$ipc_socket" ]] && [[ $wait_count -lt 20 ]]; do
+        sleep 0.1
+        ((wait_count++))
+    done
+    
+    if kill -0 "$splash_pid" 2>/dev/null && [[ -S "$ipc_socket" ]]; then
+        echo "${splash_pid}|${ipc_socket}"
         return 0
     else
+        [[ -S "$ipc_socket" ]] && rm -f "$ipc_socket"
         return 1
     fi
 }

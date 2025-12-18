@@ -40,10 +40,16 @@ show_inline_buffer_ui() {
     
     # Launch MPV splash screen with backdrop (parallel to FZF buffering)
     local splash_pid=""
+    local splash_socket=""
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
-        splash_pid=$(launch_splash_screen "$backdrop_image" "$title" 2>/dev/null)
-        if [[ -z "$splash_pid" ]] || ! kill -0 "$splash_pid" 2>/dev/null; then
-            splash_pid=""
+        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>/dev/null)
+        if [[ -n "$splash_result" ]] && [[ "$splash_result" =~ \|  ]]; then
+            splash_pid="${splash_result%|*}"
+            splash_socket="${splash_result#*|}"
+            if ! kill -0 "$splash_pid" 2>/dev/null || [[ ! -S "$splash_socket" ]]; then
+                splash_pid=""
+                splash_socket=""
+            fi
         fi
     fi
     
@@ -51,12 +57,14 @@ show_inline_buffer_ui() {
     echo "Time: $(date)" >> "$stream_log"
     echo "Backdrop: $backdrop_image" >> "$stream_log"
     echo "Splash PID: ${splash_pid:-none}" >> "$stream_log"
+    echo "Splash Socket: ${splash_socket:-none}" >> "$stream_log"
     echo "Magnet: ${magnet:0:60}..." >> "$stream_log"
     echo "Status file: $status_file" >> "$stream_log"
     echo "Starting stream_torrent in background..." >> "$stream_log"
     
     {
         export TERMFLIX_BUFFER_STATUS="$status_file"
+        export TERMFLIX_SPLASH_SOCKET="$splash_socket"  # Pass socket to stream_torrent
         echo "Calling stream_torrent..." >> "$stream_log" 2>&1
         stream_torrent "$magnet" "" false false "$title" >> "$stream_log" 2>&1
         echo "stream_torrent exited with code: $?" >> "$stream_log" 2>&1

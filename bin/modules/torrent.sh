@@ -7,6 +7,7 @@ MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$MODULE_DIR/streaming/buffer_monitor.sh"
 . "$MODULE_DIR/streaming/subtitle_manager.sh"
 . "$MODULE_DIR/streaming/player.sh"  # Already sourced, keeping for clarity
+. "$MODULE_DIR/streaming/mpv_transition.sh"  # NEW: For splash screen transitions
 
 # Main streaming logic for peerflix and transmission-cli
 #
@@ -875,22 +876,30 @@ EOF
                     if [ -z "$player" ]; then
                          player=$(get_active_player)
                     fi
-
-                    # Launch player using centralized module (returns PID)
-                    # We capture the output carefully as launch_player echoes the PID
-                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
                     
-                    if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
-                        echo -e "${RED}Error:${RESET} Failed to launch player"
-                        kill $transmission_pid 2>/dev/null || true
-                        # Restore original transmission config if we modified it
-                        if [ -n "$config_backup" ] && [ -f "$config_backup" ]; then
-                            cp "$config_backup" "$transmission_config" 2>/dev/null
-                            rm -f "$config_backup" 2>/dev/null
+                    # Check if we have a splash screen MPV to transition
+                    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+                        # Use existing MPV splash screen - transition to video
+                        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
+                        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$video_name" "$subtitle_arg"
+                        # Find MPV PID from socket
+                        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+                        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
                         fi
-                        rm -f "$transmission_output" 2>/dev/null
-                        rm -f "$temp_output" 2>/dev/null
-                        return 1
+                    else
+                        # No splash screen - launch new player as normal
+                        player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
+                        
+                        if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Failed to launch player"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
                     fi
                     
                     echo -e "${CYAN}Player started (PID: $player_pid). Transmission running (PID: $transmission_pid)${RESET}"
