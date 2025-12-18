@@ -310,13 +310,13 @@ if [[ -f "$status_file" ]]; then
         # 🟢 = Running, 🔴 = Stopped/Died
         
         # Peerflix Status
-        local peerflix_dot="${RED}●${RESET}"
+        peerflix_dot="${RED}●${RESET}"
         if [[ -n "$peerflix_pid" ]] && kill -0 "$peerflix_pid" 2>/dev/null; then
              peerflix_dot="${GREEN}●${RESET}"
         fi
         
         # MPV Status (check if mpv process exists)
-        local mpv_dot="${RED}●${RESET}"
+        mpv_dot="${RED}●${RESET}"
         # We need to find MPV pid. Attempt to read from status file if available or check standard pid
         # Since we don't have MPV PID in status file yet, we'll check broadly or just rely on stream URL reachability?
         # Better: Update torrent.sh to write MPV pid to status file too. 
@@ -336,7 +336,7 @@ if [[ -f "$status_file" ]]; then
         
         if [[ -n "$stream_url" ]]; then
              # Clean URL for display (remove http://localhost:)
-             local display_url="${stream_url#http://localhost:}"
+             display_url="${stream_url#http://localhost:}"
              display_url="${display_url%/}"
              printf "%-15s Port: %s\n" "Stream:" "$display_url"
         fi
