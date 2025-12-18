@@ -31,7 +31,7 @@ show_inline_buffer_ui() {
     {
         export TERMFLIX_BUFFER_STATUS="$status_file"
         echo "Calling stream_torrent..." >> "$stream_log" 2>&1
-        stream_torrent "$magnet" "" false false >> "$stream_log" 2>&1
+        stream_torrent "$magnet" "" false false "$title" >> "$stream_log" 2>&1
         echo "stream_torrent exited with code: $?" >> "$stream_log" 2>&1
     } &
     local stream_pid=$!

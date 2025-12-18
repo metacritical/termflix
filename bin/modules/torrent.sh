@@ -24,6 +24,7 @@ stream_peerflix() {
     local source="$1"
     local index="${2:-}"
     local enable_subtitles="${3:-false}"
+    local movie_title="${4:-Termflix Stream}"
     
     # Get player preference (will ask if first time, but with timeout to prevent hanging)
     local player=$(get_player_preference)
@@ -877,7 +878,7 @@ EOF
 
                     # Launch player using centralized module (returns PID)
                     # We capture the output carefully as launch_player echoes the PID
-                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "Termflix: $video_name")
+                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
                     
                     if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
                         echo -e "${RED}Error:${RESET} Failed to launch player"
@@ -1493,6 +1494,7 @@ stream_torrent() {
     local index="${2:-}"
     local list_only="${3:-false}"
     local enable_subtitles="${4:-false}"
+    local movie_title="${5:-Termflix Stream}"
     
     # Validate source (must be magnet link or file path)
     if [ -z "$source" ]; then
@@ -1519,7 +1521,7 @@ stream_torrent() {
     if [ "$list_only" = true ]; then
         peerflix "$source" --list
     else
-        stream_peerflix "$source" "$index" "$enable_subtitles"
+        stream_peerflix "$source" "$index" "$enable_subtitles" "$movie_title"
     fi
 }
 
