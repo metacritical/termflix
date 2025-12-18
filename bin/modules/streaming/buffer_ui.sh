@@ -26,8 +26,10 @@ show_inline_buffer_ui() {
     # Source modules for backdrop and splash screen
     local BACKDROP_MODULE="${BASH_SOURCE%/*}/../api/tmdb_backdrops.sh"
     local PLAYER_MODULE="${BASH_SOURCE%/*}/player.sh"
+    local PROGRESS_MODULE="${BASH_SOURCE%/*}/splash_progress.sh"
     [[ -f "$BACKDROP_MODULE" ]] && source "$BACKDROP_MODULE"
     [[ -f "$PLAYER_MODULE" ]] && source "$PLAYER_MODULE"
+    [[ -f "$PROGRESS_MODULE" ]] && source "$PROGRESS_MODULE"
     
     # Fetch backdrop if IMDB ID available (background, non-blocking)
     local backdrop_image="$poster"
@@ -65,6 +67,12 @@ show_inline_buffer_ui() {
         fi
     else
         echo "DEBUG: Splash screen preconditions not met" >&2
+    fi
+    
+    # Launch progress monitor if splash launched successfully
+    if [[ -n "$splash_socket" ]] && [[ -S "$splash_socket" ]]; then
+        monitor_splash_progress "$splash_socket" "$status_file" "$title" &>/dev/null &
+        echo "DEBUG: Progress monitor started" >&2
     fi
     
     echo "=== Buffer UI Started ===" > "$stream_log"
