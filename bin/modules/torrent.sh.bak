@@ -271,11 +271,6 @@ stream_peerflix() {
         fi
     done
     temp_args+=("--remove")  # Clean up files when done
-    # Force HTTP mode if splash is active
-    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
-        temp_args+=("--mode" "http")
-        echo -e "${CYAN}Forcing HTTP streaming mode for splash screen${RESET}"
-    fi
     echo "DEBUG: Launching peerflix command: peerflix \"$source\" \"${temp_args[@]}\""
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
     peerflix_pid=$!
