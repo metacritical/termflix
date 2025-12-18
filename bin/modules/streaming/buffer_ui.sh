@@ -137,12 +137,8 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
-echo "DEBUG: Poster path: $poster" >&2
-echo "DEBUG: TERM: $TERM" >&2
 if [[ -f "$poster" ]]; then
-    echo "DEBUG: Poster EXISTS!" >&2
 else
-    echo "DEBUG: Poster NOT FOUND" >&2
 fi
 
 # Poster display (fixed aspect ratio) - AFTER text to prevent overlay
@@ -150,7 +146,6 @@ if [[ -f "$poster" ]]; then
     # Direct image display (can't source modules from /tmp preview script)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
         # Kitty terminal - use kitten icat
-        echo "DEBUG: Switching to chafa for persistent display" >&2
         command -v chafa &> /dev/null && TERM=xterm-256color chafa --symbols=block --size="40x30" "$poster" 2>/dev/null || echo "[POSTER]"
         # Add spacing after image
         for i in {1..31}; do echo ""; done
