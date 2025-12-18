@@ -137,6 +137,14 @@ echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
+echo "DEBUG: Poster path: $poster" >&2
+echo "DEBUG: TERM: $TERM" >&2
+if [[ -f "$poster" ]]; then
+    echo "DEBUG: Poster EXISTS!" >&2
+else
+    echo "DEBUG: Poster NOT FOUND" >&2
+fi
+
 # Poster display (fixed aspect ratio) - AFTER text to prevent overlay
 if [[ -f "$poster" ]]; then
     # Direct image display (can't source modules from /tmp preview script)
