@@ -54,6 +54,45 @@ get_active_player() {
     echo "${available_players[0]}"
 }
 
+
+# Launch MPV splash screen with backdrop image and title
+# Args: $1 = backdrop/poster image path, $2 = movie title
+# Returns: MPV PID
+launch_splash_screen() {
+    local image_path="$1"
+    local movie_title="${2:-TermFlix™}"
+    
+    if [[ ! -f "$image_path" ]]; then
+        log_error "Splash image not found: $image_path"
+        return 1
+    fi
+    
+    # MPV args for splash screen
+    local mpv_args=(
+        "--image-display-duration=inf"  # Keep showing indefinitely
+        "--title=TermFlix™ - $movie_title"
+        "--force-media-title=$movie_title"
+        " --osd-level=3"  # Show all OSD messages
+        "--osd-msg1=Buffering..."  # Initial message
+        "--osd-font-size=48"
+        "--osd-color='#00FF00'"
+        "--osd-border-size=2"
+        "--keep-open=yes"  # Don't close when image ends
+        "--no-audio"  # No audio for images
+        "$image_path"
+    )
+    
+    mpv "${mpv_args[@]}" >/dev/null 2>&1 &
+    local splash_pid=$!
+    
+    if kill -0 "$splash_pid" 2>/dev/null; then
+        echo "$splash_pid"
+        return 0
+    else
+        return 1
+    fi
+}
+
 # Launch player with video source and optional subtitle
 launch_player() {
     local source="$1"
@@ -272,5 +311,5 @@ monitor_player_process() {
 }
 
 # Export functions
-export -f detect_players get_active_player launch_player is_player_running
+export -f detect_players get_active_player launch_player launch_splash_screen is_player_running
 export -f monitor_player_process
