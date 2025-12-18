@@ -43,9 +43,11 @@ monitor_splash_progress() {
         update_splash_progress "$ipc_socket" "$status_file" "$movie_title"
         sleep 0.5
         
-        # Stop if READY status (video about to start)
+        # Stop if READY status (video about to start) OR if status file indicates stream URL (meaning start)
+        # We must stop updating OSD so mpv_transition can clear it
         if grep -q "READY" "$status_file" 2>/dev/null; then
-            sleep 1  # Show "Starting..." message briefly
+            # One final clear to be safe
+            echo "{\"command\":[\"show-text\",\"\",0]}" | socat - "$ipc_socket" 2>/dev/null
             break
         fi
     done
