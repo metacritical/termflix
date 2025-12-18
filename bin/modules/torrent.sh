@@ -264,8 +264,20 @@ stream_peerflix() {
     echo -e "${YELLOW}Starting peerflix to download torrent files...${RESET}"
     echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    
+    # helper to find a free port safely
+    find_free_port() {
+        python3 -c 'import socket; s=socket.socket(); s.bind(("", 0)); print(s.getsockname()[1]); s.close()' 2>/dev/null
+    }
+    
+    # Get a guaranteed free port
+    local port=$(find_free_port)
+    if [ -z "$port" ]; then port=8888; fi # Fallback
+    echo "DEBUG: Selected free port: $port" >&2
+    
     # Build peerflix arguments - add --remove to clean up on exit
-    local temp_args=()
+    local temp_args=("-p" "$port")
     for arg in "${args[@]}"; do
         if [[ "$arg" != "-q" ]]; then
             temp_args+=("$arg")
@@ -274,9 +286,8 @@ stream_peerflix() {
     temp_args+=("--remove")  # Clean up files when done
     
     # Peerflix uses HTTP streaming by default when -p (port) is specified
-    # The -p 8888 flag is already in args array, which enables HTTP mode
-    # No need for --mode flag (may not be supported in all versions)
-    echo -e "${CYAN}Peerflix will stream via HTTP on port 8888${RESET}"
+    # The -p flag enables HTTP mode automatically
+    echo -e "${CYAN}Peerflix will stream via HTTP on port $port${RESET}"
     
     echo "DEBUG: Peerflix args: ${temp_args[@]}" >&2
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
@@ -1442,27 +1453,8 @@ EOF
     echo
     
     # Launch player with HTTP stream URL (allows seeking ahead)
-    
-    # Parse streaming URL from peerflix output (it will print the HTTP URL)
-    # Wait for peerflix to show the URL
-    local stream_url=""
-    local wait_count=0
-    while [ -z "$stream_url" ] && [ $wait_count -lt 30 ]; do
-        if [ -f "$temp_output" ]; then
-            # Look for "Server running at http://..." in peerflix output
-            stream_url=$(grep -oE "http://[^[:space:]]+" "$temp_output" 2>/dev/null | head -1)
-        fi
-        if [[ -z "$stream_url" ]]; then
-            sleep 0.5
-            wait_count=$((wait_count + 1))
-        fi
-    done
-    
-    if [ -z "$stream_url" ]; then
-        echo -e "${RED}Error:${RESET} Could not get streaming URL from peerflix"
-        kill $peerflix_pid 2>/dev/null
-        return 1
-    fi
+    # Use the port we selected earlier
+    local stream_url="http://localhost:$port/"
     
     echo -e "${GREEN}Peerflix streaming at:${RESET} $stream_url"
     
