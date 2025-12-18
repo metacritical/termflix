@@ -1440,32 +1440,18 @@ EOF
     local player_pid=""
     local stream_url="http://localhost:8888/"
     
-    # Check if we have a splash screen MPV to transition
-    echo "DEBUG [peerflix]: Checking for splash socket..." >&2
-    echo "DEBUG [peerflix]: TERMFLIX_SPLASH_SOCKET=${TERMFLIX_SPLASH_SOCKET:-NOT_SET}" >&2
+    # Check if we have a splash screen to close
     if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]]; then
-        echo "DEBUG [peerflix]: Socket variable is set: $TERMFLIX_SPLASH_SOCKET" >&2
-        if [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
-            echo "DEBUG [peerflix]: Socket file exists!" >&2
-        else
-            echo "DEBUG [peerflix]: Socket file does NOT exist" >&2
+        # Find splash MPV PID and kill it
+        local splash_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+        if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
+            echo -e "${GREEN}Closing splash screen...${RESET}"
+            kill "$splash_pid" 2>/dev/null
+            sleep 0.3
         fi
     fi
     
-    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
-        # Use existing MPV splash screen - transition to video
-        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
-        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$stream_url" ""
-        # Find MPV PID from socket
-        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
-        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
-            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
-            return 1
-        fi
-        echo -e "${CYAN}Transitioned to video (PID: $player_pid)${RESET}"
-    else
-        echo "DEBUG [peerflix]: No splash socket, launching new MPV" >&2
-        # No splash screen - launch new player as normal
+    # Launch new player (no IPC - direct file mode)
     
     if [ "$player" = "vlc" ]; then
         if [ -n "$subtitle_arg" ]; then
