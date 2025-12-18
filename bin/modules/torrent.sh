@@ -503,16 +503,10 @@ EOF
                         # Clean up temp files
                         rm -f "$transmission_output" 2>/dev/null
                         rm -f "$temp_output" 2>/dev/null
-                        
-                        # Remove the trap before returning
-                        trap - INT
-                        
-                        # Return to catalog instead of exiting
-                        echo -e "${CYAN}Returning to catalog...${RESET}"
-                        sleep 1
-                        return 1
                     }
                     
+                    # Register the trap
+                    trap '_cleanup_transmission' INT
                     # Register the trap
                     trap '_cleanup_transmission' INT
                     
