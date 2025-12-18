@@ -1476,7 +1476,16 @@ EOF
         if [ -n "$movie_title" ]; then
             window_title="TermFlix™ - $movie_title"
         fi
-        local mpv_args=("--title=$window_title" "$stream_url")
+        
+        # HTTP streaming with aggressive caching for continuous buffering
+        local mpv_args=(
+            "--title=$window_title"
+            "--cache=yes"              # Enable cache
+            "--cache-secs=300"         # 5 minutes cache (continuous buffering)
+            "--demuxer-max-bytes=512M" # 512MB demuxer buffer
+            "--demuxer-max-back-bytes=256M" # 256MB backward buffer for seeking
+            "$stream_url"
+        )
         if [ -n "$subtitle_arg" ]; then
             local sub_path="$video_dir/$subtitle_arg"
             echo -e "${YELLOW}Command:${RESET} mpv \"$stream_url\" --sub-file=\"$sub_path\" --sid=1 --sub-visibility=yes"
