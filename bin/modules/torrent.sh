@@ -1440,7 +1440,7 @@ EOF
         fi
     else
         # mpv - use HTTP URL for better seeking
-        local mpv_args=("$stream_url")
+        local mpv_args=("--title=$movie_title" "$stream_url")
         if [ -n "$subtitle_arg" ]; then
             local sub_path="$video_dir/$subtitle_arg"
             echo -e "${YELLOW}Command:${RESET} mpv \"$stream_url\" --sub-file=\"$sub_path\" --sid=1 --sub-visibility=yes"
