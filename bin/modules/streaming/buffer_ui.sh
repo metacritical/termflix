@@ -41,16 +41,30 @@ show_inline_buffer_ui() {
     # Launch MPV splash screen with backdrop (parallel to FZF buffering)
     local splash_pid=""
     local splash_socket=""
+    echo "DEBUG: Checking splash screen preconditions..." >&2
+    echo "DEBUG: backdrop_image=$backdrop_image" >&2
+    echo "DEBUG: launch_splash_screen available: $(command -v launch_splash_screen || echo 'NOT FOUND')" >&2
+    
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
-        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>/dev/null)
+        echo "DEBUG: Launching splash screen..." >&2
+        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>&1)
+        echo "DEBUG: splash_result=$splash_result" >&2
         if [[ -n "$splash_result" ]] && [[ "$splash_result" =~ \|  ]]; then
             splash_pid="${splash_result%|*}"
             splash_socket="${splash_result#*|}"
+            echo "DEBUG: Extracted PID=$splash_pid,Socket=$splash_socket" >&2
             if ! kill -0 "$splash_pid" 2>/dev/null || [[ ! -S "$splash_socket" ]]; then
+                echo "DEBUG: Splash screen failed validation" >&2
                 splash_pid=""
                 splash_socket=""
+            else
+                echo "DEBUG: Splash screen launched successfully!" >&2
             fi
+        else
+            echo "DEBUG: splash_result doesn't match expected format" >&2
         fi
+    else
+        echo "DEBUG: Splash screen preconditions not met" >&2
     fi
     
     echo "=== Buffer UI Started ===" > "$stream_log"
