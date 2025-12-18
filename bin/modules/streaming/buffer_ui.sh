@@ -150,7 +150,8 @@ if [[ -f "$poster" ]]; then
     # Direct image display (can't source modules from /tmp preview script)
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
         # Kitty terminal - use kitten icat
-        kitten icat --align left --place 40x30@0x0 "$poster" 2>/dev/null
+        echo "DEBUG: Switching to chafa for persistent display" >&2
+        command -v chafa &> /dev/null && TERM=xterm-256color chafa --symbols=block --size="40x30" "$poster" 2>/dev/null || echo "[POSTER]"
         # Add spacing after image
         for i in {1..31}; do echo ""; done
     elif command -v viu &> /dev/null; then
