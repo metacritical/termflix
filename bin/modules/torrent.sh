@@ -1467,6 +1467,11 @@ EOF
     
     # Check if we have a splash screen MPV to transition
     if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+        # Signal OSD monitor to stop updates IMMEDIATELY
+        if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
+             echo "100|0|0|0|0|PLAYING|${stream_url}|${peerflix_pid}" > "$TERMFLIX_BUFFER_STATUS"
+        fi
+        
         # Use existing MPV splash screen - transition to video
         echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
         mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$stream_url" ""

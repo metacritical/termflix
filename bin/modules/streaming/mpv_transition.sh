@@ -16,8 +16,9 @@ mpv_transition_to_video() {
         return 1
     fi
     
-    # Clear OSD message before loading
+    # Clear OSD message and persistent properties before loading
     echo '{ "command": ["show-text", ""] }' | socat - "$ipc_socket" 2>/dev/null
+    echo '{ "command": ["set_property", "osd-msg1", ""] }' | socat - "$ipc_socket" 2>/dev/null
     
     # Load video (replace current file)
     local load_cmd="{\"command\": [\"loadfile\", \"$video_url\", \"replace\"]}"
