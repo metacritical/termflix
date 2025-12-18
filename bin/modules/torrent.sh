@@ -876,21 +876,30 @@ EOF
                     if [ -z "$player" ]; then
                          player=$(get_active_player)
                     fi
-                    # Check if we have a splash screen to close
-                    if [[ -n "${TERMFLIX_SPLASH_PID:-}" ]] && kill -0 "$TERMFLIX_SPLASH_PID" 2>/dev/null; then
-                        echo -e "${GREEN}Closing splash screen...${RESET}"
-                        kill "$TERMFLIX_SPLASH_PID" 2>/dev/null
-                        sleep 0.2
-                    fi
                     
-                    # Launch player using centralized module (returns PID)
-                    player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
-                    
-                    if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
-                        echo -e "${RED}Error:${RESET} Failed to launch player"
-                        rm -f "$transmission_output" 2>/dev/null
-                        rm -f "$temp_output" 2>/dev/null
-                        return 1
+                    # Check if we have a splash screen MPV to transition
+                    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+                        # Use existing MPV splash screen - transition to video
+                        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
+                        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$video_name" "$subtitle_arg"
+                        # Find MPV PID from socket
+                        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+                        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
+                    else
+                        # No splash screen - launch new player as normal
+                        player_pid=$(launch_player "$video_name" "$subtitle_arg" "$movie_title")
+                        
+                        if [ -z "$player_pid" ] || ! kill -0 "$player_pid" 2>/dev/null; then
+                            echo -e "${RED}Error:${RESET} Failed to launch player"
+                            rm -f "$transmission_output" 2>/dev/null
+                            rm -f "$temp_output" 2>/dev/null
+                            return 1
+                        fi
                     fi
                     
                     echo -e "${CYAN}Player started (PID: $player_pid). Transmission running (PID: $transmission_pid)${RESET}"
@@ -1428,14 +1437,20 @@ EOF
     local player_pid=""
     local stream_url="http://localhost:8888/"
     
-    # Check if we have a splash screen to close
-    if [[ -n "${TERMFLIX_SPLASH_PID:-}" ]] && kill -0 "$TERMFLIX_SPLASH_PID" 2>/dev/null; then
-        echo -e "${GREEN}Closing splash screen...${RESET}"
-        kill "$TERMFLIX_SPLASH_PID" 2>/dev/null
-        sleep 0.2
-    fi
-    
-    # No splash screen - launch new player as normal
+    # Check if we have a splash screen MPV to transition
+    if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+        # Use existing MPV splash screen - transition to video
+        echo -e "${GREEN}Transitioning splash screen to video...${RESET}"
+        mpv_transition_to_video "$TERMFLIX_SPLASH_SOCKET" "$stream_url" ""
+        # Find MPV PID from socket
+        player_pid=$(lsof -t "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | head -1)
+        if [[ -z "$player_pid" ]] || ! kill -0 "$player_pid" 2>/dev/null; then
+            echo -e "${RED}Error:${RESET} Could not find MPV process after transition"
+            return 1
+        fi
+        echo -e "${CYAN}Transitioned to video (PID: $player_pid)${RESET}"
+    else
+        # No splash screen - launch new player as normal
     
     if [ "$player" = "vlc" ]; then
         if [ -n "$subtitle_arg" ]; then

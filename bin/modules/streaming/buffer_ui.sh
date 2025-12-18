@@ -40,34 +40,45 @@ show_inline_buffer_ui() {
     
     # Launch MPV splash screen with backdrop (parallel to FZF buffering)
     local splash_pid=""
+    local splash_socket=""
     echo "DEBUG: Checking splash screen preconditions..." >&2
     echo "DEBUG: backdrop_image=$backdrop_image" >&2
     echo "DEBUG: launch_splash_screen available: $(command -v launch_splash_screen || echo 'NOT FOUND')" >&2
     
     if command -v launch_splash_screen &>/dev/null && [[ -f "$backdrop_image" ]]; then
         echo "DEBUG: Launching splash screen..." >&2
-        splash_pid=$(launch_splash_screen "$backdrop_image" "$title" 2>&1)
-        echo "DEBUG: splash_pid=$splash_pid" >&2
-        if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
-            echo "DEBUG: Splash screen launched successfully!" >&2
+        local splash_result=$(launch_splash_screen "$backdrop_image" "$title" 2>&1)
+        echo "DEBUG: splash_result=$splash_result" >&2
+        if [[ -n "$splash_result" ]] && [[ "$splash_result" =~ \|  ]]; then
+            splash_pid="${splash_result%|*}"
+            splash_socket="${splash_result#*|}"
+            echo "DEBUG: Extracted PID=$splash_pid,Socket=$splash_socket" >&2
+            if ! kill -0 "$splash_pid" 2>/dev/null || [[ ! -S "$splash_socket" ]]; then
+                echo "DEBUG: Splash screen failed validation" >&2
+                splash_pid=""
+                splash_socket=""
+            else
+                echo "DEBUG: Splash screen launched successfully!" >&2
+            fi
         else
-            echo "DEBUG: Splash screen failed to launch" >&2
-            splash_pid=""
+            echo "DEBUG: splash_result doesn't match expected format" >&2
         fi
     else
         echo "DEBUG: Splash screen preconditions not met" >&2
     fi
+    
     echo "=== Buffer UI Started ===" > "$stream_log"
     echo "Time: $(date)" >> "$stream_log"
     echo "Backdrop: $backdrop_image" >> "$stream_log"
     echo "Splash PID: ${splash_pid:-none}" >> "$stream_log"
+    echo "Splash Socket: ${splash_socket:-none}" >> "$stream_log"
     echo "Magnet: ${magnet:0:60}..." >> "$stream_log"
     echo "Status file: $status_file" >> "$stream_log"
     echo "Starting stream_torrent in background..." >> "$stream_log"
     
     {
         export TERMFLIX_BUFFER_STATUS="$status_file"
-        export TERMFLIX_SPLASH_PID="$splash_pid"  # Pass PID to stream_torrent
+        export TERMFLIX_SPLASH_SOCKET="$splash_socket"  # Pass socket to stream_torrent
         echo "Calling stream_torrent..." >> "$stream_log" 2>&1
         stream_torrent "$magnet" "" false false "$title" >> "$stream_log" 2>&1
         echo "stream_torrent exited with code: $?" >> "$stream_log" 2>&1
