@@ -287,7 +287,12 @@ stream_peerflix() {
     
     # Peerflix uses HTTP streaming by default when -p (port) is specified
     # The -p flag enables HTTP mode automatically
+    # Peerflix uses HTTP streaming by default when -p (port) is specified
+    # The -p flag enables HTTP mode automatically
     echo -e "${CYAN}Peerflix will stream via HTTP on port $port${RESET}"
+    
+    # Define stream URL early for UI/Logging
+    local stream_url="http://localhost:$port/"
     
     echo "DEBUG: Peerflix args: ${temp_args[@]}" >&2
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
@@ -1345,8 +1350,9 @@ EOF
             local size_mb=$((current_size / 1048576))
             
             # Write status to file for inline buffering UI
+            # Write status to file for inline buffering UI
             if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
-                echo "${progress_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|BUFFERING" > "$TERMFLIX_BUFFER_STATUS"
+                echo "${progress_percent}|${bytes_per_sec}|${connected_peers}|${total_peers}|${size_mb}|BUFFERING|${stream_url}" > "$TERMFLIX_BUFFER_STATUS"
             fi
             
             # Show peers if available, otherwise show percentage
@@ -1357,8 +1363,9 @@ EOF
             fi
         else
             # Write initial status
+            # Write initial status
             if [ -n "$TERMFLIX_BUFFER_STATUS" ]; then
-                echo "0|0|${connected_peers}|${total_peers}|0|BUFFERING" > "$TERMFLIX_BUFFER_STATUS"
+                echo "0|0|${connected_peers}|${total_peers}|0|BUFFERING|${stream_url}" > "$TERMFLIX_BUFFER_STATUS"
             fi
             
             if [ "$total_peers" -gt 0 ]; then
@@ -1453,8 +1460,8 @@ EOF
     echo
     
     # Launch player with HTTP stream URL (allows seeking ahead)
-    # Use the port we selected earlier
-    local stream_url="http://localhost:$port/"
+    # Use the port we selected earlier (stream_url defined at start of function)
+    # local stream_url="http://localhost:$port/"  # Already defined
     
     echo -e "${GREEN}Peerflix streaming at:${RESET} $stream_url"
     
