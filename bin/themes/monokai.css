@@ -1,0 +1,50 @@
+/* Monokai Theme for Termflix */
+/* Inspired by Monokai Pro aesthetic */
+
+:root {
+  /* ═══════════════════════════════════════════════════════════
+     PRIMARY COLORS
+     ═══════════════════════════════════════════════════════════ */
+  
+  /* Brand colors - Monokai signature */
+  --glow: #FF6188;          /* Vibrant pink - primary selection */
+  --purple: #AB9DF2;        /* Soft purple - borders, accents */
+  --lavender: #C4B5FD;      /* Soft lavender - subtle highlights */
+  
+  /* Semantic colors */
+  --success: #A9DC76;       /* Soft green - success, positive */
+  --error: #FF6188;         /* Pink-red - errors, failures */
+  --warning: #FFD866;       /* Warm yellow - warnings */
+  --info: #78DCE8;          /* Cyan - informational */
+  
+  /* ═══════════════════════════════════════════════════════════
+     UI COLORS
+     ═══════════════════════════════════════════════════════════ */
+  
+  --fg: #FCFCFA;            /* Primary foreground text */
+  --fg-muted: #727072;      /* Muted/secondary text */
+  --fg-subtle: #939293;     /* Subtle/disabled text */
+  
+  --bg: #2D2A2E;            /* Background */
+  --bg-selection: #403E41;  /* Selection background */
+  --bg-surface: #363537;    /* Elevated surface */
+  
+  /* ═══════════════════════════════════════════════════════════
+     SOURCE COLORS (Torrent Sources)
+     ═══════════════════════════════════════════════════════════ */
+  
+  --yts: #78DCE8;           /* Cyan - YTS source */
+  --tpb: #FFD866;           /* Yellow - TPB source */
+  --x1337: #FF6188;         /* Pink - 1337x source */
+  --eztv: #AB9DF2;          /* Purple - EZTV source */
+  
+  /* ═══════════════════════════════════════════════════════════
+     SPECIAL ELEMENTS
+     ═══════════════════════════════════════════════════════════ */
+  
+  --border: #AB9DF2;        /* Border color */
+  --pointer: #FF6188;       /* FZF pointer */
+  --prompt: #78DCE8;        /* Prompt color */
+  --spinner: #FF6188;       /* Loading spinner */
+  --header: #AB9DF2;        /* Header text */
+}
