@@ -314,6 +314,11 @@ handle_fzf_selection() {
          name="$c_name"
          poster="$c_poster"
          
+         # Source watch history module for progress display (Stage 2)
+         if [[ -f "$SCRIPT_DIR/modules/watch_history.sh" ]]; then
+             source "$SCRIPT_DIR/modules/watch_history.sh"
+         fi
+         
          # Prepare version options for "Right Pane" FZF with nice formatting
          local options=""
          local RESET=$'\e[0m'
@@ -326,6 +331,7 @@ handle_fzf_selection() {
              local qual="${qualities_arr[$i]:-N/A}"
              local sz="${sizes_arr[$i]:-N/A}"
              local sd="${seeds_arr[$i]:-0}"
+             local magnet_i="${magnets_arr[$i]}"
              
              # Color seeds based on count (green=high, yellow=medium, red=low)
              local seed_color
@@ -348,8 +354,28 @@ handle_fzf_selection() {
                  *) src_name="$src" ;;
              esac
              
-             # Format display: 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay
-             local d_line="🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds${RESET} - ${src_name}"
+             # Watch history lookup for this magnet (progress bar)
+             local watched_indicator=""
+             local progress_bar=""
+             if command -v extract_torrent_hash &> /dev/null; then
+                 local hash
+                 hash=$(extract_torrent_hash "$magnet_i")
+                 if [[ -n "$hash" ]]; then
+                     local pct
+                     pct=$(get_watch_percentage "$hash" 2>/dev/null)
+                     # pct is empty when there is no history entry for this hash
+                     if [[ -n "$pct" ]]; then
+                         progress_bar="$(generate_progress_bar "$pct")"
+                         # Only mark as "watched" (▶) once there's at least some progress
+                         if [[ "$pct" -gt 0 ]]; then
+                             watched_indicator="▶ "
+                         fi
+                     fi
+                 fi
+             fi
+             
+             # Format display: ▶ 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay | ━━━━━━━━──── 80%
+             local d_line="${watched_indicator}🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds${RESET} - ${src_name}${progress_bar}"
              # Format: idx|display|name|src|qual|sz|poster (for preview to use)
              options+="${i}|${d_line}|${name}|${src}|${qual}|${sz}|${c_poster}"$'\n'
          done

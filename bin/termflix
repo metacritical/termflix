@@ -64,6 +64,7 @@ source "$SCRIPT_DIR/modules/ui/fzf_catalog.sh"
 source "$SCRIPT_DIR/modules/posters.sh"
 source "$SCRIPT_DIR/modules/search.sh"
 source "$SCRIPT_DIR/modules/catalog.sh"
+source "$SCRIPT_DIR/modules/watch_history.sh"
 source "$SCRIPT_DIR/modules/torrent.sh"
 source "$SCRIPT_DIR/modules/streaming/player.sh"
 

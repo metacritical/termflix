@@ -19,6 +19,138 @@ MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Note: has_subtitles() is now in bin/modules/streaming/subtitle_manager.sh
 # Function removed during Dec 2025 refactoring to reduce torrent.sh size
 
+# ============================================================
+# WATCH HISTORY INTEGRATION (Unified Implementation)
+# ============================================================
+# Global variables for watch history (set by stream_peerflix, used by record_watch_progress)
+# Note: Simple assignment at script level = global by default (Bash 3.2 compatible)
+TERMFLIX_WATCH_SOURCE=""
+TERMFLIX_WATCH_STREAM_URL=""
+TERMFLIX_WATCH_DIR=""
+TERMFLIX_MPV_LOG=""
+TERMFLIX_WATCH_QUALITY=""
+TERMFLIX_WATCH_SIZE=""
+TERMFLIX_WATCH_VIDEO_NAME=""
+TERMFLIX_DEBUG_LOG="/tmp/termflix_history_debug.log"
+
+# Unified function to record watch progress
+# Called from BOTH normal exit and signal handlers
+record_watch_progress() {
+    local h_log="$TERMFLIX_DEBUG_LOG"
+    local source="$TERMFLIX_WATCH_SOURCE"
+    local stream_url="$TERMFLIX_WATCH_STREAM_URL"
+    local watch_dir="$TERMFLIX_WATCH_DIR"
+    local mpv_log="$TERMFLIX_MPV_LOG"
+    local quality="$TERMFLIX_WATCH_QUALITY"
+    local size="$TERMFLIX_WATCH_SIZE"
+    local video_name="$TERMFLIX_WATCH_VIDEO_NAME"
+    
+    echo "--- Recording Watch Progress at $(date) ---" >> "$h_log"
+    echo "Source: $source" >> "$h_log"
+    echo "Stream URL: $stream_url" >> "$h_log"
+    echo "Watch Dir: $watch_dir" >> "$h_log"
+    echo "MPV Log: $mpv_log" >> "$h_log"
+    
+    # Extract torrent hash from magnet link
+    local torrent_hash=""
+    if [[ "$source" =~ btih:([a-fA-F0-9]+) ]]; then
+        torrent_hash="${BASH_REMATCH[1]}"
+        torrent_hash=$(echo "$torrent_hash" | tr '[:upper:]' '[:lower:]')
+    fi
+    
+    if [[ -z "$torrent_hash" ]]; then
+        echo "ERROR: Could not extract torrent hash" >> "$h_log"
+        return 1
+    fi
+    
+    echo "Hash: $torrent_hash" >> "$h_log"
+    
+    # Calculate expected watch file path (MD5 of stream URL)
+    local url_hash=""
+    if command -v md5 &>/dev/null; then
+        url_hash=$(echo -n "$stream_url" | md5)
+    elif command -v md5sum &>/dev/null; then
+        url_hash=$(echo -n "$stream_url" | md5sum | cut -d' ' -f1)
+    fi
+    local watch_file="$watch_dir/${url_hash}.conf"
+    echo "Watch File: $watch_file" >> "$h_log"
+    
+    # Log watch directory contents for debugging
+    echo "Watch Dir Contents:" >> "$h_log"
+    ls -la "$watch_dir" >> "$h_log" 2>&1
+    
+    local position=0
+    local duration=0
+    
+    # ===== METHOD 1: Try MPV's native watch_later file =====
+    if [[ -f "$watch_file" ]]; then
+        position=$(grep "^start=" "$watch_file" 2>/dev/null | cut -d= -f2 | cut -d. -f1)
+        echo "Method 1 - File Position: $position" >> "$h_log"
+    else
+        echo "Watch file not found (Trying Method 2)" >> "$h_log"
+    fi
+    
+    # ===== METHOD 2: Fallback to parsing MPV logs =====
+    # This is the CRITICAL fallback when MPV doesn't create watch_later files (common for HTTP streams)
+    if [[ -z "$position" ]] || [[ "$position" -eq 0 ]]; then
+        if [[ -f "$mpv_log" ]]; then
+            # Look for AV: HH:MM:SS / HH:MM:SS pattern in last 200 lines
+            local last_av=$(tail -200 "$mpv_log" 2>/dev/null | grep -oE "AV: +([0-9]+:)?[0-9]+:[0-9]+ / ([0-9]+:)?[0-9]+:[0-9]+" | tail -1)
+            echo "Log Last AV: $last_av" >> "$h_log"
+            
+            if [[ -n "$last_av" ]]; then
+                # Extract position (before the /)
+                local pos_str=$(echo "$last_av" | sed 's/AV: *//' | cut -d'/' -f1 | tr -d ' ')
+                
+                # Convert HH:MM:SS or MM:SS to seconds
+                local p_hours=0 p_mins=0 p_secs=0
+                local colons="${pos_str//[^:]}"
+                if [[ ${#colons} -eq 2 ]]; then
+                    IFS=: read -r p_hours p_mins p_secs <<< "$pos_str"
+                elif [[ ${#colons} -eq 1 ]]; then
+                    IFS=: read -r p_mins p_secs <<< "$pos_str"
+                fi
+                position=$((10#${p_hours:-0} * 3600 + 10#${p_mins:-0} * 60 + 10#${p_secs:-0}))
+                echo "Method 2 - Log Position: $position" >> "$h_log"
+                
+                # Extract duration (after the /)
+                local dur_str=$(echo "$last_av" | cut -d'/' -f2 | tr -d ' ')
+                local d_hours=0 d_mins=0 d_secs=0
+                local d_colons="${dur_str//[^:]}"
+                if [[ ${#d_colons} -eq 2 ]]; then
+                    IFS=: read -r d_hours d_mins d_secs <<< "$dur_str"
+                elif [[ ${#d_colons} -eq 1 ]]; then
+                    IFS=: read -r d_mins d_secs <<< "$dur_str"
+                fi
+                duration=$((10#${d_hours:-0} * 3600 + 10#${d_mins:-0} * 60 + 10#${d_secs:-0}))
+                echo "Method 2 - Log Duration: $duration" >> "$h_log"
+            else
+                echo "No AV timestamp found in MPV log" >> "$h_log"
+            fi
+        else
+            echo "MPV log file not found: $mpv_log" >> "$h_log"
+        fi
+    fi
+    
+    # ===== SAVE TO WATCH HISTORY =====
+    if [[ "$position" -gt 0 ]] && [[ "$duration" -gt 0 ]]; then
+        # Call the save function from watch_history.sh
+        if command -v save_watch_progress &>/dev/null; then
+            save_watch_progress "$torrent_hash" "$position" "$duration" "$quality" "$size" "$video_name"
+            local pct=$(( position * 100 / duration ))
+            echo -e "${GREEN:-}✓ Saved watch progress: ${pct}% (${position}s / ${duration}s)${RESET:-}"
+            echo "SAVED: $pct% for hash $torrent_hash" >> "$h_log"
+        else
+            echo "ERROR: save_watch_progress function not found" >> "$h_log"
+        fi
+    else
+        echo "NOT SAVED: Position=$position Duration=$duration (need both > 0)" >> "$h_log"
+    fi
+    
+    # Clean up temporary watch file (if it exists)
+    [[ -f "$watch_file" ]] && rm -f "$watch_file" 2>/dev/null
+}
+
 
 # Stream with peerflix - use peerflix's --subtitles flag properly
 stream_peerflix() {
@@ -293,6 +425,21 @@ stream_peerflix() {
     
     # Define stream URL early for UI/Logging
     local stream_url="http://localhost:$port/"
+    
+    # ===== SET GLOBAL WATCH HISTORY VARIABLES =====
+    # These are used by record_watch_progress() for both normal exit and signal handlers
+    local watch_dir="${HOME}/.config/termflix/watch_later"
+    mkdir -p "$watch_dir"
+    local mpv_log="${TMPDIR:-/tmp}/termflix_mpv_debug.log"
+    
+    TERMFLIX_WATCH_SOURCE="$source"
+    TERMFLIX_WATCH_STREAM_URL="$stream_url"
+    TERMFLIX_WATCH_DIR="$watch_dir"
+    TERMFLIX_MPV_LOG="$mpv_log"
+    TERMFLIX_WATCH_QUALITY="${TERMFLIX_CURRENT_QUALITY:-unknown}"
+    TERMFLIX_WATCH_SIZE="${TERMFLIX_CURRENT_SIZE:-unknown}"
+    TERMFLIX_WATCH_VIDEO_NAME="$movie_title"
+    # ===== END WATCH HISTORY SETUP =====
     
     echo "DEBUG: Peerflix args: ${temp_args[@]}" >&2
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
@@ -1533,7 +1680,8 @@ EOF
     echo ""
     
     # Monitor player - when it exits, clean up peerflix
-    trap 'echo -e "\n${YELLOW}Interrupted. Stopping peerflix...${RESET}"; kill $peerflix_pid 2>/dev/null || true; return 130' INT TERM
+    # TRAP HANDLER: Call record_watch_progress on interrupt, then cleanup
+    trap 'echo -e "\n${YELLOW}Interrupted. Saving progress and stopping peerflix...${RESET}"; record_watch_progress; kill $peerflix_pid 2>/dev/null || true; trap - INT TERM; return 130' INT TERM
     
     # Wait for player to exit
     # IMPORTANT: If player_pid is the splash screen (IPC transition), it is NOT a child process of this shell.
@@ -1544,10 +1692,19 @@ EOF
     done
     local player_exit=$?
     
-    # Player finished - cleanup peerflix
-    echo -e "${CYAN}Playback finished. Cleaning up...${RESET}"
+    # Player finished - UNIFIED CLEANUP PATH
+    echo -e "${CYAN}Playback finished. Saving progress and cleaning up...${RESET}"
+    
+    # ===== CALL UNIFIED WATCH HISTORY RECORDER =====
+    # This runs for BOTH normal exit (user pressed 'q') and after the player crashes/closes
+    record_watch_progress
+    
+    # Cleanup peerflix
     kill "$peerflix_pid" 2>/dev/null || true
     wait "$peerflix_pid" 2>/dev/null || true
+    
+    # Clear the trap to prevent stale handler after function returns (Codex Issue #3)
+    trap - INT TERM
     
     # Return 0 to indicate successful stream (catalog will loop)
     return 0
