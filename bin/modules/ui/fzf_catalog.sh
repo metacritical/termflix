@@ -353,10 +353,32 @@ handle_fzf_selection() {
              # Format: idx|display|name|src|qual|sz|poster (for preview to use)
              options+="${i}|${d_line}|${name}|${src}|${qual}|${sz}|${c_poster}"$'\n'
          done
+     fi
          
+         # Define Streaming Logic Helper within function context
+         perform_streaming() {
+             local BUFFER_STATUS_FILE="/tmp/termflix_buffer_status.txt"
+             rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
+             echo "0|0|0|0|0|BUFFERING" > "$BUFFER_STATUS_FILE"
+             if [ -z "$TORRENT_TOOL" ]; then check_deps; fi
+             export TERMFLIX_BUFFER_STATUS="$BUFFER_STATUS_FILE"
+             if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
+                 source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
+                 local plot_text="${c_plot:-$plot}"
+                 local ver_idx=""
+                 if [[ -n "$ver_pick" ]]; then ver_idx=$(echo "$ver_pick" | cut -d'|' -f1); fi
+                 local imdb_id=$(echo "$selection" | grep -oE 'tt[0-9]{7,}' | head -1)
+                 show_inline_buffer_ui "$name" "${poster_file:-$poster}" "$plot_text" "$magnet" "$source" "$quality" "$ver_idx" "$imdb_id"
+             else
+                 stream_torrent "$magnet" "" false false
+             fi
+             rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
+         }
+
          # Launch "Right Pane" Version Picker (Stage 2)
          # Only if multiple magnets OR user explicitly navigated
          if [[ ${#magnets_arr[@]} -ge 1 ]]; then
+             while true; do
              local ver_pick
              local stage2_preview
              
@@ -504,42 +526,12 @@ handle_fzf_selection() {
              magnet="${magnets_arr[$pick_idx]}"
              source="${sources_arr[$pick_idx]}"
              quality="${qualities_arr[$pick_idx]}"
-         fi
+             
+             # Stream (Loop back to Stage 2 after)
+             perform_streaming
+         done
+     else
+         # Simple Source (Direct Stream)
+         perform_streaming
      fi
-     
-     # Stream Selection
-     # Create buffer status file to show progress in preview pane
-     local BUFFER_STATUS_FILE="/tmp/termflix_buffer_status.txt"
-     
-     # Clean up any old status
-     rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
-     
-     # Write initial buffering status
-     echo "0|0|0|0|0|BUFFERING" > "$BUFFER_STATUS_FILE"
-     
-     if [ -z "$TORRENT_TOOL" ]; then
-          check_deps
-     fi
-     
-     # Export buffer status file path for streaming module
-     export TERMFLIX_BUFFER_STATUS="$BUFFER_STATUS_FILE"
-          # Use Inline Buffering UI if available
-      if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
-          source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
-          # Use c_plot if available (Combined), else plot (Simple)
-          local plot_text="${c_plot:-$plot}"
-          # Extract index from ver_pick (format: idx|display|...)
-          local ver_idx=""
-          if [[ -n "$ver_pick" ]]; then
-              ver_idx=$(echo "$ver_pick" | cut -d'|' -f1)
-          fi
-          # Extract IMDB ID from selection for backdrop fetching
-          local imdb_id=$(echo "$selection" | grep -oE 'tt[0-9]{7,}' | head -1)
-          show_inline_buffer_ui "$name" "${poster_file:-$poster}" "$plot_text" "$magnet" "$source" "$quality" "$ver_idx" "$imdb_id"
-      else
-          stream_torrent "$magnet" "" false false
-      fi
-     
-     # Clean up buffer status after streaming ends
-     rm -f "$BUFFER_STATUS_FILE" 2>/dev/null
 }

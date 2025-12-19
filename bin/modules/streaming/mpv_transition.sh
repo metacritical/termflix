@@ -43,6 +43,10 @@ mpv_transition_to_video() {
         echo "$sub_cmd" | socat - "$ipc_socket" 2>/dev/null
     fi
     
+    # Reset keep-open so player exits when video ends
+    sleep 0.1
+    echo '{ "command": ["set_property", "keep-open", "no"] }' | socat - "$ipc_socket" 2>/dev/null
+    
     return 0
 }
 

@@ -435,8 +435,8 @@ display_catalog() {
                 skip_reload=true
                 continue
             elif [ $ret_code -eq 0 ]; then
-                # Successful stream - exit
-                return 0
+                # Successful stream - return to catalog list
+                continue
             else
                 # Error or cancel
                 break

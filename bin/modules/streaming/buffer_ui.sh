@@ -133,6 +133,13 @@ show_inline_buffer_ui() {
             wait "$stream_pid" 2>/dev/null
         fi
         rm -f "$status_file" "$preview_script" 2>/dev/null
+        
+        # Clean torrent cache (like termflix --remove)
+        # Verify this logic matches user request to clear /tmp/torrent-stream
+        local torrent_dir="/tmp/torrent-stream"
+        if [ -d "$torrent_dir" ]; then
+             rm -rf "$torrent_dir"/* 2>/dev/null
+        fi
     }
     
     trap cleanup_stream EXIT INT TERM
@@ -417,6 +424,8 @@ PREVIEW_EOF
         --border=rounded \
         --margin=1 \
         --padding=1 \
+        --border-label=" Esc:Back " \
+        --border-label-pos=bottom \
         --prompt='⬇ Buffering ' \
         --pointer='▶' \
         --header="Streaming: ${title}" \
@@ -448,4 +457,7 @@ PREVIEW_EOF
         tput cnorm
         fg %1 2>/dev/null || wait "$stream_pid"
     fi
+    
+    # Cleanup after stream finishes
+    cleanup_stream
 }
