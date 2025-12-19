@@ -254,20 +254,28 @@ display_catalog() {
         fi
     done
     
+    
     if [ "$needs_grouping" = true ] && [ ${#all_results[@]} -gt 0 ]; then
         printf "${CYAN}Grouping results...${RESET}"
         local grouped_results=()
         local group_input=$(mktemp)
         printf "%s\n" "${all_results[@]}" > "$group_input"
-        local group_output=$(cat "$group_input" | group_results 2>/dev/null)
-        if [ -n "$group_output" ]; then
-             while IFS= read -r line || [ -n "$line" ]; do
-                 grouped_results+=("$line")
-             done <<< "$group_output"
-             all_results=("${grouped_results[@]}")
+        
+        # Call group_results.py to combine duplicate movies from different sources
+        local group_script="${TERMFLIX_SCRIPTS_DIR}/group_results.py"
+        if [[ -f "$group_script" ]] && command -v python3 &>/dev/null; then
+            local group_output=$(python3 "$group_script" < "$group_input" 2>/dev/null)
+            if [ -n "$group_output" ]; then
+                while IFS= read -r line || [ -n "$line" ]; do
+                    grouped_results+=("$line")
+                done <<< "$group_output"
+                all_results=("${grouped_results[@]}")
+            fi
         fi
         rm -f "$group_input"
         printf "\r${GREEN}✓ Grouped ${#all_results[@]} results${RESET}                    \n"
+    fi
+    
         
         # Check if results are COMBINED (already have posters from source APIs)
         local has_combined=false
@@ -292,7 +300,7 @@ display_catalog() {
         if [ ${#all_results[@]} -gt 0 ]; then
             printf "%s\n" "${all_results[@]}" > "$cache_file" 2>/dev/null
         fi
-    fi
+
 
     # Use gum interface if explicitly requested
     if [ "$use_gum" = true ]; then

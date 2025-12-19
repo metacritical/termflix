@@ -1,0 +1,69 @@
+/* Charm Crush Theme for Termflix */
+/* Replicates the 'Crush/Gum' aesthetic with vibrant blurple selection */
+
+:root {
+    /* ═══════════════════════════════════════════════════════════
+     PRIMARY COLORS
+     ═══════════════════════════════════════════════════════════ */
+
+    /* Brand colors - Crush Signature */
+    --glow: #FFFFFF;
+    /* White highlight on selection */
+    --purple: #7D56F4;
+    /* Vivid Purple */
+    --blurple: #6855DE;
+    /* Crush Blurple - Primary Selection Background */
+
+    /* Semantic colors */
+    --success: #04B575;
+    /* Green */
+    --error: #FF5555;
+    /* Red */
+    --warning: #FFB86C;
+    /* Orange/Yellow */
+    --info: #8BE9FD;
+    /* Cyan */
+
+    /* ═══════════════════════════════════════════════════════════
+     UI COLORS
+     ═══════════════════════════════════════════════════════════ */
+
+    --fg: #F8F8F2;
+    /* White-ish text */
+    --fg-muted: #6272A4;
+    /* Muted text */
+
+    --bg: #191724;
+    /* Dark distinct background */
+    --bg-selection: #6855DE;
+    /* VIBRANT BLURPLE SELECTION BAR (Crush style) */
+    --bg-surface: #26233a;
+
+    /* ═══════════════════════════════════════════════════════════
+     SOURCE COLORS
+     ═══════════════════════════════════════════════════════════ */
+
+    --yts: #50FA7B;
+    /* Green */
+    --tpb: #F1FA8C;
+    /* Yellow */
+    --x1337: #FF79C6;
+    /* Pink */
+    --eztv: #BD93F9;
+    /* Purple */
+
+    /* ═══════════════════════════════════════════════════════════
+     SPECIAL ELEMENTS
+     ═══════════════════════════════════════════════════════════ */
+
+    --border: #505050;
+    /* Subtle border */
+    --pointer: #FFFFFF;
+    /* White pointer overrides */
+    --prompt: #7D56F4;
+    /* Purple prompt */
+    --spinner: #FF79C6;
+    /* Pink spinner */
+    --header: #6855DE;
+    /* Blurple header text */
+}

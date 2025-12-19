@@ -226,8 +226,8 @@ use_python_catalog() {
         [[ "${USE_PYTHON_CATALOG}" == "true" ]] && return 0 || return 1
     fi
     
-    # Check config file (default TRUE to enable web scraper)
-    local value=$(config_get "USE_PYTHON_CATALOG" "true")
+    # If not set via environment, check config file (DEFAULT: DISABLED to use legacy fetch_multi_source_catalog.py)
+    local value=$(config_get "USE_PYTHON_CATALOG" "false")
     [[ "$value" == "true" ]] && return 0 || return 1
 }
 

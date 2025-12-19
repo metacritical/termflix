@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+
+# System
+.DS_Store
+
+# Helper scripts temp
+tmp/
+
+# Editor/Agent
+.gemini/
+.idea/
+.vscode/
+
+# Termflix specific
+*.log

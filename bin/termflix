@@ -203,15 +203,24 @@ main() {
                 ;;
             theme)
                 # Change theme preference
-                if [ -z "$2" ]; then
-                    echo -e "${RED}Error:${RESET} Please specify a theme name"
+                # Change theme preference
+                if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
                     # Get list of themes from bundled and user dirs
                     local bundled_themes=$(ls "$SCRIPT_DIR/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
                     local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
                     local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
                     
+                    if [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
+                        echo -e "${CYAN}Available themes:${RESET}"
+                        for theme in $all_themes; do
+                            echo "  - $theme"
+                        done
+                        exit 0
+                    fi
+
+                    echo -e "${RED}Error:${RESET} Please specify a theme name"
                     echo -e "${CYAN}Available themes:${RESET} $all_themes"
-                    echo "Usage: termflix theme <name>"
+                    echo "Usage: termflix theme <name> or termflix theme --list"
                     exit 1
                 fi
                 local new_theme="$2"

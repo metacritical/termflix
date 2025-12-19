@@ -30,7 +30,7 @@ import re
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
-YTS_API = "https://yts.mx/api/v2/list_movies.json"
+YTS_API = "https://yts.lt/api/v2/list_movies.json"
 TPB_TOP100_MOVIES = "https://apibay.org/precompiled/data_top100_207.json"
 TPB_TOP100_VIDEO = "https://apibay.org/precompiled/data_top100_201.json"
 TPB_TOP100_TV = "https://apibay.org/precompiled/data_top100_205.json"
@@ -416,16 +416,20 @@ class CatalogFetcher:
         
         # PAGE 1: Use all sources for diversity
         if page == 1:
+            # Fetch more from each source to ensure we get diverse results
+            # We'll trim to 'limit' at the end after combining all sources
+            per_source_limit = limit * 2  # Fetch 2x from each source for diversity
+            
             # SOURCE 1: TPB Top 100 (fast, diverse)
             try:
-                tpb_items = self.get_tpb_catalog(TPB_TOP100_MOVIES, limit)
+                tpb_items = self.get_tpb_catalog(TPB_TOP100_MOVIES, per_source_limit)
                 all_items.extend(tpb_items)
             except:
                 pass
             
             # SOURCE 2: YTS API
             try:
-                yts_items = self.get_yts_movies(sort_by='date_added', limit=limit, page=page)
+                yts_items = self.get_yts_movies(sort_by='date_added', limit=per_source_limit, page=page)
                 all_items.extend(yts_items)
             except:
                 pass
@@ -457,15 +461,34 @@ class CatalogFetcher:
         except:
             pass
         
-        # Deduplicate only for page 1
-        if page == 1:
-            seen = set()
-            unique = []
+        # DEDUPLICATION DISABLED - Let bash group_results.py handle grouping
+        # This preserves multiple sources per movie for proper COMBINED entries
+        # Deduplication by name was removing diversity
+        
+        # INTERLEAVE SOURCES for diversity
+        # Instead of returning first N items (which would be all TPB),
+        # interleave different sources to ensure variety
+        if page == 1 and len(all_items) > limit:
+            # Group by source
+            by_source = {}
             for item in all_items:
-                if item.name not in seen:
-                    seen.add(item.name)
-                    unique.append(item)
-            return unique[:limit]
+                if item.source not in by_source:
+                    by_source[item.source] = []
+                by_source[item.source].append(item)
+            
+            # Interleave sources (round-robin)
+            interleaved = []
+            source_keys = list(by_source.keys())
+            max_per_source = max(len(by_source[s]) for s in source_keys)
+            
+            for i in range(max_per_source):
+                for source in source_keys:
+                    if i < len(by_source[source]):
+                        interleaved.append(by_source[source][i])
+                        if len(interleaved) >= limit:
+                            return interleaved
+            
+            return interleaved[:limit]
         
         return all_items[:limit]
     

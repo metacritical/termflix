@@ -42,6 +42,7 @@ show_help() {
     echo "  termflix trending [movies|shows|all]"
     echo "  termflix popular [movies|shows|all]"
     echo "  termflix catalog [genre]"
+    echo "  termflix theme [name|--list]"
     echo
     echo -e "${C_PINK}Options:${RESET}"
     echo "  -h, --help          Show this help"
@@ -55,9 +56,12 @@ show_help() {
     echo
     echo -e "${C_PINK}Commands:${RESET}"
     echo "  player <mpv|vlc>    Change default media player preference"
-    echo "  theme <name>        Change UI theme (charm, default, etc.)"
+    echo "  theme [name|--list] Change UI theme or list available themes"
     echo
     echo -e "${C_PINK}Examples:${RESET}"
+    echo "  termflix latest movies"
+    echo "  termflix search \"The Matrix\""
+    echo "  termflix theme monokai"
     echo "  termflix                                    # Show latest movies and shows"
     echo "  termflix \"magnet:?xt=urn:btih:...\""
     echo "  termflix movie.torrent"

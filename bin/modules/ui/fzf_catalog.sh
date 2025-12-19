@@ -194,9 +194,10 @@ show_fzf_catalog() {
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-d:preview-down,ctrl-u:preview-up'
-      --bind='ctrl-h:change-preview-window(hidden|right:55%)'
-      --bind='ctrl-l:change-preview-window(right:55%|hidden)'
+
     "
+
+
     
     
     # Debug: show what we're sending to FZF
@@ -288,6 +289,15 @@ handle_fzf_selection() {
     local source name magnet quality size seeds poster imdb plot
     IFS='|' read -r source name magnet quality size seeds poster imdb plot <<< "$rest_data"
 
+    # CTRL+L HANDLER: Force Stage 2 for single-source items
+    # When user presses Ctrl+L, convert single source to COMBINED format
+    # so Stage 2 version picker shows, preventing auto-play
+    if [[ "$key" == "ctrl-l" ]] && [[ "$source" != "COMBINED" ]]; then
+        # Wrap single source in COMBINED format for Stage 2
+        rest_data="COMBINED|$name|$source|$quality|$seeds|$size|$magnet|$poster|$imdb|$plot"
+        source="COMBINED"
+    fi
+
      # Check if item is COMBINED (multiple sources)
      if [[ "$source" == "COMBINED" ]]; then
          # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
@@ -332,6 +342,7 @@ handle_fzf_selection() {
              case "$src" in
                  "TPB") src_name="ThePirateBay" ;;
                  "YTS") src_name="YTS.mx" ;;
+                 "yts_web") src_name="YTS.lt" ;;
                  "1337x") src_name="1337x" ;;
                  "EZTV") src_name="EZTV" ;;
                  *) src_name="$src" ;;
@@ -441,6 +452,7 @@ handle_fzf_selection() {
                       --preview "$stage2_preview" \
                       --preview-window=left:55%:wrap:border-right \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
+                      --no-select-1 \
                       2>/dev/null)
                       
                   # Cleanup
@@ -476,6 +488,7 @@ handle_fzf_selection() {
                       --preview "STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
+                      --no-select-1 \
                       2>/dev/null)
               fi
              
