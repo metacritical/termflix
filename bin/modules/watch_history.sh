@@ -129,7 +129,7 @@ is_watched() {
 generate_progress_bar() {
     local percentage="${1:-0}"
     # Total width: 30 characters for the bar
-    local width=30
+    local width=20
     local filled=$(( percentage * width / 100 ))
     [[ $filled -lt 0 ]] && filled=0
     [[ $filled -gt $width ]] && filled=$width

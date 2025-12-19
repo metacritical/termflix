@@ -378,23 +378,27 @@ if [[ "$source" == "COMBINED" ]]; then
         fi
     done
     
-    # Display only unique entries
+    # Display only unique entries, aligned similar to Stage 2 picker
     for i in "${unique_indices[@]}"; do
         src="${sources_arr[$i]}"
         qual="${qualities_arr[$i]}"
         seed="${seeds_arr[$i]}"
         sz="${sizes_arr[$i]}"
         
-        # Source color
+        # Per-source color (same mapping as Stage 1 badges)
         src_color="$CYAN"
-        case "$src" in
-            "YTS")   src_color="$GREEN" ;;
-            "TPB")   src_color="$YELLOW" ;;
-            "EZTV")  src_color="$BLUE" ;;
-            "1337x") src_color="$MAGENTA" ;;
-        esac
+        if command -v get_source_color &> /dev/null; then
+            src_color="$(get_source_color "$src")"
+        else
+            case "$src" in
+                "YTS")   src_color="$GREEN" ;;
+                "TPB")   src_color="$YELLOW" ;;
+                "EZTV")  src_color="$BLUE" ;;
+                "1337x") src_color="$MAGENTA" ;;
+            esac
+        fi
         
-        # Source name
+        # Optional friendly source name (right side, muted)
         src_name=""
         case "$src" in
             "YTS")   src_name="YTS.mx" ;;
@@ -403,7 +407,16 @@ if [[ "$source" == "COMBINED" ]]; then
             "1337x") src_name="1337x.to" ;;
         esac
         
-        echo -e "  ${ORANGE}🧲${RESET} ${src_color}[${src}]${RESET} ${CYAN}${qual}${RESET} - ${YELLOW}${sz}${RESET} - ${GREEN}👥 ${seed} seeds${RESET} ${DIM}- ${src_name}${RESET}"
+        # Aligned line: 🧲[SRC] QUAL - SIZE - 👥 SEEDS seeds  - SourceName
+        line=$(printf "  %s🧲[%3s]%s %-8s - %-12s - 👥 %4s seeds" \
+            "$src_color" "$src" "$RESET" \
+            "$qual" \
+            "$sz" \
+            "$seed")
+        if [[ -n "$src_name" ]]; then
+            line+=" ${DIM}- ${src_name}${RESET}"
+        fi
+        echo -e "$line"
     done
 else
     echo -e "${BOLD}${GREEN}Ready to stream:${RESET}"

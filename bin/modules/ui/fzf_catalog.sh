@@ -72,11 +72,11 @@ show_fzf_catalog() {
          # Parse for display
          IFS='|' read -r source name rest <<< "$result"
          
-         # Create clean display line - just number and title
+         # Original simple display line: just number and title
          local display_line
          display_line=$(printf "%3d. %s" "$i" "$name")
          
-         # Store full data for preview
+         # Store full data for preview snapshot
          fzf_display+="$display_line|$i|$result"$'\n'
     done
 
@@ -322,9 +322,10 @@ handle_fzf_selection() {
          # Prepare version options for "Right Pane" FZF with nice formatting
          local options=""
          local RESET=$'\e[0m'
-         local GREEN=$'\e[38;5;46m'
-         local YELLOW=$'\e[38;5;220m'
-         local RED=$'\e[38;5;196m'
+         # Use theme-aware semantic colors from colors.sh when available
+         local GREEN="${THEME_SUCCESS:-$C_SUCCESS:-$'\e[38;5;46m'}"
+         local YELLOW="${THEME_WARNING:-$C_WARNING:-$'\e[38;5;220m'}"
+         local RED="${THEME_ERROR:-$C_ERROR:-$'\e[38;5;196m'}"
          
          for i in "${!magnets_arr[@]}"; do
              local src="${sources_arr[$i]:-Unknown}"
@@ -367,17 +368,29 @@ handle_fzf_selection() {
                      if [[ -n "$pct" ]]; then
                          progress_bar="$(generate_progress_bar "$pct")"
                          # Only mark as "watched" (▶) once there's at least some progress
-                         if [[ "$pct" -gt 0 ]]; then
+                         if [[ "$pct" -ge 0 ]]; then
                              watched_indicator="▶ "
                          fi
                      fi
                  fi
              fi
              
-             # Format display: ▶ 🧲 [TPB] 1080p - 1.4GB - 👥 6497 seeds - ThePirateBay | ━━━━━━━━──── 80%
-             local d_line="${watched_indicator}🧲 [${src}] ${qual} - ${sz} - 👥 ${seed_color}${sd} seeds${RESET} - ${src_name}${progress_bar}"
-             # Format: idx|display|name|src|qual|sz|poster (for preview to use)
-             options+="${i}|${d_line}|${name}|${src}|${qual}|${sz}|${c_poster}"$'\n'
+             # Format display with basic column padding for better alignment
+             # Badge [SRC] uses the same per-source colors as Stage 1 (YTS/TPB/1337x/EZTV)
+             local d_line
+             local src_color=""
+             if command -v get_source_color &> /dev/null; then
+                 src_color="$(get_source_color "$src")"
+             fi
+             d_line=$(printf "%-2s %s🧲[%3s]%s %-8s - %-12s - 👥 %s%4s%s seeds %s" \
+                 "$watched_indicator" \
+                 "${src_color:-$RESET}" "$src" "$RESET" \
+                 "$qual" \
+                 "$sz" \
+                 "$seed_color" "$sd" "$RESET" \
+                 "$progress_bar")
+             # Format: idx|display (for preview to use)
+             options+="${i}|${d_line}"$'\n'
          done
      fi
          
