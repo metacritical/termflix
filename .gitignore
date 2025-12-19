@@ -15,3 +15,9 @@ tmp/
 
 # Termflix specific
 *.log
+
+# Documentation files
+ARCHITECTURE.md
+PYTHON_MIGRATION.md
+SCRIPT_REVIEW.md
+TERMFLIX_REVIEW.md
