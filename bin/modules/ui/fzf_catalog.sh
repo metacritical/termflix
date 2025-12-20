@@ -382,7 +382,7 @@ handle_fzf_selection() {
                          progress_bar="$(generate_progress_bar "$pct")"
                          # Only mark as "watched" (▶) once there's at least some progress
                          if [[ "$pct" -ge 0 ]]; then
-                             watched_indicator="▶ "
+                             watched_indicator="👀"
                          fi
                      fi
                  fi
@@ -520,9 +520,7 @@ handle_fzf_selection() {
                       --pointer='▶' \
                       --header="Pick Version - [${c_name}] →" \
                       --header-first \
-                      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
-                      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
-                      --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
+                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" $stage2_preview" \
                       --preview-window=left:55%:wrap:border-right \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
@@ -554,12 +552,10 @@ handle_fzf_selection() {
                       --padding=1 \
                       --prompt="▶ Pick Version: " \
                       --header="🎬 Available Versions: (Ctrl+H to back)" \
-                      --color=fg:#f8f8f2,bg:-1,hl:#E879F9 \
-                      --color=fg+:#ffffff,bg+:#2d1f3d,hl+:#E879F9 \
-                      --color=prompt:#5EEAD4,pointer:#E879F9 \
-                      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
-                      --border-label-pos=bottom \
+                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
+                       --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+                       --border-label-pos=bottom \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       --no-select-1 \
