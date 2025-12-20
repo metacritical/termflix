@@ -300,6 +300,19 @@ handle_fzf_selection() {
 
      # Check if item is COMBINED (multiple sources)
      if [[ "$source" == "COMBINED" ]]; then
+         # Propagate Stage 1 context into Stage 2 so preview can distinguish
+         # between catalog vs search → Stage 2 transitions.
+         if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
+             echo "[DEBUG fzf_catalog] TERMFLIX_STAGE1_CONTEXT=${TERMFLIX_STAGE1_CONTEXT:-}" >&2
+         fi
+         local stage2_context="catalog"
+         if [[ "${TERMFLIX_STAGE1_CONTEXT:-}" == "search" ]]; then
+             stage2_context="search"
+         fi
+         if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
+             echo "[DEBUG fzf_catalog] Derived stage2_context=$stage2_context" >&2
+         fi
+         export TERMFLIX_STAGE2_CONTEXT="$stage2_context"
          # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
          local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot
          IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot <<< "$rest_data"
@@ -510,7 +523,7 @@ handle_fzf_selection() {
                       --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
                       --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
                       --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
-                      --preview "$stage2_preview" \
+                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" $stage2_preview" \
                       --preview-window=left:55%:wrap:border-right \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       --no-select-1 \
@@ -530,7 +543,7 @@ handle_fzf_selection() {
                              STAGE2_AVAIL="$q_disp" \
                              STAGE2_PLOT="$c_plot" \
                              STAGE2_IMDB="$c_imdb" \
-                             printf "%s" "$options" | fzf \
+                              printf "%s" "$options" | fzf \
                       --ansi \
                       --delimiter='|' \
                       --with-nth=2 \
@@ -546,7 +559,7 @@ handle_fzf_selection() {
                       --color=prompt:#5EEAD4,pointer:#E879F9 \
                       --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
                       --border-label-pos=bottom \
-                      --preview "STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
+                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       --no-select-1 \

@@ -35,6 +35,12 @@ GREEN="${THEME_SUCCESS:-${C_SUCCESS}}"
 YELLOW="${THEME_WARNING:-${C_WARNING}}"
 PURPLE="${THEME_PURPLE:-${C_PURPLE}}"
 
+# DEBUG: Verify context propagation (only when --debug flag is set)
+if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
+    echo "[DEBUG preview_stage2] TERMFLIX_STAGE2_CONTEXT=$TERMFLIX_STAGE2_CONTEXT" >&2
+    echo "[DEBUG preview_stage2] TERMFLIX_STAGE1_CONTEXT=$TERMFLIX_STAGE1_CONTEXT" >&2
+fi
+
 # Get environment variables set by fzf_catalog.sh
 selected_index="${STAGE2_SELECTED_INDEX:-}"
 title="${STAGE2_TITLE:-Unknown Title}"
@@ -79,27 +85,46 @@ if [[ -n "$header" ]]; then
     echo
 fi
 
-# Render catalog snapshot if available
-if [[ -z "$catalog" ]]; then
-    echo -e "${DIM}No catalog snapshot available for Stage 2 preview.${RESET}"
-else
-    # Re-render the movie list with selection marker
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        [[ -z "$line" ]] && continue
-        IFS='|' read -r display idx _ <<< "$line"
-        
-        if [[ -n "$selected_index" && "$idx" == "$selected_index" ]]; then
-            # Highlight the originally selected movie
-            echo -e "${MAGENTA}▶ ${BOLD}${display}${RESET}"
-        else
-            echo "  $display"
-        fi
-    done <<< "$catalog"
+stage2_context="${TERMFLIX_STAGE2_CONTEXT:-${TERMFLIX_STAGE1_CONTEXT:-}}"
+
+# DEBUG: Log resolved context (only when --debug flag is set)
+if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
+    echo "[DEBUG preview_stage2] stage2_context=$stage2_context" >&2
 fi
 
-# Footer separator
-echo
-echo -e "${GRAY}────────────────────────────────────────${RESET}"
+# Only render the full Stage 1 catalog snapshot when we are NOT in a search context.
+# In search → Stage 2, the left pane should focus on details for the selected title,
+# not repeat the entire search results list (which also clips the poster).
+should_render_catalog=true
+if [[ "$stage2_context" == "search" ]]; then
+    should_render_catalog=false
+    [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Hiding catalog (search context)" >&2
+else
+    [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Showing catalog (catalog context)" >&2
+fi
+
+if [[ "$should_render_catalog" == true ]]; then
+    if [[ -z "$catalog" ]]; then
+        echo -e "${DIM}No catalog snapshot available for Stage 2 preview.${RESET}"
+    else
+        # Re-render the movie list with selection marker
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            [[ -z "$line" ]] && continue
+            IFS='|' read -r display idx _ <<< "$line"
+            
+            if [[ -n "$selected_index" && "$idx" == "$selected_index" ]]; then
+                # Highlight the originally selected movie
+                echo -e "${MAGENTA}▶ ${BOLD}${display}${RESET}"
+            else
+                echo "  $display"
+            fi
+        done <<< "$catalog"
+    fi
+    
+    # Footer separator below list
+    echo
+    echo -e "${GRAY}────────────────────────────────────────${RESET}"
+fi
 
 # ═══════════════════════════════════════════════════════════════
 # BUFFERING STATUS (if streaming is active)
@@ -143,6 +168,7 @@ else
     fi
     
     echo -e "${DIM}Ctrl+H to go back • Enter to stream${RESET}"
+    echo -e "${GRAY}────────────────────────────────────────${RESET}"
 fi
 
 # ═══════════════════════════════════════════════════════════════
@@ -150,31 +176,40 @@ fi
 # ═══════════════════════════════════════════════════════════════
 
 if [[ "$IS_KITTY_MODE" == "true" ]]; then
-    # KITTY MODE: Use absolute positioning to keep poster on right side
-    # This maintains the Stage 1 visual layout
+    # KITTY MODE: Display metadata and larger poster
+    
+    # Show metadata before poster
+    echo -e "${BOLD}${MAGENTA}${title}${RESET}"
+    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+    echo
+    
+    [[ -n "$sources" ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}${sources}${RESET}"
+    [[ -n "$avail" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${avail}${RESET}"
+    [[ -n "$imdb" && "$imdb" != "N/A" ]] && echo -e "${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb}${RESET}"
+    echo
     
     # Resolve fallback image path
     FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
     [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
     
     if [[ -f "$poster_file" ]]; then
-        cols=$(tput cols 2>/dev/null || echo 120)
-        preview_cols="${FZF_PREVIEW_COLUMNS:-$cols}"
+        # Larger poster size to match text mode
+        IMAGE_WIDTH=40
+        IMAGE_HEIGHT=30
         
-        IMAGE_WIDTH=20
-        IMAGE_HEIGHT=15
-        
-        # Compute X offset where Stage 1's preview pane would start
-        # In Stage 2, the preview window is on the LEFT, so the right FZF list
-        # starts at column preview_cols
-        start_x=$preview_cols
-        (( start_x < 0 )) && start_x=0
-        
-        # Draw poster at the calculated position (row 2 of right pane)
+        # Display inline (no absolute positioning in search mode)
         kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@${start_x}x2 \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
             --scale-up --align=left \
             "$poster_file" 2>/dev/null
+    fi
+    
+    echo
+    
+    # Display plot/description
+    if [[ -n "$plot" && "$plot" != "N/A" ]]; then
+        echo -e "${DIM}${plot}${RESET}"
+        echo
     fi
 else
     # BLOCK MODE: Use universal image display helper

@@ -561,7 +561,9 @@ main() {
                     if [[ -n "$search_query" ]]; then
                         current_query="$search_query"
                         # Switch to default sort for relevance
-                        current_context="default" 
+                        current_context="default"
+                        # Mark as search context so Stage 2 hides the catalog list
+                        export TERMFLIX_STAGE1_CONTEXT="search"
                     fi
                     continue
                     ;;

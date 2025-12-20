@@ -301,6 +301,8 @@ search_torrent() {
     fi
     
     # Display results using FZF
+    # Mark context so Stage 2 preview knows this came from a search
+    export TERMFLIX_STAGE1_CONTEXT="search"
     local selection_line
     if selection_line=$(show_fzf_catalog "Search Results for: $query" all_results); then
          handle_fzf_selection "$selection_line"

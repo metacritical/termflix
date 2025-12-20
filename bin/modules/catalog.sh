@@ -393,6 +393,11 @@ display_catalog() {
         [[ "${DEBUG_MODE:-0}" == "1" ]] && echo "[DEBUG] Sliced page $current_page: start_idx=$start_idx, showing ${#page_results[@]} items" >&2
         
         # Show FZF with current page only
+        # Mark context as catalog (non-search) for Stage 2 preview
+        # BUT preserve existing "search" context if set (e.g., from Ctrl+F)
+        if [[ "${TERMFLIX_STAGE1_CONTEXT:-}" != "search" ]]; then
+            export TERMFLIX_STAGE1_CONTEXT="catalog"
+        fi
         local selection_line
         selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_display" "$last_selected_index")
         local fzf_ret=$?
