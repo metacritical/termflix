@@ -101,6 +101,7 @@ if [[ -n "$SELECTED" ]]; then
     NEW_SEASON=$(echo "$SELECTED" | grep -oE '[0-9]+')
     if [[ -n "$NEW_SEASON" ]]; then
         echo "$NEW_SEASON" > "$SEASON_FILE"
+        echo "$NEW_SEASON" # Output to stdout for caller
         echo "[$(date)] Saved season $NEW_SEASON to $SEASON_FILE" >> /tmp/season_picker.log 2>/dev/null
     fi
 fi

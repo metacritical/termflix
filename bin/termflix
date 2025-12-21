@@ -383,16 +383,28 @@ main() {
             export CURRENT_QUERY="$current_query"
             export CURRENT_CATEGORY="$current_category"
 
-            # Build title & set data function
-            local title_prefix="🎬"
-            local item_type="Movies"
-            local data_func="get_latest_movies"
+            # Build title & set data function based on category
+            local title_prefix="✨"
+            local item_type="All"
+            local data_func="get_latest_all"
             
-            if [[ "$current_category" == "shows" ]]; then
-                title_prefix="📺"
-                item_type="Shows"
-                data_func="get_latest_shows"
-            fi
+            case "$current_category" in
+                movies)
+                    title_prefix="🎬"
+                    item_type="Movies"
+                    data_func="get_latest_movies"
+                    ;;
+                shows)
+                    title_prefix="📺"
+                    item_type="Shows"
+                    data_func="get_latest_shows"
+                    ;;
+                all)
+                    title_prefix="✨"
+                    item_type="All"
+                    data_func="get_latest_all"
+                    ;;
+            esac
 
             case "$current_context" in
                 default) title_prefix="$title_prefix Recent $item_type" ;;

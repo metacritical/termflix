@@ -296,11 +296,12 @@ def extract_quality(name: str) -> str:
 # EZTV API (Dedicated TV Shows Source)
 # ═══════════════════════════════════════════════════════════════
 
-EZTV_API_URL = 'https://eztv.re/api/get-torrents'
+# EZTV domains in order of preference (ISPs block these rotationally)
+EZTV_DOMAINS = ['eztv.yt', 'eztv1.xyz', 'eztv.tf', 'eztvx.to', 'eztv.re']
 
 def fetch_eztv_shows(limit: int = 50, page: int = 1) -> List[Dict]:
     """
-    Fetch latest TV shows from EZTV API.
+    Fetch latest TV shows from EZTV API with domain rotation.
     Returns list of torrent dicts with normalized field names.
     """
     cache_key = get_cache_key('eztv_shows', f'{limit}_{page}')
@@ -311,8 +312,14 @@ def fetch_eztv_shows(limit: int = 50, page: int = 1) -> List[Dict]:
         except:
             pass
     
-    url = f"{EZTV_API_URL}?limit={limit}&page={page}"
-    response = fetch_url(url, timeout=8)
+    # Try each EZTV domain until one works
+    response = None
+    for domain in EZTV_DOMAINS:
+        url = f"https://{domain}/api/get-torrents?limit={limit}&page={page}"
+        response = fetch_url(url, timeout=6)
+        if response:
+            break  # Found a working domain
+    
     if not response:
         return []
     
@@ -345,7 +352,7 @@ def fetch_eztv_shows(limit: int = 50, page: int = 1) -> List[Dict]:
 
 
 def search_eztv(query: str) -> List[Dict]:
-    """Search EZTV for TV show torrents."""
+    """Search EZTV for TV show torrents by IMDB ID."""
     cache_key = get_cache_key('eztv_search', query)
     cached = get_cached(cache_key)
     if cached:
@@ -354,15 +361,21 @@ def search_eztv(query: str) -> List[Dict]:
         except:
             pass
     
-    # EZTV doesn't have a text search API, so we fetch latest and filter
-    # For IMDB-based search, use imdb_id parameter
+    # EZTV doesn't have a text search API - only IMDB-based search works
     if query.startswith('tt'):
-        url = f"{EZTV_API_URL}?imdb_id={query.replace('tt', '')}&limit=50"
+        imdb_num = query.replace('tt', '')
     else:
         # No direct text search, return empty (will rely on TPB for text search)
         return []
     
-    response = fetch_url(url, timeout=8)
+    # Try each EZTV domain until one works
+    response = None
+    for domain in EZTV_DOMAINS:
+        url = f"https://{domain}/api/get-torrents?imdb_id={imdb_num}&limit=50"
+        response = fetch_url(url, timeout=6)
+        if response:
+            break
+    
     if not response:
         return []
     
@@ -432,13 +445,48 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
             raw_items.append(item)
 
         if category in [205, 208]: # TV Shows Categories
-            # Multi-source: Also fetch from EZTV and merge
-            eztv_items = fetch_eztv_shows(limit=limit)
-            # Add source field to TPB items
+            # PARALLEL MULTI-SOURCE FETCH
+            # Fetch from TPB HD, TPB non-HD, and EZTV concurrently
+            all_items = []
+            
+            def fetch_tpb_category(cat: int) -> List[Dict]:
+                """Fetch TPB top100 for given category."""
+                url = f'https://apibay.org/precompiled/data_top100_{cat}.json'
+                response = fetch_url(url, timeout=8)
+                if not response:
+                    return []
+                try:
+                    data = json.loads(response)
+                    items = []
+                    for item in data[:100]:
+                        info_hash = item.get('info_hash', '')
+                        if info_hash and info_hash != '0' * 40:
+                            item['source'] = 'TPB'
+                            items.append(item)
+                    return items
+                except:
+                    return []
+            
+            # Add TPB HD items we already fetched
             for item in raw_items:
                 item['source'] = 'TPB'
-            # Merge all items and group by series
-            all_items = raw_items + eztv_items
+            all_items.extend(raw_items)
+            
+            # Parallel fetch: TPB non-HD + EZTV
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {
+                    executor.submit(fetch_tpb_category, 205): 'TPB_NonHD',
+                    executor.submit(fetch_eztv_shows, 100): 'EZTV',
+                }
+                for future in as_completed(futures, timeout=12):
+                    source_name = futures[future]
+                    try:
+                        items = future.result(timeout=10)
+                        if items:
+                            all_items.extend(items)
+                    except Exception:
+                        pass  # Source failed, continue with others
+            
             return group_shows_by_series(all_items, limit)
         
         # Standard movie processing for TPB fallback

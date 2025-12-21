@@ -287,5 +287,49 @@ get_new_48h_movies() {
     fi
 }
 
+# Get combined Latest Movies + Shows (for "All" category)
+get_latest_all() {
+    local limit="${1:-50}"
+    local page="${2:-1}"
+    
+    # Fetch movies and shows in parallel (using subshells)
+    local tmp_movies=$(mktemp)
+    local tmp_shows=$(mktemp)
+    
+    # Parallel fetch
+    (get_latest_movies "$((limit/2))" "$page" > "$tmp_movies" 2>/dev/null) &
+    local pid_movies=$!
+    (get_latest_shows "$((limit/2))" "$page" > "$tmp_shows" 2>/dev/null) &
+    local pid_shows=$!
+    
+    # Wait for both
+    wait $pid_movies 2>/dev/null
+    wait $pid_shows 2>/dev/null
+    
+    # Interleave results (movie, show, movie, show...)
+    local movies=()
+    local shows=()
+    
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && movies+=("$line")
+    done < "$tmp_movies"
+    
+    while IFS= read -r line; do
+        [[ -n "$line" ]] && shows+=("$line")
+    done < "$tmp_shows"
+    
+    rm -f "$tmp_movies" "$tmp_shows" 2>/dev/null
+    
+    # Interleave: alternating movies and shows
+    local max=${#movies[@]}
+    [[ ${#shows[@]} -gt $max ]] && max=${#shows[@]}
+    
+    for ((i=0; i<max; i++)); do
+        [[ -n "${movies[$i]}" ]] && echo "${movies[$i]}"
+        [[ -n "${shows[$i]}" ]] && echo "${shows[$i]}"
+    done
+}
+
 # Export catalog fetching functions
-export -f get_latest_movies get_trending_movies get_popular_movies get_latest_shows get_catalog_by_genre get_new_48h_movies
+export -f get_latest_movies get_trending_movies get_popular_movies get_latest_shows get_catalog_by_genre get_new_48h_movies get_latest_all
+

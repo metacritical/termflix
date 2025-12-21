@@ -75,9 +75,24 @@ show_fzf_catalog() {
          # Parse for display
          IFS='|' read -r source name rest <<< "$result"
          
-         # Original simple display line: just number and title
+         # Check watch history - extract magnet hash from rest data
+         local watched_icon=""
+         local magnet_hash=""
+         if [[ "$rest" =~ btih:([a-fA-F0-9]+) ]]; then
+             magnet_hash="${BASH_REMATCH[1]}"
+             magnet_hash=$(echo "$magnet_hash" | tr '[:upper:]' '[:lower:]')
+             # Check if this hash exists in watch history
+             if [[ -f "${HOME}/.config/termflix/watch_history.json" ]]; then
+                 if command -v jq &>/dev/null; then
+                     local pct=$(jq -r --arg h "$magnet_hash" '.[$h].percentage // 0' "${HOME}/.config/termflix/watch_history.json" 2>/dev/null)
+                     [[ "$pct" =~ ^[0-9]+$ ]] && [[ "$pct" -gt 0 ]] && watched_icon="▶ "
+                 fi
+             fi
+         fi
+         
+         # Display line with watched indicator
          local display_line
-         display_line=$(printf "%3d. %s" "$i" "$name")
+         display_line=$(printf "%3d. %s%s" "$i" "$watched_icon" "$name")
          
          # Store full data for preview snapshot
          fzf_display+="$display_line|$i|$result"$'\n'
@@ -102,13 +117,21 @@ show_fzf_catalog() {
     local hl_sort=" "
     local hl_genre=" "
     
-    # Determine selected tab based on Title
-    case "$title" in
-        *"Movies"*)     hl_movies="o" ;;
-        *"Shows"*|*"TV"*) hl_shows="o" ;;
-        *"Watchlist"*|*"Library"*) hl_watchlist="o" ;;
-        *"Search"*)     hl_search="o" ;;
-        *)              hl_movies="o" ;; # Default
+    # Determine selected tab based on CURRENT_CATEGORY (env) or Title pattern
+    # CURRENT_CATEGORY takes priority since it's set by the main loop
+    case "${CURRENT_CATEGORY:-}" in
+        movies)     hl_movies="o" ;;
+        shows)      hl_shows="o" ;;
+        all)        hl_movies=" "; hl_shows=" " ;;  # Neither highlighted for "All" mode
+        *)
+            # Fallback: pattern match on title
+            case "$title" in
+                *"Movies"*)     hl_movies="o" ;;
+                *"Shows"*|*"TV"*) hl_shows="o" ;;
+                *"Watchlist"*|*"Library"*) hl_watchlist="o" ;;
+                *)              hl_movies="o" ;; # Default
+            esac
+            ;;
     esac
     
     # Colors for header - Use THEME variables with fallbacks
@@ -302,9 +325,22 @@ handle_fzf_selection() {
     # static movie list with the correct selection marker.
     export STAGE2_SELECTED_INDEX="$index"
     
-    # Now parse rest_data which starts with source
+    # Now parse rest_data based on whether it is a COMBINED entry or standard
     local source name magnet quality size seeds poster imdb plot
-    IFS='|' read -r source name magnet quality size seeds poster imdb plot <<< "$rest_data"
+    if [[ "$rest_data" == "COMBINED"* ]]; then
+        # COMBINED format: source|name|sources|qualities|seeds|sizes|magnets|poster|imdb|genre|count
+        local sources qualities all_seeds all_sizes magnets genre count
+        IFS='|' read -r source name sources qualities all_seeds all_sizes magnets poster imdb genre count <<< "$rest_data"
+        # For multi-stage, we use name as title
+        magnet="$magnets"
+        quality="$qualities"
+        size="$all_sizes"
+        seeds="$all_seeds"
+        plot="$genre" # Or use genre as plot for now if plot is not in COMBINED
+    else
+        # Standard format
+        IFS='|' read -r source name magnet quality size seeds poster imdb plot <<< "$rest_data"
+    fi
 
     # === SHOWS MULTI-STAGE HANDLING (STREMIO-STYLE) ===
     # Identify as series if from Shows category or manually tagged
@@ -356,199 +392,228 @@ handle_fzf_selection() {
                 return 1
             fi
 
+            # Define show metadata for later use
+            local show_poster=""
+            local poster_path=$(echo "$series_details" | jq -r '.poster_path // ""' 2>/dev/null)
+            [[ -n "$poster_path" && "$poster_path" != "null" ]] && show_poster="https://image.tmdb.org/t/p/w500${poster_path}"
+            
             local current_s_num="$latest_season"
+            
+            # OUTER LOOP: Series Interaction (Season -> Episode -> Version -> Back)
             while true; do
-                # 3. Get Episodes for current_s_num
-                local season_details
-                season_details=$(get_tv_season_details "$tmdb_id" "$current_s_num")
-                local episodes_json
-                episodes_json=$(echo "$season_details" | jq -c '.episodes[]')
+                local picker_path="${SCRIPT_DIR}/modules/ui/episode_picker.sh"
+                local picker_output
+                picker_output=$("$picker_path" "$series_name" "$imdb_id" "$current_s_num")
                 
-                if [[ -z "$episodes_json" ]]; then
-                    echo -e "${RED}No episodes found for Season $current_s_num.${RESET}"
-                    sleep 2
-                    return 1
-                fi
-
-                local episode_list=""
-                local today_epoch=$(date +%s)
-                while read -r e; do
-                    local e_num=$(echo "$e" | jq -r '.episode_number')
-                    local e_name=$(echo "$e" | jq -r '.name // "TBA"')
-                    local e_date=$(echo "$e" | jq -r '.air_date // ""')
-                    
-                    # Format air date and check if released
-                    local date_display="TBA"
-                    local status_icon="  "
-                    if [[ -n "$e_date" && "$e_date" != "null" ]]; then
-                        # Parse date for comparison
-                        local ep_epoch=$(date -j -f "%Y-%m-%d" "$e_date" +%s 2>/dev/null || date -d "$e_date" +%s 2>/dev/null || echo "0")
-                        date_display=$(date -j -f "%Y-%m-%d" "$e_date" "+%d %b %Y" 2>/dev/null || date -d "$e_date" "+%d %b %Y" 2>/dev/null || echo "$e_date")
-                        if [[ "$ep_epoch" -gt "$today_epoch" ]]; then
-                            status_icon="🔒"
-                        fi
-                    fi
-                    
-                    # Truncate episode name for cleaner display
-                    local e_name_short="${e_name:0:30}"
-                    [[ ${#e_name} -gt 30 ]] && e_name_short="${e_name_short}..."
-                    
-                    # Format: idx|display_line (append with explicit newline)
-                    episode_list+="$(printf '%d|%s E%02d │ %-35s │ %s' "$e_num" "$status_icon" "$e_num" "$e_name_short" "$date_display")"$'\n'
-                done <<< "$episodes_json"
-                
-                # Get show poster for Stage 2 preview
-                local show_poster=""
-                local poster_path=$(echo "$series_details" | jq -r '.poster_path // ""' 2>/dev/null)
-                if [[ -n "$poster_path" && "$poster_path" != "null" ]]; then
-                    show_poster="https://image.tmdb.org/t/p/w500${poster_path}"
+                # Check for explicit BACK command from picker
+                if [[ "$picker_output" == "BACK" ]] || [[ -z "$picker_output" ]]; then
+                    return 1 # Back to Catalog
                 fi
                 
-                # Get show metadata for Stage 2 preview
-                local show_overview=$(echo "$series_details" | jq -r '.overview // "No description available."' 2>/dev/null)
-                local show_rating=$(echo "$series_details" | jq -r '.vote_average // "N/A"' 2>/dev/null)
-                local total_seasons=$(echo "$series_details" | jq -r '.number_of_seasons // "?"' 2>/dev/null)
-                local show_genres=$(echo "$series_details" | jq -r '[.genres[].name] | join(", ") // "N/A"' 2>/dev/null)
-                
-                # Prepare poster file for preview
-                local poster_file=""
-                local cache_dir="${HOME}/.cache/termflix/posters"
-                mkdir -p "$cache_dir"
-                if [[ -n "$show_poster" ]]; then
-                    local hash=$(echo -n "$show_poster" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-                    poster_file="${cache_dir}/${hash}.png"
-                    if [[ ! -f "$poster_file" ]]; then
-                        curl -sL --max-time 3 "$show_poster" -o "${poster_file}.tmp" 2>/dev/null
-                        if [[ -f "${poster_file}.tmp" && -s "${poster_file}.tmp" ]]; then
-                            if command -v sips &>/dev/null; then
-                                sips -s format png --resampleWidth 400 "${poster_file}.tmp" --out "$poster_file" &>/dev/null
-                            else
-                                mv "${poster_file}.tmp" "$poster_file"
-                            fi
-                            rm -f "${poster_file}.tmp" 2>/dev/null
-                        fi
-                    fi
-                fi
-                
-                # Export metadata for Stage 2 preview script
-                export STAGE2_POSTER="$poster_file"
-                export STAGE2_TITLE="$series_name"
-                export STAGE2_SOURCES="[Shows]"
-                export STAGE2_AVAIL="Season $current_s_num"
-                export STAGE2_PLOT="$show_overview"
-                export STAGE2_IMDB="$show_rating"
-                export TERMFLIX_STAGE2_CONTEXT="catalog"
-                
-                local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
-                
-                # Launch Split-View Episode Picker (like Movies Stage 2)
-                local sel_episode
-                sel_episode=$(printf "%s" "$episode_list" | fzf \
-                    --ansi \
-                    --delimiter='|' \
-                    --with-nth=2 \
-                    --height=100% \
-                    --layout=reverse \
-                    --border=rounded \
-                    --margin=1 \
-                    --padding=1 \
-                    --prompt='❯ ' \
-                    --pointer='▶' \
-                    --header="Pick Episode - [$series_name] Season $current_s_num →" \
-                    --header-first \
-                    --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2')" \
-                    --preview "TERMFLIX_STAGE2_CONTEXT=\"catalog\" $stage2_preview" \
-                    --preview-window=left:55%:wrap:border-right \
-                    --bind='ctrl-s:abort' \
-                    --bind='ctrl-h:abort' \
-                    --expect=ctrl-s,enter \
-                    2>/dev/null)
-                
-                # Cleanup exports
-                unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_PLOT STAGE2_IMDB
-                [[ "$TERM" == "xterm-kitty" ]] && kitten icat --clear 2>/dev/null
-                
-                [[ -z "$sel_episode" ]] && return 1 # Back/Cancel
-                
-                local sel_key=$(echo "$sel_episode" | head -1)
-                local sel_val=$(echo "$sel_episode" | tail -1)
-
-                # Handle Season Switching (Ctrl+S)
-                if [[ "$sel_key" == "ctrl-s" ]]; then
-                    # Show season list
-                    local seasons_json
-                    seasons_json=$(echo "$series_details" | jq -c '.seasons[] | select(.season_number > 0)')
-                    local season_pick_list=""
-                    while read -r s; do
-                        local sn=$(echo "$s" | jq -r '.season_number')
-                        local sname=$(echo "$s" | jq -r '.name')
-                        season_pick_list+=$(printf "Season %02d | %s\n" "$sn" "$sname")
-                    done <<< "$seasons_json"
-
+                # 1. Handle Season Switching
+                if [[ "$picker_output" == "SWITCH_SEASON" ]]; then
+                    local s_picker_path="${SCRIPT_DIR}/modules/ui/season_picker.sh"
                     local new_s
-                    new_s=$(echo -e "$season_pick_list" | fzf --height=15 --layout=reverse --border --prompt="Switch Season > " --ansi 2>/dev/null)
+                    new_s=$("$s_picker_path" "$series_name" "$imdb_id")
                     if [[ -n "$new_s" ]]; then
-                        current_s_num=$(echo "$new_s" | cut -d' ' -f2)
-                        current_s_num=$((10#$current_s_num))
-                        continue # Re-loop with new season
+                        current_s_num="$new_s"
                     fi
-                    continue # No change, stay in episode list
+                    continue # Re-launch episode picker with new season
                 fi
-
-                # Handle Episode selection
-                if [[ -n "$sel_val" ]]; then
-                    # Extract episode number from format "idx|display"
-                    local e_num_picked=$(echo "$sel_val" | cut -d'|' -f1)
-                    e_num_picked=$((10#$e_num_picked))
-                    
-                    # 4. Search for specific episode torrents
-                    local search_query
-                    search_query=$(printf "%s S%02dE%02d" "$series_name" "$current_s_num" "$e_num_picked")
+                
+                # 2. Handle Episode Selection
+                if [[ "$picker_output" == "SELECTED_EPISODE|"* ]]; then
+                    local e_num_picked="${picker_output#SELECTED_EPISODE|}"
+                    local search_query=$(printf "%s S%02dE%02d" "$series_name" "$current_s_num" "$e_num_picked")
                     
                     echo -e "${CYAN}Searching for ${YELLOW}$search_query${RESET}${CYAN}...${RESET}"
                     
-                    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-                    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+                    # --- Data Fetching (Use Cache Logic) ---
+                    local search_results=""
+                    # Re-implementing the cache-first logic here:
                     
-                    local search_results
-                    search_results=$(python3 "$script_path" --query "$search_query" --limit 20 --category shows 2>/dev/null | grep "^COMBINED")
+                     # PRIMARY: Try EZTV Cached Data first
+                    local eztv_cache="/tmp/tf_eztv_${imdb_id#tt}.json"
+                    if [[ -f "$eztv_cache" ]]; then
+                        local ep_pattern=$(printf "S%02dE%02d" "$current_s_num" "$e_num_picked")
+                        while read -r torrent_line; do
+                            [[ -z "$torrent_line" ]] && continue
+                            local t_name=$(echo "$torrent_line" | jq -r '.title // .filename')
+                            local t_seeds=$(echo "$torrent_line" | jq -r '.seeds // 0')
+                            local t_bytes=$(echo "$torrent_line" | jq -r '.size_bytes // 0')
+                            local t_magnet=$(echo "$torrent_line" | jq -r '.magnet_url // ""')
+                            local t_size=$(awk "BEGIN {printf \"%.0fMB\", $t_bytes/1024/1024}")
+                            local t_qual="Unknown"
+                            [[ "$t_name" == *"1080p"* ]] && t_qual="1080p"
+                            [[ "$t_name" == *"720p"* ]] && t_qual="720p"
+                            [[ "$t_name" == *"480p"* ]] && t_qual="480p"
+                            # We use show_poster for list, but export specific ep details later
+                            local entry="COMBINED|${t_name}|EZTV|${t_qual}|${t_seeds}|${t_size}|${t_magnet}|${show_poster:-N/A}|${imdb_id}|Shows|1"
+                            [[ -z "$search_results" ]] && search_results="$entry" || search_results+=$'\n'"$entry"
+                        done < <(cat "$eztv_cache" | jq -c --arg ep "$ep_pattern" '.torrents[]? | select(.filename | test($ep; "i"))')
+                    fi
+
+                    # SECONDARY: Fallback
+                    if [[ -z "$search_results" && -n "$imdb_id" && "$imdb_id" != "N/A" ]]; then
+                        local imdb_num="${imdb_id#tt}"
+                        local eztv_resp=$(curl -s --max-time 8 "https://eztv.yt/api/get-torrents?imdb_id=${imdb_num}&limit=100" 2>/dev/null)
+                        if [[ -n "$eztv_resp" && "$eztv_resp" != *"error"* ]]; then
+                            local ep_pattern=$(printf "S%02dE%02d" "$current_s_num" "$e_num_picked")
+                            while read -r torrent_line; do
+                                [[ -z "$torrent_line" ]] && continue
+                                local t_name=$(echo "$torrent_line" | cut -d'|' -f1)
+                                local t_seeds=$(echo "$torrent_line" | cut -d'|' -f3)
+                                local t_size=$(echo "$torrent_line" | cut -d'|' -f4)
+                                local t_magnet=$(echo "$torrent_line" | cut -d'|' -f5)
+                                local t_qual="Unknown"
+                                [[ "$t_name" == *"1080p"* ]] && t_qual="1080p"
+                                [[ "$t_name" == *"720p"* ]] && t_qual="720p"
+                                [[ "$t_name" == *"480p"* ]] && t_qual="480p"
+                                local entry="COMBINED|${t_name}|EZTV|${t_qual}|${t_seeds}|${t_size}|${t_magnet}|${show_poster:-N/A}|${imdb_id}|Shows|1"
+                                [[ -z "$search_results" ]] && search_results="$entry" || search_results+=$'\n'"$entry"
+                            done < <(echo "$eztv_resp" | jq -r --arg ep "$ep_pattern" '.torrents[]? | select(.filename | test($ep; "i")) | "\(.title // .filename)|\(.seeds // 0)|\((.size_bytes // 0) / 1024 / 1024 | floor)MB|\(.magnet_url // "")"' 2>/dev/null)
+                        fi
+                    fi
+                    
+                    # ADDITIONAL SOURCE: ALWAYS search TPB for more results (parallel with EZTV)
+                    local fetcher_script="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
+                    local tpb_results=$(python3 "$fetcher_script" --query "$search_query" --limit 15 --category shows 2>/dev/null | grep "^COMBINED")
+                    
+                    # Merge TPB results with EZTV results
+                    if [[ -n "$tpb_results" ]]; then
+                        if [[ -n "$search_results" ]]; then
+                            search_results+=$'\n'"$tpb_results"
+                        else
+                            search_results="$tpb_results"
+                        fi
+                    fi
                     
                     if [[ -n "$search_results" ]]; then
-                        # Aggregate ALL search results into a single COMBINED entry
-                        # Each line is: COMBINED|name|source|quality|seeds|size|magnet|poster|imdb|genre|count
+                        # Aggregate ALL search results into a single COMBINED entry for Stage 2 Version Picker
                         local all_sources="" all_qualities="" all_seeds="" all_sizes="" all_magnets=""
                         local first_name="" torrent_count=0
                         
-                        while IFS='|' read -r _ name src qual seeds size magnet _ _ _ _; do
-                            [[ -z "$first_name" ]] && first_name="$name"
+                        while IFS='|' read -r _ t_name t_src t_qual t_seeds t_size t_magnet _ _ _ _; do
+                            [[ -z "$first_name" ]] && first_name="$t_name"
                             torrent_count=$((torrent_count + 1))
-                            
                             if [[ -z "$all_sources" ]]; then
-                                all_sources="$src"
-                                all_qualities="$qual"
-                                all_seeds="$seeds"
-                                all_sizes="$size"
-                                all_magnets="$magnet"
+                                all_sources="$t_src"; all_qualities="$t_qual"; all_seeds="$t_seeds"; all_sizes="$t_size"; all_magnets="$t_magnet"
                             else
-                                all_sources="${all_sources}^${src}"
-                                all_qualities="${all_qualities}^${qual}"
-                                all_seeds="${all_seeds}^${seeds}"
-                                all_sizes="${all_sizes}^${size}"
-                                all_magnets="${all_magnets}^${magnet}"
+                                all_sources="${all_sources}^${t_src}"; all_qualities="${all_qualities}^${t_qual}"; all_seeds="${all_seeds}^${t_seeds}"; all_sizes="${all_sizes}^${t_size}"; all_magnets="${all_magnets}^${t_magnet}"
                             fi
                         done <<< "$search_results"
                         
-                        # Create aggregated COMBINED entry
-                        rest_data="COMBINED|${first_name}|${all_sources}|${all_qualities}|${all_seeds}|${all_sizes}|${all_magnets}|N/A|N/A|Shows|${torrent_count}"
-                        source="COMBINED"
-                        break # Exit loop to proceed to quality picker
+                        rest_data="COMBINED|${first_name}|${all_sources}|${all_qualities}|${all_seeds}|${all_sizes}|${all_magnets}|${show_poster:-N/A}|${imdb_id:-N/A}|Shows|${torrent_count}"
+                        
+                        # --- PREPARE STAGE 3 PREVIEW DATA ---
+                        # Extract clean Episode Title & Plot from SEASON_DETAILS (if available from previous step env?)
+                        # We need to re-fetch season details if not persistent, OR define a way to get it.
+                        # Luckily, episode_picker already did this. We can use `fzf_catalog.sh` cached methods if needed, 
+                        # but simple TMDB fetch is safest to ensure fresh data.
+                        
+                        # Fetch episode details for preview
+                        local ep_details=$(get_tv_season_details "$tmdb_id" "$current_s_num" | jq -c --argjson n "$e_num_picked" '.episodes[] | select(.episode_number == $n)')
+                        local ep_title=$(echo "$ep_details" | jq -r '.name')
+                        local ep_plot=$(echo "$ep_details" | jq -r '.overview // "No description"')
+                        local ep_rating=$(echo "$ep_details" | jq -r '.vote_average // "N/A"')
+                        
+                        export TERMFLIX_STAGE2_TITLE="${ep_title}"
+                        export TERMFLIX_STAGE2_PLOT="${ep_plot}"
+                        export TERMFLIX_STAGE2_IMDB="${ep_rating}"
+                        export TERMFLIX_STAGE2_POSTER="$show_poster" # Keep series poster
+                        export TERMFLIX_STAGE2_AVAIL=$(echo "$search_results" | cut -d'|' -f4 | sort -u | tr '\n' ' ' | sed 's/ $//;s/ /, /g')
+                        export TERMFLIX_STAGE2_SOURCES="EZTV"
+                        
+                        # --- INLINE VERSION PICKER (Stage 3) ---
+                        # We invoke the Generic Stage 2 Logic here via recursion or fallthrough?
+                        # Fallthrough breaks the loop logic. 
+                        # We MUST process it here to allow loop-back.
+                        
+                        source="COMBINED" # Mark for logic reuse if needed
+                        
+                        # ... Proceed to construct options and CALL FZF manually ...
+                        # (Minimal logic to show picker and handle back)
+                        
+                        # [Construction Logic copied/adapted from below]
+                        local options=""
+                        IFS='^' read -ra sources_arr <<< "$all_sources"
+                        IFS='^' read -ra qualities_arr <<< "$all_qualities"
+                        IFS='^' read -ra seeds_arr <<< "$all_seeds"
+                        IFS='^' read -ra sizes_arr <<< "$all_sizes"
+                        IFS='^' read -ra magnets_arr <<< "$all_magnets"
+                        
+                        # Use theme-aware semantic colors from colors.sh when available
+                        local GREEN="${THEME_SUCCESS:-$C_SUCCESS:-$'\e[38;5;46m'}"
+                        local YELLOW="${THEME_WARNING:-$C_WARNING:-$'\e[38;5;220m'}"
+                        local RED="${THEME_ERROR:-$C_ERROR:-$'\e[38;5;196m'}"
+                        local RESET=$'\e[0m'
+
+                        for i in "${!magnets_arr[@]}"; do
+                            local s="${sources_arr[$i]}"; local q="${qualities_arr[$i]}"
+                            local sd="${seeds_arr[$i]}"; local sz="${sizes_arr[$i]}"
+                            
+                            # Color seeds based on count (green=high, yellow=medium, red=low)
+                            local seed_color
+                            if [[ "$sd" -ge 100 ]]; then
+                                seed_color="$GREEN"
+                            elif [[ "$sd" -ge 10 ]]; then
+                                seed_color="$YELLOW"
+                            else
+                                seed_color="$RED"
+                            fi
+
+                            # Format display - include source from the parsed results
+                            local src="${sources_arr[$i]}"
+                            local line=$(printf "  🧲 [%-4s] %-8s - %-8s - %s%4s%s seeds" "$src" "$q" "$sz" "$seed_color" "$sd" "$RESET")
+                            options+="${i}|${line}"$'\n'
+                        done
+                        
+                        local preview_script="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
+                        
+                        # Use theme colors for consistency with Movies Stage 2
+                        local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
+                        
+                        local v_pick=$(echo -e "$options" | fzf --ansi --layout=reverse --border=rounded \
+                            --margin=1 --padding=1 \
+                            --pointer='▶' \
+                            --prompt="> " \
+                            --header="Episode: ${ep_title}" \
+                            --header-first \
+                            --border-label=" ⌨ Enter:Stream  Ctrl+H:Back " \
+                            --border-label-pos=bottom \
+                            --color="$fzf_colors" \
+                            --preview "$preview_script" --preview-window=left:55%:wrap:border-right \
+                            --delimiter='|' --with-nth=2 \
+                            --expect=ctrl-h,esc)
+                            
+                        local key_press=$(echo "$v_pick" | head -1)
+                        local sel_line=$(echo "$v_pick" | tail -1)
+                        
+                        if [[ "$key_press" == "ctrl-h" ]] || [[ "$key_press" == "esc" ]] || [[ -z "$sel_line" ]]; then
+                            continue # Back to Episode Listing
+                        fi
+                        
+                        # Selected!
+                        local idx=$(echo "$sel_line" | cut -d'|' -f1)
+                        local mag="${magnets_arr[$idx]}"
+                        
+                        # STREAM IT - Use same buffer UI as Movies
+                        local plot_text="${ep_plot:-}"
+                        if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
+                            source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
+                            show_inline_buffer_ui "$ep_title" "${show_poster:-}" "$plot_text" "$mag" "EZTV" "${qualities_arr[$idx]}" "$idx" "$imdb_id"
+                        else
+                            stream_torrent "$mag" "" false false
+                        fi
+                        return 0 # Done watching, exit to catalog
+                        
                     else
-                        echo -e "${RED}No torrents found for this episode.${RESET}"
+                        echo -e "${RED}No torrents found.${RESET}"
                         sleep 2
-                        # stay in episode picker
                     fi
                 fi
             done
+            return 1 # Fallback exit
         else
             echo -e "${YELLOW}Metadata not found for $series_name. Falling back to direct search...${RESET}"
             sleep 1

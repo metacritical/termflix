@@ -225,8 +225,21 @@ echo -e "${PINK}${title}${RESET}"
 echo ""
 echo "Sources: ${sources}"
 echo ""
-echo "🧲 Magnet: $TERMFLIX_MAGNET"
-echo ""
+
+# Show plot/description instead of magnet link
+if [[ -n "$plot" && "$plot" != "null" ]]; then
+    echo -e "${GRAY}SYNOPSIS${RESET}"
+    echo "$plot" | fmt -w 50
+    echo ""
+else
+    # Fallback streaming tips
+    echo -e "${CYAN}🎬 Streaming Tips${RESET}"
+    echo "  • Buffering takes 30-60 seconds"
+    echo "  • Better seeds = faster stream"
+    echo "  • 1080p requires ~5MB/s connection"
+    echo ""
+fi
+
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 

@@ -254,6 +254,19 @@ display_catalog() {
         fi
     done
     
+    # Deduplicate COMBINED results by title (field 2)
+    if [ "$needs_grouping" = false ] && [ ${#all_results[@]} -gt 0 ]; then
+        local dedup_results=()
+        local seen_titles=""
+        for result in "${all_results[@]}"; do
+            IFS='|' read -r _ title _ <<< "$result"
+            if [[ ! "$seen_titles" == *"|$title|"* ]]; then
+                seen_titles="${seen_titles}|$title|"
+                dedup_results+=("$result")
+            fi
+        done
+        all_results=("${dedup_results[@]}")
+    fi
     
     if [ "$needs_grouping" = true ] && [ ${#all_results[@]} -gt 0 ]; then
         printf "${CYAN}Grouping results...${RESET}"
@@ -297,8 +310,10 @@ display_catalog() {
         fi
         
         # Save GROUPED results to cache (after grouping and enrichment)
+        # Deduplicate by title (field 2) before saving
         if [ ${#all_results[@]} -gt 0 ]; then
-            printf "%s\n" "${all_results[@]}" > "$cache_file" 2>/dev/null
+            # Use awk to remove duplicates based on title (second field)
+            printf "%s\n" "${all_results[@]}" | awk -F'|' '!seen[$2]++' > "$cache_file" 2>/dev/null
         fi
 
 

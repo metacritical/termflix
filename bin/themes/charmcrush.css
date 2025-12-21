@@ -1,0 +1,89 @@
+/* CharmCrush Theme for Termflix */
+/* A fusion of Charmbracelet's elegant aesthetics with Crush's vibrant blurple energy */
+
+:root {
+    /* ═══════════════════════════════════════════════════════════
+       PRIMARY COLORS - Best of Both Worlds
+       ═══════════════════════════════════════════════════════════ */
+
+    /* Brand colors - Charm + Crush fusion */
+    --glow: #E879F9;
+    /* Charm hot pink - titles, highlights */
+    --purple: #7D56F4;
+    /* Crush vivid purple - accents */
+    --blurple: #6855DE;
+    /* Crush signature blurple */
+    --lavender: #C4B5FD;
+    /* Charm soft lavender - subtle elements */
+
+    /* Semantic colors - Charm's palette with Crush vibrancy */
+    --success: #04B575;
+    /* Crush green - success, available */
+    --error: #FF5555;
+    /* Shared red - errors */
+    --warning: #FFB86C;
+    /* Crush orange - warnings, ratings */
+    --info: #5EEAD4;
+    /* Charm cyan - info, metadata */
+
+    /* ═══════════════════════════════════════════════════════════
+       UI COLORS
+       ═══════════════════════════════════════════════════════════ */
+
+    --fg: #F8F8F2;
+    /* White-ish text (shared) */
+    --fg-muted: #6272A4;
+    /* Muted text (shared) */
+    --fg-subtle: #9CA3AF;
+    /* Subtle/disabled text */
+
+    --bg: #191724;
+    /* Crush's darker, richer background */
+    --bg-selection: #6855DE;
+    /* VIBRANT BLURPLE SELECTION (Crush signature) */
+    --bg-surface: #2D1F3D;
+    /* Charm's purple-tinted surface */
+
+    /* ═══════════════════════════════════════════════════════════
+       SOURCE COLORS (Enhanced visibility)
+       ═══════════════════════════════════════════════════════════ */
+
+    --yts: #04B575;
+    /* Bright green - YTS */
+    --tpb: #F1FA8C;
+    /* Yellow - TPB */
+    --x1337: #E879F9;
+    /* Hot pink - 1337x */
+    --eztv: #BD93F9;
+    /* Vivid lavender - EZTV */
+
+    /* ═══════════════════════════════════════════════════════════
+       SPECIAL ELEMENTS
+       ═══════════════════════════════════════════════════════════ */
+
+    --border: #7D56F4;
+    /* Purple border (Crush accent) */
+    --pointer: #E879F9;
+    /* Hot pink pointer (Charm signature) */
+    --prompt: #5EEAD4;
+    /* Cyan prompt (Charm style) */
+    --spinner: #E879F9;
+    /* Pink spinner */
+    --header: #6855DE;
+    /* Blurple header (Crush style) */
+
+    /* ═══════════════════════════════════════════════════════════
+       EXTENDED PALETTE (CharmCrush Exclusive)
+       ═══════════════════════════════════════════════════════════ */
+
+    --accent-primary: #E879F9;
+    /* Hot pink - primary action */
+    --accent-secondary: #6855DE;
+    /* Blurple - secondary action */
+    --highlight: #FFFFFF;
+    /* White highlight on selection */
+    --dim: #44475A;
+    /* Dimmed elements */
+    --separator: #505050;
+    /* Subtle separators */
+}

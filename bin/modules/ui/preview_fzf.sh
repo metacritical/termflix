@@ -85,10 +85,11 @@ season_file="/tmp/tf_s_${title_slug}"
 selected_preview_season=$(cat "$season_file" 2>/dev/null || echo "")
 
 if [[ "$source" == "COMBINED" ]]; then
-    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating_val genre_text torrent_count <<< "$rest"
-    [[ -n "$imdb_rating_val" && "$imdb_rating_val" != "N/A" ]] && movie_rating="$imdb_rating_val"
-    [[ -n "$genre_text" && "$genre_text" != "N/A" ]] && movie_genre="$genre_text"
-    imdb_id=$(echo "$input_line" | grep -oE 'tt[0-9]{7,}' | head -1)
+    # COMBINED format: source|title|sources|qualities|seeds|sizes|magnets|poster|imdb|genre|count
+    IFS='|' read -r sources qualities seeds sizes magnets poster_url current_imdb_id genre_text torrent_count <<< "$rest"
+    imdb_id="$current_imdb_id"
+    movie_genre="$genre_text"
+    # Note: COMBINED doesn't currently carry rating, but we can fetch it via TMDB/OMDB if we have imdb_id
 else
     magnet=$(echo "$rest" | cut -d'|' -f1)
     quality=$(echo "$rest" | cut -d'|' -f2)
@@ -388,17 +389,8 @@ else
                 "1337x") src_color="$MAGENTA" ;;
             esac
             
-            # Source name
-            src_name=""
-            case "$item_src" in
-                "YTS")   src_name="YTS.mx" ;;
-                "TPB")   src_name="ThePirateBay" ;;
-                "EZTV")  src_name="EZTV.re" ;;
-                "1337x") src_name="1337x.to" ;;
-                *)       src_name="$item_src" ;;
-            esac
-            
-            printf "  ${ORANGE}🧲${RESET} ${src_color}[%s]${RESET} %-8s  -  %-10s  -  ${GREEN}👥 %5s seeds${RESET}  -  ${GRAY}%s${RESET}\n" "$item_src" "$item_qual" "$item_size" "$item_seed" "$src_name"
+            # Format line without domain, fix spacing between emoji and text
+            printf "  ${ORANGE}🧲${RESET} ${src_color}[%s]${RESET} %-8s  -  %-10s  -  ${GREEN}👥 %s seeds${RESET}\n" "$item_src" "$item_qual" "$item_size" "$item_seed"
         done
     else
         echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET} │ ${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET}"
