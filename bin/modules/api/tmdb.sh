@@ -63,7 +63,11 @@ _tmdb_cache_valid() {
 
 # URL encode a string
 _urlencode() {
-    python3 -c "import urllib.parse; print(urllib.parse.quote('$1'))"
+    if [[ -n "$1" ]]; then
+        python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$1"
+    else
+        python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.stdin.read().strip()))"
+    fi
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -338,6 +342,67 @@ get_tv_metadata() {
     search_tmdb_tv "$name" "$year"
 }
 
+# Get full TV show details (including seasons)
+get_tv_details() {
+    local tv_id="$1"
+    
+    if [[ -z "$TMDB_API_KEY" ]]; then
+        echo '{"error": "No TMDB API key configured"}'
+        return 1
+    fi
+    
+    # Check cache
+    local cache_key=$(_tmdb_cache_key "tv_details_${tv_id}" "")
+    local cache_file="${TMDB_CACHE_DIR}/${cache_key}.json"
+    
+    if _tmdb_cache_valid "$cache_file"; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    local url="${TMDB_BASE_URL}/tv/${tv_id}?api_key=${TMDB_API_KEY}"
+    local response=$(curl -sL --max-time 5 "$url" 2>/dev/null)
+    
+    if [[ -n "$response" ]]; then
+        echo "$response" > "$cache_file"
+        echo "$response"
+    else
+        echo '{"error": "TMDB API request failed"}'
+        return 1
+    fi
+}
+
+# Get TV season details (including episodes)
+get_tv_season_details() {
+    local tv_id="$1"
+    local season_number="$2"
+    
+    if [[ -z "$TMDB_API_KEY" ]]; then
+        echo '{"error": "No TMDB API key configured"}'
+        return 1
+    fi
+    
+    # Check cache
+    local cache_key=$(_tmdb_cache_key "tv_season_${tv_id}_s${season_number}" "")
+    local cache_file="${TMDB_CACHE_DIR}/${cache_key}.json"
+    
+    if _tmdb_cache_valid "$cache_file"; then
+        cat "$cache_file"
+        return 0
+    fi
+    
+    local url="${TMDB_BASE_URL}/tv/${tv_id}/season/${season_number}?api_key=${TMDB_API_KEY}"
+    local response=$(curl -sL --max-time 5 "$url" 2>/dev/null)
+    
+    if [[ -n "$response" ]]; then
+        echo "$response" > "$cache_file"
+        echo "$response"
+    else
+        echo '{"error": "TMDB API request failed"}'
+        return 1
+    fi
+}
+
 # Get TV episode info
 # Usage: get_tv_episode_info <tv_id> <season> <episode>
 get_tv_episode_info() {
@@ -438,5 +503,6 @@ tmdb_configured() {
 
 export -f search_tmdb_movie get_movie_metadata
 export -f search_tmdb_tv get_tv_metadata find_by_imdb_id get_tv_episode_info
+export -f get_tv_details get_tv_season_details
 export -f extract_description extract_rating
 export -f fetch_movie_description fetch_tv_description tmdb_configured

@@ -11,6 +11,7 @@ import urllib.parse
 import ssl
 import time
 import hashlib
+import re
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Dict, List, Optional, Tuple
@@ -221,10 +222,10 @@ def parse_yts_torrents(movie: Dict) -> List[Dict]:
 # TPB API
 # ═══════════════════════════════════════════════════════════════
 
-def search_tpb(query: str) -> List[Dict]:
-    """Search TPB for torrents matching query."""
+def search_tpb(query: str, category: int = 207) -> List[Dict]:
+    """Search TPB for torrents matching query (Default: HD Movies 207)."""
     # Check cache first
-    cache_key = get_cache_key('tpb', query)
+    cache_key = get_cache_key(f'tpb_{category}', query)
     cached = get_cached(cache_key)
     if cached:
         try:
@@ -232,9 +233,8 @@ def search_tpb(query: str) -> List[Dict]:
         except:
             pass
     
-    # Category 207 = HD Movies
     encoded_query = urllib.parse.quote_plus(query)
-    url = f"{TPB_SEARCH_URL}?q={encoded_query}&cat=207"
+    url = f"{TPB_SEARCH_URL}?q={encoded_query}&cat={category}"
     
     response = fetch_url(url, timeout=5)
     if not response:
@@ -303,19 +303,18 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
     """
     # 201=Movies, 207=HD Movies, 205=TV Shows, 208=HD TV Shows
     TPB_TOP100_URL = f'https://apibay.org/precompiled/data_top100_{category}.json'
-    
     response = fetch_url(TPB_TOP100_URL, timeout=10)
     if not response:
         return []
     
     try:
         data = json.loads(response)
-        results = []
+        raw_items = []
         
         # Regex to detect TV Shows (Season/Episode patterns)
-        tv_pattern = re.compile(r'(S\d{1,2}E\d{1,2}|Season\s*\d+|Complete\s*Series)', re.IGNORECASE)
+        tv_pattern = re.compile(r'(S\d{1,2}E\d{1,2}|Season\s*\d+|Complete\s*Series|(\d+)x(\d+))', re.IGNORECASE)
         
-        for item in data[:limit]:
+        for item in data[:limit * 2]: # Fetch more to allow for filtering/grouping
             info_hash = item.get('info_hash', '')
             if not info_hash or info_hash == '0' * 40:
                 continue
@@ -324,9 +323,20 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
             
             # Strict Content Filtering: If we are asking for Movies (201/207), 
             # reject anything looking like a TV show.
-            if category in [201, 207, 209, 202] and tv_pattern.search(name):
+            is_tv = tv_pattern.search(name)
+            if category in [201, 207, 209, 202] and is_tv:
                 continue
             
+            raw_items.append(item)
+
+        if category in [205, 208]: # TV Shows Categories
+            return group_shows_by_series(raw_items, limit)
+        
+        # Standard movie processing for TPB fallback
+        results = []
+        for item in raw_items[:limit]:
+            info_hash = item.get('info_hash', '')
+            name = item.get('name', 'Unknown')
             seeders = int(item.get('seeders', 0))
             size_bytes = int(item.get('size', 0))
             size_mb = size_bytes // (1024 * 1024)
@@ -335,27 +345,142 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
             magnet = f"magnet:?xt=urn:btih:{info_hash}"
             imdb = item.get('imdb', 'N/A')
             
-            # Determine Genre/Category string
-            cat_str = "Movies" if category in [201, 207, 209, 202] else "Shows"
-            
-            # Build COMBINED format line
             combined = (
                 f"COMBINED|{name}|"
-                f"TPB|"  # Single source
+                f"TPB|"
                 f"{quality}|"
                 f"{seeders}|"
                 f"{size_str}|"
                 f"{magnet}|"
-                f"N/A|"  # No poster for TPB
+                f"N/A|"
                 f"{imdb}|"
-                f"{cat_str}|" # Genre
-                f"1"  # torrent_count
+                f"Movies|"
+                f"1"
             )
             results.append(combined)
-        
         return results
+
     except Exception:
         return []
+
+def group_shows_by_series(items: List[Dict], limit: int) -> List[str]:
+    """Group individual TV torrents by series title."""
+    from collections import defaultdict
+    series_groups = defaultdict(list)
+    
+    # Common TV patterns: S01E01, 1x01, Season 1, etc.
+    series_name_pattern = re.compile(r'^(.+?)([\.\s]+(S\d{1,2}E\d{1,2}|Season\s*\d+|\d+x\d+)|$)', re.IGNORECASE)
+    
+    for item in items:
+        name = item.get('name', 'Unknown')
+        
+        # Extract series name
+        match = series_name_pattern.search(name)
+        if match:
+            series_name = match.group(1).replace('.', ' ').strip()
+            # Clean up trailing year if present: "Show Name 2024" -> "Show Name"
+            series_name = re.sub(r'\s+\d{4}$', '', series_name)
+        else:
+            series_name = name
+            
+        series_groups[series_name].append(item)
+    
+    results = []
+    # Sort series by the highest seeds in any of its torrents
+    sorted_series = sorted(series_groups.items(), 
+                          key=lambda x: max(int(i.get('seeders', 0)) for i in x[1]), 
+                          reverse=True)
+    
+    for series_name, torrents in sorted_series[:limit]:
+        # Aggregate data for Stage 1
+        sources = ["TPB"] * len(torrents)
+        qualities = [extract_quality(t.get('name', '')) for t in torrents]
+        seeds = [str(t.get('seeders', 0)) for t in torrents]
+        sizes = []
+        for t in torrents:
+            size_bytes = int(t.get('size', 0))
+            size_mb = size_bytes // (1024 * 1024)
+            sizes.append(f"{size_mb}MB" if size_mb < 1024 else f"{size_mb/1024:.1f}GB")
+        
+        magnets = [f"magnet:?xt=urn:btih:{t.get('info_hash')}" for t in torrents]
+        imdb = torrents[0].get('imdb', 'N/A')
+        
+        # For the display name in Stage 1, use the Series Name
+        # Create a combined standard item
+        title = f"{series_name}"
+        # magnet is just a representative one for stage 1 identification
+        combined = (
+            f"COMBINED|{title}|"
+            f"{'^'.join(sources)}|"
+            f"{'^'.join(qualities)}|"
+            f"{'^'.join(seeds)}|"
+            f"{'^'.join(sizes)}|"
+            f"{'^'.join(magnets)}|"
+            f"N/A|"  # Poster TBD
+            f"{imdb}|"
+            f"Shows|"
+            f"{len(torrents)}"
+        )
+        results.append(combined)
+        
+    return results
+
+def group_movies_by_title(items: List[Dict], limit: int) -> List[str]:
+    """Group individual movie torrents from TPB by title."""
+    from collections import defaultdict
+    movie_groups = defaultdict(list)
+    
+    # Pattern to extract title and optional year: "Title (2024)" or "Title.2024"
+    # Note: For movies we usually want to group by exact Title + Year if possible
+    movie_pattern = re.compile(r'^(.+?)([\s\.](19|20)\d{2}|[\s\.](720|1080|2160)p|$)', re.IGNORECASE)
+    
+    for item in items:
+        name = item.get('name', 'Unknown')
+        match = movie_pattern.search(name)
+        if match:
+            clean_name = match.group(1).replace('.', ' ').strip()
+            # Extract year if present in original name
+            year_match = re.search(r'(19|20)\d{2}', name)
+            group_key = f"{clean_name} ({year_match.group(0)})" if year_match else clean_name
+        else:
+            group_key = name
+            
+        movie_groups[group_key].append(item)
+    
+    results = []
+    # Sort by highest seeds
+    sorted_movies = sorted(movie_groups.items(), 
+                           key=lambda x: max(int(i.get('seeders', 0)) for i in x[1]), 
+                           reverse=True)
+    
+    for movie_title, torrents in sorted_movies[:limit]:
+        sources = ["TPB"] * len(torrents)
+        qualities = [extract_quality(t.get('name', '')) for t in torrents]
+        seeds = [str(t.get('seeders', 0)) for t in torrents]
+        sizes = []
+        for t in torrents:
+            size_bytes = int(t.get('size', 0))
+            size_mb = size_bytes // (1024 * 1024)
+            sizes.append(f"{size_mb}MB" if size_mb < 1024 else f"{size_mb/1024:.1f}GB")
+        
+        magnets = [f"magnet:?xt=urn:btih:{t.get('info_hash')}" for t in torrents]
+        imdb = torrents[0].get('imdb', 'N/A')
+        
+        combined = (
+            f"COMBINED|{movie_title}|"
+            f"{'^'.join(sources)}|"
+            f"{'^'.join(qualities)}|"
+            f"{'^'.join(seeds)}|"
+            f"{'^'.join(sizes)}|"
+            f"{'^'.join(magnets)}|"
+            f"N/A|"
+            f"{imdb}|"
+            f"Movies|"
+            f"{len(torrents)}"
+        )
+        results.append(combined)
+        
+    return results
 
 # ═══════════════════════════════════════════════════════════════
 # MULTI-SOURCE AGGREGATION
@@ -463,16 +588,55 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
     
     Returns list of COMBINED format strings.
     """
-    # Fetch movies from YTS with sort option
-    # Note: YTS is strictly movies. If category_mode is 'shows', YTS might return nothing suitable.
-    # Future TODO: Integrate EZTV or similar for Shows. For now, Shows rely on TPB fallback.
+    # If query is provided, perform a targeted search instead of fetching newest
+    if query_term:
+        if category_mode == 'movies':
+            # Movies: Search YTS first
+            movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
+                                      query_term=query_term, genre=genre, min_rating=min_rating,
+                                      order_by=order_by)
+            if not movies:
+                # Fallback: Search TPB Movies
+                tpb_cat = 207 # HD Movies
+                items = search_tpb(query_term, category=tpb_cat)
+                return group_movies_by_title(items, limit)
+        else:
+            # Shows: Search TPB Shows - return INDIVIDUAL torrents for version picker
+            tpb_cat = 208  # HD TV Shows
+            items = search_tpb(query_term, category=tpb_cat)
+            # For episode search, return each torrent as a separate COMBINED entry (like movies)
+            # This allows the version picker to list individual quality options
+            results = []
+            for item in items[:limit]:
+                name = item.get('name', 'Unknown')
+                quality = item.get('quality', extract_quality(name))
+                seeds = str(item.get('seeds', 0))
+                size = item.get('size', 'N/A')
+                magnet = item.get('magnet', '')
+                
+                combined = (
+                    f"COMBINED|{name}|"
+                    f"TPB|"
+                    f"{quality}|"
+                    f"{seeds}|"
+                    f"{size}|"
+                    f"{magnet}|"
+                    f"N/A|"
+                    f"N/A|"
+                    f"Shows|"
+                    f"1"
+                )
+                results.append(combined)
+            return results
+
+    # NO QUERY: Fetch Latest/Trending Catalog
     movies = []
     if category_mode == 'movies':
         movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
                                   query_term=query_term, genre=genre, min_rating=min_rating,
                                   order_by=order_by)
     
-    # FALLBACK: If YTS fails or we want SHOWS, use TPB precompiled
+    # FALLBACK: If YTS fails or we want SHOWS, use TPB precompiled (Newest)
     if not movies:
         # Determine TPB Category
         tpb_cat = 207  # Default HD Movies
@@ -502,9 +666,6 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
                 results.append(result)
     
     # Feature 8: Year-Based Sorting
-    # YTS API results are sorted by date_added (upload date), which mixes old/new movies.
-    # We sort by Year (DESC) to ensure Stremio-style "Latest = Newest Release".
-    import re
     
     def extract_year_from_combined(entry):
         # Format: COMBINED|Title (YYYY)|...

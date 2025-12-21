@@ -35,7 +35,7 @@ get_latest_movies() {
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" $extra_args 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --category movies $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -94,7 +94,7 @@ get_trending_movies() {
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count $extra_args 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --sort download_count --category movies $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -149,7 +149,7 @@ get_popular_movies() {
     [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
-        python3 "$script_path" --limit "$limit" --page "$page" --sort rating $extra_args 2>/dev/null
+        python3 "$script_path" --limit "$limit" --page "$page" --sort rating --category movies $extra_args 2>/dev/null
         local ret=$?
         [[ $ret -eq 0 ]] && return 0
     fi
@@ -199,33 +199,30 @@ get_latest_shows() {
         fi
     fi
     
-    # Legacy implementation
-    local has_results=false
+    # Use multi-source Python script (now handles grouping)
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
+    [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
+    [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order-by $CURRENT_ORDER"
     
-    local eztv_domains=("eztvx.to" "eztv.wf" "eztv.yt" "eztv1.xyz" "eztv.tf" "eztv.re")
+    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
     
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        for domain in "${eztv_domains[@]}"; do
-            local api_url="https://${domain}/api/get-torrents?limit=$limit&page=$page"
-            local response=$(curl -s --max-time 5 "$api_url" 2>/dev/null)
-            local count=$(echo "$response" | jq -r '.torrents_count // 0' 2>/dev/null)
-            
-            if [ "$count" -gt 0 ] 2>/dev/null; then
-                echo "$response" | jq -r '.torrents[]? | select(.magnet_url != null and .magnet_url != "") | "EZTV|\(.title)|\(.magnet_url)|\(.seeds) seeds|\(.size_bytes / 1024 / 1024 | floor)MB|\(.date_released_unix // 0)"' 2>/dev/null
-                has_results=true
-                break
-            fi
-        done
+    if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
+        python3 "$script_path" --limit "$limit" --page "$page" --category shows $extra_args 2>/dev/null
+        local ret=$?
+        [[ $ret -eq 0 ]] && return 0
     fi
     
-    # Fallback to TPB HD TV Shows
-    if [ "$has_results" = false ]; then
-        local tpb_url="https://apibay.org/precompiled/data_top100_208.json"
-        if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-            local tpb_response=$(curl -s --max-time 10 "$tpb_url" 2>/dev/null)
-            if [ -n "$tpb_response" ]; then
-                echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|TV Show"' 2>/dev/null
-            fi
+    # Fallback to legacy TPB HD TV Shows if Python script fails
+    local tpb_url="https://apibay.org/precompiled/data_top100_208.json"
+    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
+        local tpb_response=$(curl -s --max-time 10 "$tpb_url" 2>/dev/null)
+        if [ -n "$tpb_response" ]; then
+            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|TV Show"' 2>/dev/null
         fi
     fi
 }

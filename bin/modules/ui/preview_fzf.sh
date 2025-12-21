@@ -41,34 +41,170 @@ GRAY="${THEME_FG_MUTED:-$C_MUTED}"
 ORANGE="${THEME_ORANGE:-$C_ORANGE}"
 PURPLE="${THEME_PURPLE:-$C_PURPLE}"
 
-# --- 3. Parse Entry ---
+# --- 3. Parse Input ---
+# Format: Source|Title|RestOfData...
 IFS='|' read -r source title rest <<< "$input_line"
 
-# Display title header
-echo -e "${BOLD}${MAGENTA}${title}${RESET}"
-echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+# --- 4. Identify Type & Sanitize ---
+is_series="false"
+# Check both local and exported category variables
+cat_lower=$(echo "${current_category:-${CURRENT_CATEGORY:-}}" | tr '[:upper:]' '[:lower:]')
+[[ "$cat_lower" == "shows" || "$cat_lower" == "tv" ]] && is_series="true"
+[[ "$title" == *"[SERIES]"* ]] && is_series="true"
+
+# Extract Year and Clean Title for API
+movie_year=""
+if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
+    movie_year="${BASH_REMATCH[1]}"
+fi
+clean_title_for_api=$(echo "$title" | sed -E 's/\[SERIES\]//gi; s/\((19|20)[0-9]{2}\)//g; s/[[:space:]]+(19|20)[0-9]{2}//g; s/[[:space:]]+$//; s/^[[:space:]]+//')
+
+# Sanitize display title
+display_title="$title"
+display_title="${display_title% [SERIES]}"
+
+# Define API Modules
+TMDB_MODULE="${SCRIPT_DIR}/../api/tmdb.sh"
+OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
+
+# --- 5. Logic & Data Fetching ---
+# Initialize metadata variables
+movie_rating="N/A"
+movie_genre=""
+description=""
+poster_url=""
+imdb_id=""
+total_seasons=""
+latest_season_num=""
+episodes_list_raw=""
+
+# Season Persistence in Preview (Stage 1)
+# Title-based hash to remember season selection per show
+title_slug=$(echo -n "$clean_title_for_api" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' | head -c 16)
+season_file="/tmp/tf_s_${title_slug}"
+selected_preview_season=$(cat "$season_file" 2>/dev/null || echo "")
+
+if [[ "$source" == "COMBINED" ]]; then
+    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating_val genre_text torrent_count <<< "$rest"
+    [[ -n "$imdb_rating_val" && "$imdb_rating_val" != "N/A" ]] && movie_rating="$imdb_rating_val"
+    [[ -n "$genre_text" && "$genre_text" != "N/A" ]] && movie_genre="$genre_text"
+    imdb_id=$(echo "$input_line" | grep -oE 'tt[0-9]{7,}' | head -1)
+else
+    magnet=$(echo "$rest" | cut -d'|' -f1)
+    quality=$(echo "$rest" | cut -d'|' -f2)
+    size=$(echo "$rest" | cut -d'|' -f3)
+    seeds=$(echo "$rest" | cut -d'|' -f4)
+    poster_url=$(echo "$rest" | cut -d'|' -f5)
+    imdb_id=$(echo "$rest" | cut -d'|' -f6)
+    [[ "$imdb_id" == tt* ]] || imdb_id=""
+fi
+
+# Fetch Rich Metadata
+if [[ -f "$TMDB_MODULE" ]]; then
+    source "$TMDB_MODULE"
+    if tmdb_configured; then
+        if [[ -n "$imdb_id" && "$imdb_id" != "N/A" ]]; then
+            metadata_json=$(find_by_imdb_id "$imdb_id" 2>/dev/null)
+        else
+            if [[ "$is_series" == "true" ]]; then
+                metadata_json=$(search_tmdb_tv "$clean_title_for_api" "$movie_year" 2>/dev/null)
+            else
+                metadata_json=$(search_tmdb_movie "$clean_title_for_api" "$movie_year" 2>/dev/null)
+            fi
+        fi
+        
+        if [[ -n "$metadata_json" ]] && ! echo "$metadata_json" | grep -q '"error"'; then
+            tmdb_rating=$(echo "$metadata_json" | extract_rating)
+            [[ "$tmdb_rating" != "N/A" ]] && movie_rating="$tmdb_rating"
+            description=$(echo "$metadata_json" | extract_description)
+            [[ -z "$poster_url" || "$poster_url" == "N/A" ]] && poster_url=$(echo "$metadata_json" | python3 -c "import sys, json; data=json.load(sys.stdin); path=data.get('poster_path', ''); print(f'https://image.tmdb.org/t/p/w500{path}' if path else '')" 2>/dev/null)
+
+            if [[ "$is_series" == "true" ]]; then
+                tmdb_id=$(echo "$metadata_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null)
+                if [[ -n "$tmdb_id" && "$tmdb_id" != "None" ]]; then
+                    full_details=$(get_tv_details "$tmdb_id" 2>/dev/null)
+                    total_seasons=$(echo "$full_details" | python3 -c "import sys, json; print(json.load(sys.stdin).get('number_of_seasons', ''))" 2>/dev/null)
+                    
+                    # Use persistent season if available, else latest
+                    if [[ -n "$selected_preview_season" ]] && [ "$selected_preview_season" -le "${total_seasons:-1}" ]; then
+                        latest_season_num="$selected_preview_season"
+                    else
+                        latest_season_num=$(echo "$full_details" | python3 -c "import sys, json; data=json.load(sys.stdin); seasons=[s for s in data.get('seasons', []) if s.get('season_number', 0) > 0]; print(seasons[-1]['season_number'] if seasons else '')" 2>/dev/null)
+                        echo "$latest_season_num" > "$season_file"
+                    fi
+                    
+                    if [[ -n "$latest_season_num" ]]; then
+                        season_details=$(get_tv_season_details "$tmdb_id" "$latest_season_num" 2>/dev/null)
+                        # Enhanced episode format with air date and potential watch status
+                        episodes_list_raw=$(echo "$season_details" | python3 -c "
+import sys, json
+from datetime import datetime
+
+data = json.load(sys.stdin)
+today = datetime.now()
+lines = []
+
+for e in data.get('episodes', []):
+    ep_num = e.get('episode_number', 0)
+    name = e.get('name', 'TBA')
+    air_date_str = e.get('air_date', '')
+    
+    # Format air date
+    if air_date_str:
+        try:
+            air_date = datetime.strptime(air_date_str, '%Y-%m-%d')
+            date_display = air_date.strftime('%d %b %Y')
+            # Check if episode has aired
+            if air_date > today:
+                status = '🔒'  # Upcoming
+            else:
+                status = '  '  # Aired (can be watched)
+        except:
+            date_display = air_date_str
+            status = '  '
+    else:
+        date_display = 'TBA'
+        status = '🔒'
+    
+    lines.append(f'{status} E{ep_num:02d} │ {name[:25]:<25} │ {date_display}')
+
+print('\\n'.join(lines))
+" 2>/dev/null)
+                    fi
+                fi
+            fi
+        fi
+    fi
+fi
+
+# Fallback for description
+if [[ -z "$description" || "$description" == "No description available." ]]; then
+    if [[ -f "$OMDB_MODULE" ]]; then
+        source "$OMDB_MODULE"
+        if omdb_configured; then
+            description=$(fetch_omdb_description "$clean_title_for_api" "$movie_year" 2>/dev/null)
+        fi
+    fi
+fi
+
+# --- 6. UI: Header & Metadata Bar ---
+header_btn=""
+[[ "$is_series" == "true" && -n "$latest_season_num" ]] && header_btn="  ${BOLD}${BLUE}[Season ${latest_season_num} ▾]${RESET}"
+
+# Top Title Header with Box Elements
+echo -e "${BOLD}${PURPLE}${display_title}${RESET}${header_btn}"
+echo -e "${THEME_DIM:-$GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
-# --- 4. Handle COMBINED vs Regular Entries ---
+# --- Sources and IMDB Line (for COMBINED entries) ---
 if [[ "$source" == "COMBINED" ]]; then
-    # Parse NEW COMBINED format: Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Genre|Count
-    IFS='|' read -r sources qualities seeds sizes magnets poster_url imdb_rating genre_text torrent_count <<< "$rest"
-    
-    # Init Metadata from parsed fields
-    movie_genre="${genre_text}"
-    [[ -z "$movie_genre" ]] && movie_genre="Unknown"
-    
-    # Split into arrays
     IFS='^' read -ra sources_arr <<< "$sources"
     IFS='^' read -ra qualities_arr <<< "$qualities"
     IFS='^' read -ra seeds_arr <<< "$seeds"
     IFS='^' read -ra sizes_arr <<< "$sizes"
-    IFS='^' read -ra magnets_arr <<< "$magnets"
     
     # Deduplicate sources
     unique_sources=($(printf "%s\n" "${sources_arr[@]}" | sort -u))
-    
-    # Display unique sources with IMDB rating
     source_badges=""
     for src in "${unique_sources[@]}"; do
         source_badges+="[${src}]"
@@ -76,90 +212,48 @@ if [[ "$source" == "COMBINED" ]]; then
     
     # Show Sources and IMDB rating on same line
     imdb_display=""
-    if [[ -n "$imdb_rating" ]] && [[ "$imdb_rating" != "N/A" ]]; then
-        imdb_display="    ${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb_rating}${RESET}"
+    if [[ -n "$movie_rating" ]] && [[ "$movie_rating" != "N/A" ]]; then
+        imdb_display="    ${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}${RESET}"
     fi
     echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
     
-    # Deduplicate and format qualities only (no sizes)
+    # Fetch OMDB metadata for Runtime early
+    movie_runtime=""
+    if [[ -f "$OMDB_MODULE" && "$is_series" == "false" ]]; then
+        source "$OMDB_MODULE" 2>/dev/null
+        if omdb_configured; then
+            omdb_json=$(get_omdb_metadata "$clean_title_for_api" "$movie_year" 2>/dev/null)
+            if [[ -n "$omdb_json" ]] && echo "$omdb_json" | grep -q '"Response":"True"'; then
+                [[ -z "$movie_genre" || "$movie_genre" == "N/A" ]] && movie_genre=$(echo "$omdb_json" | extract_omdb_genre 2>/dev/null)
+                movie_runtime=$(echo "$omdb_json" | extract_omdb_runtime 2>/dev/null)
+            fi
+        fi
+    fi
+    
+    # Deduplicate and format qualities
     seen_quals=()
     quals_display=""
-    for i in "${!qualities_arr[@]}"; do
-        qual="${qualities_arr[$i]}"
-        
-        # Check if we've seen this quality before
-        if [[ ! " ${seen_quals[@]} " =~ " ${qual} " ]]; then
+    for qual in "${qualities_arr[@]}"; do
+        if [[ ! " ${seen_quals[*]} " =~ " ${qual} " ]]; then
             seen_quals+=("$qual")
             [[ -n "$quals_display" ]] && quals_display+=", "
             quals_display+="${qual}"
         fi
     done
     
-    echo -e "${BOLD}Available:${RESET} ${CYAN}${quals_display}${RESET}"
-    
-    # Store plot for later display (don't fetch if already provided)
-    if [[ -n "$plot_text" ]] && [[ "$plot_text" != "N/A" ]]; then
-        description="$plot_text"
+    # Show Available + Runtime on same line
+    avail_line="${BOLD}Available:${RESET} ${CYAN}${quals_display}${RESET}"
+    if [[ -n "$movie_runtime" && "$movie_runtime" != "N/A" ]]; then
+        avail_line+="  │  ${BOLD}Runtime:${RESET} ${CYAN}${movie_runtime}${RESET}"
     fi
-    
+    echo -e "$avail_line"
 else
-    # Regular entry: Source|Title|Magnet|Quality|Size|Seeds|Poster
-    IFS='|' read -r magnet quality size seeds poster_url <<< "$rest"
-    
+    # Regular entry
     echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET}"
     echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
 fi
 
-# --- 4.5 Fetch Rich Metadata (Genre, Runtime, Rating, Year) ---
-OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
-
-# Variables for rich metadata
-movie_genre=""
-movie_runtime=""
-movie_rating=""
-movie_year_api=""
-
-# Clean title for API lookup
-clean_title_for_api="$title"
-movie_year=""
-
-# Extract year from title
-if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
-    movie_year="${BASH_REMATCH[1]}"
-fi
-
-# Remove quality tags from title for API lookup
-clean_title_for_api=$(echo "$title" | sed -E '
-    s/[[:space:]]*(19|20)[0-9]{2}[[:space:]]*/ /g;
-    s/[[:space:]]*(1080p|720p|480p|2160p|4K|UHD)//gi;
-    s/[[:space:]]*(HDRip|BRRip|BluRay|WEBRip|HDTV|DVDRip|CAM|TS|TC|HDCAM|WEB-DL|WEBDL)//gi;
-    s/[[:space:]]*(HEVC|x264|x265|H264|H265|AVC|AAC|DTS|AC3)//gi;
-    s/[[:space:]]+(YTS|YIFY|RARBG|EZTV)//gi;
-    s/[[:space:]]+/ /g;
-    s/^[[:space:]]+//;
-    s/[[:space:]]+$//
-')
-
-# Fetch metadata from OMDB if module available
-if [[ -f "$OMDB_MODULE" ]]; then
-    source "$OMDB_MODULE"
-    if omdb_configured; then
-        # Get full metadata JSON
-        metadata_json=$(get_omdb_metadata "$clean_title_for_api" "$movie_year" 2>/dev/null)
-        
-        if [[ -n "$metadata_json" ]] && echo "$metadata_json" | grep -q '"Response":"True"'; then
-            movie_genre=$(echo "$metadata_json" | extract_omdb_genre)
-            movie_runtime=$(echo "$metadata_json" | extract_omdb_runtime)
-            movie_rating=$(echo "$metadata_json" | extract_omdb_rating)
-            movie_year_api=$(echo "$metadata_json" | extract_omdb_year)
-            
-            # Update year if we got it from API
-            [[ -n "$movie_year_api" && "$movie_year_api" != "N/A" ]] && movie_year="$movie_year_api"
-        fi
-    fi
-fi
-
-# Display rich metadata line (Year | Genre | Runtime) - Rating already shown in Sources line
+# --- Rich Metadata Line (Year | Genre) ---
 metadata_line=""
 if [[ -n "$movie_year" && "$movie_year" != "N/A" ]]; then
     metadata_line+="${BOLD}Year:${RESET} ${CYAN}${movie_year}${RESET}"
@@ -168,138 +262,42 @@ if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
     [[ -n "$metadata_line" ]] && metadata_line+="  │  "
     metadata_line+="${BOLD}Genre:${RESET} ${PURPLE}${movie_genre}${RESET}"
 fi
-if [[ -n "$movie_runtime" && "$movie_runtime" != "N/A" ]]; then
+if [[ "$is_series" == "true" && -n "$total_seasons" ]]; then
     [[ -n "$metadata_line" ]] && metadata_line+="  │  "
-    metadata_line+="${BOLD}Runtime:${RESET} ${CYAN}${movie_runtime}${RESET}"
+    metadata_line+="${BOLD}Seasons:${RESET} ${CYAN}${total_seasons}${RESET}"
 fi
 
-# Only print if we have metadata
-if [[ -n "$metadata_line" ]]; then
-    echo -e "$metadata_line"
-fi
-
-echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+[[ -n "$metadata_line" ]] && echo -e "$metadata_line"
 echo
 
-# --- 5. Fetch Movie Description (OMDB → TMDB → Google fallback) ---
-OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
-TMDB_MODULE="${SCRIPT_DIR}/../api/tmdb.sh"
-GOOGLE_SCRIPT="${SCRIPT_DIR}/../../scripts/google_poster.py"
-description=""
-
-# Clean title: remove quality tags, codecs, release info
-# Example: "Zootopia 2 2025 1080p TS EN-RGB" -> "Zootopia 2" with year "2025"
-movie_year=""
-clean_title="$title"
-
-# Extract year (4 digits that look like a year 19xx or 20xx)
-if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
-    movie_year="${BASH_REMATCH[1]}"
-fi
-
-# Remove quality and codec tags
-clean_title=$(echo "$title" | sed -E '
-    s/[[:space:]]*(19|20)[0-9]{2}[[:space:]]*/ /g;
-    s/[[:space:]]*(1080p|720p|480p|2160p|4K|UHD)//gi;
-    s/[[:space:]]*(HDRip|BRRip|BluRay|WEBRip|HDTV|DVDRip|CAM|TS|TC|HDCAM|WEB-DL|WEBDL)//gi;
-    s/[[:space:]]*(HEVC|x264|x265|H264|H265|AVC|AAC|DTS|AC3)//gi;
-    s/[[:space:]]*(EN-RGB|BONE|YIFY|SPARKS|RARBG|ETRG)//gi;
-    s/[[:space:]]+/ /g;
-    s/^[[:space:]]+//;
-    s/[[:space:]]+$//
-')
-
-# --- Priority 0: Check cached description FIRST (instant) ---
-DESC_CACHE="${HOME}/.cache/termflix/descriptions"
-title_hash=$(echo -n "$title" | tr '[:upper:]' '[:lower:]' | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-cached_desc="${DESC_CACHE}/${title_hash}.txt"
-if [[ -f "$cached_desc" ]]; then
-    description=$(cat "$cached_desc")
-fi
-
-# --- Priority 1: OMDB (if not cached) ---
-if [[ -z "$description" && -f "$OMDB_MODULE" ]]; then
-    source "$OMDB_MODULE"
-    if omdb_configured; then
-        description=$(fetch_omdb_description "$clean_title" "$movie_year" 2>/dev/null)
-        # Cache it for next time
-        if [[ -n "$description" && "$description" != "null" ]]; then
-            mkdir -p "$DESC_CACHE"
-            echo "$description" > "$cached_desc"
-        fi
-    fi
-fi
-
-# --- Priority 2: TMDB (fallback) ---
-if [[ -z "$description" && -f "$TMDB_MODULE" ]]; then
-    source "$TMDB_MODULE"
-    if tmdb_configured; then
-        description=$(fetch_movie_description "$clean_title" "$movie_year" 2>/dev/null)
-        # Cache it for next time
-        if [[ -n "$description" && "$description" != "null" ]]; then
-            mkdir -p "$DESC_CACHE"
-            echo "$description" > "$cached_desc"
-        fi
-    fi
-fi
-
-# --- Priority 3: Google scraping (last resort) ---
-if [[ -z "$description" && -f "$GOOGLE_SCRIPT" ]]; then
-    # Google scraping would go here - placeholder for now
-    description=""
-fi
-
-# Fallback message if no API configured or no results
-if [[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]]; then
-    description="No description available."
-fi
-
-# --- 6. Display Poster + Description Side-by-Side ---
-# Fetch poster URL on-demand if not provided
-if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
-    # Try to fetch poster URL using get_poster.py (newer lib version)
+# --- 7. UI: Poster ---
+IMAGE_HEIGHT=30; IMAGE_WIDTH=40; poster_path=""
+if [[ -z "$poster_url" || "$poster_url" == "N/A" ]]; then
     POSTER_SCRIPT="$(cd \"$SCRIPT_DIR/../../..\" 2>/dev/null && pwd)/lib/termflix/scripts/get_poster.py"
-    if [[ -f "$POSTER_SCRIPT" ]] && command -v python3 &>/dev/null; then
-        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title ($movie_year)" 2>/dev/null)
+    if [[ -f "$POSTER_SCRIPT" ]]; then
+        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title_for_api ($movie_year)" 2>/dev/null)
     fi
 fi
 
-# Image height for block mode
-IMAGE_HEIGHT=15
-IMAGE_WIDTH=20
-
-# Download poster if we have URL
-poster_path=""
-if [[ -n "$poster_url" && "$poster_url" != "N/A" && "$poster_url" != "null" ]]; then
-    cache_dir="${HOME}/.cache/termflix/posters"
-    mkdir -p "$cache_dir"
-    
+if [[ -n "$poster_url" && "$poster_url" != "N/A" ]]; then
+    cache_dir="${HOME}/.cache/termflix/posters"; mkdir -p "$cache_dir"
     filename_hash=$(echo -n "$poster_url" | python3 -c "import sys, hashlib; print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
     poster_path="${cache_dir}/${filename_hash}.png"
-    
-    # Download and convert to PNG if not cached
     if [[ ! -f "$poster_path" ]]; then
         temp_file="${cache_dir}/${filename_hash}.tmp"
         curl -sL --max-time 5 "$poster_url" -o "$temp_file" 2>/dev/null
-        
-        # Convert to PNG using sips (macOS)
         if [[ -f "$temp_file" && -s "$temp_file" ]]; then
-            if command -v sips &>/dev/null; then
-                sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
-            else
-                mv "$temp_file" "$poster_path"
-            fi
+            if command -v sips &>/dev/null; then sips -s format png --resampleWidth 400 "$temp_file" --out "$poster_path" &>/dev/null
+            else mv "$temp_file" "$poster_path"; fi
             rm -f "$temp_file" 2>/dev/null
         fi
     fi
 fi
 
-# Display image or placeholder
-BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
-
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Draw larger blank first to fully erase previous, then poster at normal size
+        # Kitty: Clear previous image with blank, then draw poster
+        BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
         if [[ -f "$BLANK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
                 --place=20x16@0x0 \
@@ -313,114 +311,98 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
     else
         # Block mode: viu/chafa writes text-based image
-        if command -v viu &>/dev/null; then
+        if command -v viu &>/dev/null; then 
             TERM=xterm-256color viu -w $IMAGE_WIDTH -h $IMAGE_HEIGHT "$poster_path" 2>/dev/null
-        elif command -v chafa &>/dev/null; then
+        elif command -v chafa &>/dev/null; then 
             TERM=xterm-256color chafa --symbols=block --size="${IMAGE_WIDTH}x${IMAGE_HEIGHT}" "$poster_path" 2>/dev/null
         fi
     fi
+    echo  # Empty line after image
 else
-    # No poster available - different fallbacks for Kitty vs text mode
+    # No poster - use fallback
     FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
-    
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Use movie_night.jpg fallback image
         if [[ -f "$FALLBACK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
                 --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
                 --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
             for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
+        else
+            echo -e "${GRAY}[ No Poster Available ]${RESET}"; echo
         fi
     else
-        # Text/block mode: Draw colorful rainbow spinner grid
-        _draw_spinner_grid() {
-            local w=$1 h=$2
-            local spinners=("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
-            local colors=(196 202 208 214 220 226 190 154 118 82 46 47 48 49 50 51 45 39 33 27 21 57 93 129 165 201 200 199 198 197)
-            
-            for ((row=0; row<h; row++)); do
-                local line=""
-                for ((col=0; col<w; col++)); do
-                    local spin_idx=$(( (row + col) % ${#spinners[@]} ))
-                    local color_idx=$(( (row * w + col) % ${#colors[@]} ))
-                    line+="\033[38;5;${colors[$color_idx]}m${spinners[$spin_idx]}"
-                done
-                echo -e "${line}\033[0m"
-            done
-        }
-        _draw_spinner_grid $IMAGE_WIDTH $IMAGE_HEIGHT
+        echo -e "${GRAY}[ No Poster Available ]${RESET}"; echo
     fi
 fi
 
-echo
-echo -e "${DIM}${description}${RESET}"
+# Print Description (Safe wrapping)
+[[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]] && description="No description available."
+wrapped_desc=$(echo -e "$description" | fmt -w 60)
+while IFS= read -r line; do
+    echo -e "${GRAY}${line}${RESET}"
+done <<< "$wrapped_desc"
 echo
 
-# --- 7. Magnet Picker Menu ---
-if [[ "$source" == "COMBINED" ]]; then
-    echo -e "${BOLD}${CYAN}Available Versions:${RESET}"
-    echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-    echo
-    
-    # Deduplicate by magnet hash (bash 3 compatible)
-    seen_hashes=""
-    unique_indices=()
-    
-    for i in "${!magnets_arr[@]}"; do
-        mag="${magnets_arr[$i]}"
-        # Extract hash from magnet link
-        hash=$(echo "$mag" | grep -oE 'btih:[a-fA-F0-9]+' | cut -d: -f2 | tr '[:upper:]' '[:lower:]')
+# --- 8. UI: Dashboard (Episodes OR Sources) ---
+if [[ "$is_series" == "true" ]]; then
+    if [[ -n "$episodes_list_raw" ]]; then
+        echo -e "${BOLD}${BLUE}󱜙 Season ${latest_season_num} Episodes:${RESET}"
+        echo -e "${THEME_DIM:-$GRAY}────────────────────────────────────────────────────────────${RESET}"
+        # Display each episode on its own line with subtle styling
+        while IFS= read -r ep_line; do
+            # Check for lock icon (upcoming episode)
+            if [[ "$ep_line" == *"🔒"* ]]; then
+                echo -e "${THEME_DIM:-$GRAY}${ep_line}${RESET}"
+            else
+                echo -e "${CYAN}${ep_line}${RESET}"
+            fi
+        done <<< "$episodes_list_raw" | head -n 12
+    else
+        echo -e "${GRAY}No episode data found for this series.${RESET}"
+    fi
+else
+    # Show Sources/Versions (Detailed list for Combined entries)
+    if [[ "$source" == "COMBINED" ]]; then
+        echo -e "${BOLD}${CYAN}Available Versions:${RESET}"
+        echo -e "${THEME_DIM:-$GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+        echo
         
-        # Check if we've seen this hash (simple string grep)
-        if [[ -n "$hash" ]] && [[ ! "$seen_hashes" =~ $hash ]]; then
-            seen_hashes+="$hash "
-            unique_indices+=("$i")
-        fi
-    done
-    
-    # Display only unique entries, aligned similar to Stage 2 picker
-    for i in "${unique_indices[@]}"; do
-        src="${sources_arr[$i]}"
-        qual="${qualities_arr[$i]}"
-        seed="${seeds_arr[$i]}"
-        sz="${sizes_arr[$i]}"
+        IFS='^' read -ra s_arr <<< "$sources"
+        IFS='^' read -ra q_arr <<< "$qualities"
+        IFS='^' read -ra se_arr <<< "$seeds"
+        IFS='^' read -ra si_arr <<< "$sizes"
         
-        # Per-source color (same mapping as Stage 1 badges)
-        src_color="$CYAN"
-        if command -v get_source_color &> /dev/null; then
-            src_color="$(get_source_color "$src")"
-        else
-            case "$src" in
+        for i in "${!s_arr[@]}"; do
+            [[ $i -gt 12 ]] && break
+            item_src="${s_arr[$i]}"
+            item_qual="${q_arr[$i]}"
+            item_seed="${se_arr[$i]}"
+            item_size="${si_arr[$i]}"
+            
+            # Source color
+            src_color="$CYAN"
+            case "$item_src" in
                 "YTS")   src_color="$GREEN" ;;
                 "TPB")   src_color="$YELLOW" ;;
                 "EZTV")  src_color="$BLUE" ;;
                 "1337x") src_color="$MAGENTA" ;;
             esac
-        fi
-        
-        # Optional friendly source name (right side, muted)
-        src_name=""
-        case "$src" in
-            "YTS")   src_name="YTS.mx" ;;
-            "TPB")   src_name="ThePirateBay" ;;
-            "EZTV")  src_name="EZTV.re" ;;
-            "1337x") src_name="1337x.to" ;;
-        esac
-        
-        # Aligned line: 🧲[SRC] QUAL - SIZE - 👥 SEEDS seeds  - SourceName
-        line=$(printf "  %s🧲[%3s]%s %-8s - %-12s - 👥 %4s seeds" \
-            "$src_color" "$src" "$RESET" \
-            "$qual" \
-            "$sz" \
-            "$seed")
-        if [[ -n "$src_name" ]]; then
-            line+=" ${DIM}- ${src_name}${RESET}"
-        fi
-        echo -e "$line"
-    done
-else
-    echo -e "${BOLD}${GREEN}Ready to stream:${RESET}"
-    echo -e "  ${ORANGE}🧲${RESET} ${GREEN}[${source}]${RESET} ${CYAN}${quality}${RESET} - ${YELLOW}${size}${RESET} - ${GREEN}👥 ${seeds} seeds${RESET}"
+            
+            # Source name
+            src_name=""
+            case "$item_src" in
+                "YTS")   src_name="YTS.mx" ;;
+                "TPB")   src_name="ThePirateBay" ;;
+                "EZTV")  src_name="EZTV.re" ;;
+                "1337x") src_name="1337x.to" ;;
+                *)       src_name="$item_src" ;;
+            esac
+            
+            printf "  ${ORANGE}🧲${RESET} ${src_color}[%s]${RESET} %-8s  -  %-10s  -  ${GREEN}👥 %5s seeds${RESET}  -  ${GRAY}%s${RESET}\n" "$item_src" "$item_qual" "$item_size" "$item_seed" "$src_name"
+        done
+    else
+        echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET} │ ${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET}"
+        echo -e "${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds} seeds${RESET}"
+    fi
 fi
-
 echo

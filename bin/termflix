@@ -55,6 +55,10 @@ if [[ -n "$CFG_THEME" && "$CFG_THEME" != "charm" ]]; then
     load_theme "$CFG_THEME"
 fi
 
+# API Modules
+source "$SCRIPT_DIR/modules/api/tmdb.sh"
+source "$SCRIPT_DIR/modules/api/omdb.sh"
+
 # UI Modules
 source "$SCRIPT_DIR/modules/ui/status.sh"
 source "$SCRIPT_DIR/modules/ui/help.sh"
@@ -364,28 +368,39 @@ main() {
             export CURRENT_QUERY="$current_query"
             export CURRENT_CATEGORY="$current_category"
 
-            # Build title
+            # Build title & set data function
             local title_prefix="🎬"
+            local item_type="Movies"
+            local data_func="get_latest_movies"
+            
+            if [[ "$current_category" == "shows" ]]; then
+                title_prefix="📺"
+                item_type="Shows"
+                data_func="get_latest_shows"
+            fi
+
             case "$current_context" in
-                default) title_prefix="$title_prefix Recent Movies" ;;
-                year)    title_prefix="$title_prefix Movies by Year ($current_sort)" ;;
+                default) title_prefix="$title_prefix Recent $item_type" ;;
+                year)    title_prefix="$title_prefix $item_type by Year ($current_sort)" ;;
                 rating)  title_prefix="$title_prefix Top Rated (${current_min_rating}+) ($current_sort)" ;;
                 peers)   title_prefix="$title_prefix Most Seeded ($current_sort)" ;;
-                title)   title_prefix="$title_prefix Movies by Title ($current_sort)" ;;
+                title)   title_prefix="$title_prefix $item_type by Title ($current_sort)" ;;
             esac
             
             if [[ -n "$current_query" ]]; then
                  title_prefix="$title_prefix [Filter: $current_query]"
             fi
             
-            # Map to data function - Unified
-            # All contexts use the same python script, just different args via globals
-            # We use 'get_latest_movies' as the base caller since it's generic
-            data_func="get_latest_movies"
-
+            # Export category for preview script detection
+            export CURRENT_CATEGORY="$current_category"
+            
             display_catalog "$title_prefix" "$data_func" 50
             local ret=$?
             
+            # Trace debug
+            echo "$(date): display_catalog returned $ret" >> /tmp/termflix_trace.log
+            [[ -f "/tmp/termflix_selection" ]] && echo "$(date): Selection found" >> /tmp/termflix_trace.log
+
             # Reset one-time flags
             [[ "$FORCE_REFRESH" == "true" ]] && export FORCE_REFRESH=false
             
@@ -564,6 +579,49 @@ main() {
                         current_context="default"
                         # Mark as search context so Stage 2 hides the catalog list
                         export TERMFLIX_STAGE1_CONTEXT="search"
+                    fi
+                    continue
+                    ;;
+                111)
+                    # Interactive Season Picker (^E)
+                    echo "$(date): Main loop received exit code 111" >> /tmp/termflix_trace.log
+
+                    if [[ -f "/tmp/termflix_selection" ]]; then
+                        local raw_sel=$(cat "/tmp/termflix_selection")
+                        rm -f "/tmp/termflix_selection"
+
+                        if [[ -n "$raw_sel" ]]; then
+                             echo "$(date): Processing selection for season picker" >> /tmp/termflix_trace.log
+
+                             # Clear screen instead of reset (reset can kill TTY)
+                             clear
+
+                             # Extract fields (Title at 4; COMBINED imdb typically at 11)
+                             # "Display|Index|Source|Title|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDB|Category|..."
+                             local title
+                             title=$(echo "$raw_sel" | cut -d'|' -f4)
+                             
+                             # Extract index (field 2) for cursor restoration
+                             local sel_index
+                             sel_index=$(echo "$raw_sel" | cut -d'|' -f2)
+                             [[ "$sel_index" =~ ^[0-9]+$ ]] && echo "$sel_index" > /tmp/termflix_last_index
+                             
+                             local f10 f11 f12
+                             f10=$(echo "$raw_sel" | cut -d'|' -f10)
+                             f11=$(echo "$raw_sel" | cut -d'|' -f11)
+                             f12=$(echo "$raw_sel" | cut -d'|' -f12)
+
+                             echo "$(date): Launching season picker with title: '$title'" >> /tmp/termflix_trace.log
+                             echo "$(date): Arguments: f10='$f10' f11='$f11' f12='$f12'" >> /tmp/termflix_trace.log
+
+                             # Launch picker in foreground (it scans args for first tt*)
+                             "$SCRIPT_DIR/modules/ui/season_picker.sh" "$title" "$f10" "$f11" "$f12"
+
+                             # Force refresh to update preview
+                             export FORCE_REFRESH=true
+                        fi
+                    else
+                        echo "$(date): ERROR - No /tmp/termflix_selection file found!" >> /tmp/termflix_trace.log
                     fi
                     continue
                     ;;

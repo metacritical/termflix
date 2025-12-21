@@ -4,9 +4,6 @@
 # Replaces the manual sidebar logic with FZF
 #
 
-# Resolve module directory (needed for season picker and preview scripts)
-FZF_CATALOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 # Format display line for FZF (show clean movie name with source badges)
 format_fzf_display() {
     local index="$1"
@@ -111,15 +108,15 @@ show_fzf_catalog() {
         *)              hl_movies="o" ;; # Default
     esac
     
-    # Colors for header - Use THEME variables with fallbacks
+    # Colors for header - Use ANSI-C quoting for proper escape code interpretation
     local H_RESET=$'\e[0m'
-    local H_PINK="${THEME_GLOW:-$'\e[38;2;232;121;249m'}"
-    local H_PURPLE="${THEME_PURPLE:-$'\e[38;2;139;92;246m'}"
-    local H_CYAN="${THEME_INFO:-$'\e[38;2;94;234;212m'}"
-    local H_MUTED="${THEME_FG_MUTED:-$'\e[38;2;107;114;128m'}"
-    local H_SEL="${THEME_ACCENT:-$'\e[1;38;2;232;121;249m'}"
-    local H_UL=$'\e[4m'
-    local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
+    local H_PINK=$'\e[38;2;232;121;249m'     # Hot pink #E879F9
+    local H_PURPLE=$'\e[38;2;139;92;246m'    # Purple #8B5CF6
+    local H_CYAN=$'\e[38;2;94;234;212m'      # Cyan #5EEAD4
+    local H_MUTED=$'\e[38;2;107;114;128m'    # Muted gray
+    local H_SEL=$'\e[1;38;2;232;121;249m'    # Bold pink - selection
+    local H_UL=$'\e[4m'                       # Underline
+    local H_KEY=$'\e[1;38;2;94;234;212m'     # Bold cyan - shortcut key
     local H_ITALIC=$'\e[3m'                   # Italic
     
     # Logo: text with gradient colors
@@ -193,10 +190,11 @@ show_fzf_catalog() {
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:55%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season \"
+      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+R:Refresh \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
       --bind='ctrl-d:preview-down,ctrl-u:preview-up'
+
     "
 
 
@@ -211,10 +209,10 @@ show_fzf_catalog() {
     fi
     
     # 3. Locate Preview Script
-    local preview_script="${FZF_CATALOG_DIR}/preview_fzf.sh"
+    local preview_script="${SCRIPT_DIR}/modules/ui/preview_fzf.sh"
     
     # 3.5. Launch background precache for first 50 movies
-    local precache_script="${FZF_CATALOG_DIR}/../../scripts/precache_catalog.py"
+    local precache_script="${SCRIPT_DIR}/scripts/precache_catalog.py"
     if [[ -f "$precache_script" ]] && command -v python3 &>/dev/null; then
         # Pipe catalog data to precache script in background (suppress ALL output)
         (printf "%s" "$fzf_input" | python3 "$precache_script" 50 >/dev/null 2>&1) &
@@ -227,64 +225,49 @@ show_fzf_catalog() {
         pos_bind="--bind=start:pos($start_pos)"
     fi
     
-    # Season picker path (for Ctrl+E binding)
-    local season_picker="${FZF_CATALOG_DIR}/season_picker.sh"
-    
-    # 4. Run FZF
+    # 4. Run FZF  
     # Important: Use printf instead of echo -ne for better handling
     local selection
-    local fzf_exit_code=0
     selection=$(printf "%s" "$fzf_display" | fzf \
         --delimiter='|' \
         --with-nth=1 \
         --preview "$preview_script {3..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,ctrl-e,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
-    fzf_exit_code=$?
         
     # 5. Handle Result
-    echo "$(date): FZF selection captured: '$selection'" >> /tmp/fzf_debug.log
-    echo "$(date): FZF command exit code: $fzf_exit_code" >> /tmp/fzf_debug.log
-
-    # Check if FZF was cancelled (exit code 130) or had no selection
-    if [[ $fzf_exit_code -eq 130 ]] || [[ -z "$selection" ]]; then
-        return 1
-    fi
-
-    # Parse output: first line is key, second is selection
-    local key
-    local selected_line
-    { read -r key; read -r selected_line; } <<< "$selection"
-    echo "$(date): Key: '$key', Selection: '$selected_line'" >> /tmp/fzf_debug.log
-
-    # Handle category switching shortcuts - return exit codes for main loop
-    # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
-    case "$key" in
-        ctrl-o) return 101 ;;  # mOvies
-        ctrl-s) return 102 ;;  # Shows
-        ctrl-w) return 103 ;;  # Watchlist
-        ctrl-t) return 104 ;;  # Type dropdown
-        ctrl-v) return 105 ;;  # Sort dropdown
-        ctrl-g) return 106 ;;  # Genre dropdown
-        ctrl-f) return 110 ;;  # Search
-        ctrl-e)                # Season Picker
-            echo "$(date): Ctrl+E pressed, saving selection and returning 111" >> /tmp/fzf_debug.log
-            echo "$selected_line" > "/tmp/termflix_selection"
-            return 111
-            ;;
-        ctrl-r) return 109 ;;  # Refresh
-        ">"|ctrl-right) return 107 ;;  # Next page
-        "<"|ctrl-left) return 108 ;;   # Previous page
-    esac
+    if [[ -n "$selection" ]]; then
+        # Parse output: first line is key, second is selection
+        local key
+        local selected_line
+        { read -r key; read -r selected_line; } <<< "$selection"
+        
+        # Handle category switching shortcuts - return exit codes for main loop
+        # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
+        case "$key" in
+            ctrl-o) return 101 ;;  # mOvies
+            ctrl-s) return 102 ;;  # Shows
+            ctrl-w) return 103 ;;  # Watchlist
+            ctrl-t) return 104 ;;  # Type dropdown
+            ctrl-v) return 105 ;;  # Sort dropdown
+            ctrl-g) return 106 ;;  # Genre dropdown
+            ctrl-f) return 110 ;;  # Search
+            ctrl-r) return 109 ;;  # Refresh
+            ">"|ctrl-right) return 107 ;;  # Next page
+            "<"|ctrl-left) return 108 ;;   # Previous page
+        esac
         
         # If no selection line (e.g. only key was output), return fail
-    [[ -z "$selected_line" ]] && return 1
+        [[ -z "$selected_line" ]] && return 1
 
-    # Extract the actual data (everything after first |)
-    IFS='|' read -r _ index rest <<< "$selected_line"
-    echo "$key|$index|$rest"
-    return 0
+        # Extract the actual data (everything after first |)
+         IFS='|' read -r _ index rest <<< "$selected_line"
+         echo "$key|$index|$rest"
+         return 0
+    else
+        return 1
+    fi
 }
 
 handle_fzf_selection() {
@@ -305,248 +288,6 @@ handle_fzf_selection() {
     # Now parse rest_data which starts with source
     local source name magnet quality size seeds poster imdb plot
     IFS='|' read -r source name magnet quality size seeds poster imdb plot <<< "$rest_data"
-
-    # === SHOWS MULTI-STAGE HANDLING (STREMIO-STYLE) ===
-    # Identify as series if from Shows category or manually tagged
-    local is_series="false"
-    # Convert category to lowercase for comparison
-    local cat_lower=$(echo "${current_category:-}" | tr '[:upper:]' '[:lower:]')
-    [[ "$cat_lower" == "shows" ]] && is_series="true"
-    [[ "$name" == *"[SERIES]"* ]] && is_series="true"
-
-    if [[ "$is_series" == "true" ]]; then
-        # Robustly clean series name: remove [SERIES], years, quality tags
-        local series_name=$(echo "$name" | sed -E '
-            s/\[SERIES\]//gi;
-            s/\((19|20)[0-9]{2}\)//g;
-            s/[[:space:]]+(19|20)[0-9]{2}//g;
-            s/[[:space:]]+$//;
-            s/^[[:space:]]+//
-        ')
-        local imdb_id="$imdb"
-        local tmdb_id=""
-        
-        # 1. Get TMDB ID from IMDB ID
-        if [[ -n "$imdb_id" && "$imdb_id" != "N/A" ]]; then
-            local tmdb_res
-            tmdb_res=$(find_by_imdb_id "$imdb_id")
-            tmdb_id=$(echo "$tmdb_res" | jq -r '.id // empty' 2>/dev/null)
-        fi
-        
-        # Fallback to name search if no IMDB ID or ID lookup failed
-        if [[ -z "$tmdb_id" ]]; then
-            local tmdb_res
-            tmdb_res=$(search_tmdb_tv "$series_name")
-            tmdb_id=$(echo "$tmdb_res" | jq -r '.id // empty' 2>/dev/null)
-        fi
-        
-        if [[ -n "$tmdb_id" ]]; then
-            # 2. Get Series Metadata (to find latest season)
-            local series_details
-            series_details=$(get_tv_details "$tmdb_id")
-            
-            # Default to latest season with episodes (checking season_number > 0)
-            local latest_season
-            latest_season=$(echo "$series_details" | jq -r '(.seasons | map(select(.season_number > 0)) | last).season_number // empty' 2>/dev/null)
-            
-            # If no seasons found or failed, exit
-            if [[ -z "$latest_season" ]]; then
-                echo -e "${RED}No seasons found for $series_name.${RESET}"
-                sleep 2
-                return 1
-            fi
-
-            local current_s_num="$latest_season"
-            while true; do
-                # 3. Get Episodes for current_s_num
-                local season_details
-                season_details=$(get_tv_season_details "$tmdb_id" "$current_s_num")
-                local episodes_json
-                episodes_json=$(echo "$season_details" | jq -c '.episodes[]')
-                
-                if [[ -z "$episodes_json" ]]; then
-                    echo -e "${RED}No episodes found for Season $current_s_num.${RESET}"
-                    sleep 2
-                    return 1
-                fi
-
-                local episode_list=""
-                local today_epoch=$(date +%s)
-                while read -r e; do
-                    local e_num=$(echo "$e" | jq -r '.episode_number')
-                    local e_name=$(echo "$e" | jq -r '.name // "TBA"')
-                    local e_date=$(echo "$e" | jq -r '.air_date // ""')
-                    
-                    # Format air date and check if released
-                    local date_display="TBA"
-                    local status_icon="  "
-                    if [[ -n "$e_date" && "$e_date" != "null" ]]; then
-                        # Parse date for comparison
-                        local ep_epoch=$(date -j -f "%Y-%m-%d" "$e_date" +%s 2>/dev/null || date -d "$e_date" +%s 2>/dev/null || echo "0")
-                        date_display=$(date -j -f "%Y-%m-%d" "$e_date" "+%d %b %Y" 2>/dev/null || date -d "$e_date" "+%d %b %Y" 2>/dev/null || echo "$e_date")
-                        if [[ "$ep_epoch" -gt "$today_epoch" ]]; then
-                            status_icon="🔒"
-                        fi
-                    fi
-                    
-                    # Truncate episode name for cleaner display
-                    local e_name_short="${e_name:0:30}"
-                    [[ ${#e_name} -gt 30 ]] && e_name_short="${e_name_short}..."
-                    
-                    # Format: idx|display_line (append with explicit newline)
-                    episode_list+="$(printf '%d|%s E%02d │ %-35s │ %s' "$e_num" "$status_icon" "$e_num" "$e_name_short" "$date_display")"$'\n'
-                done <<< "$episodes_json"
-                
-                # Get show poster for Stage 2 preview
-                local show_poster=""
-                local poster_path=$(echo "$series_details" | jq -r '.poster_path // ""' 2>/dev/null)
-                if [[ -n "$poster_path" && "$poster_path" != "null" ]]; then
-                    show_poster="https://image.tmdb.org/t/p/w500${poster_path}"
-                fi
-                
-                # Get show metadata for Stage 2 preview
-                local show_overview=$(echo "$series_details" | jq -r '.overview // "No description available."' 2>/dev/null)
-                local show_rating=$(echo "$series_details" | jq -r '.vote_average // "N/A"' 2>/dev/null)
-                local total_seasons=$(echo "$series_details" | jq -r '.number_of_seasons // "?"' 2>/dev/null)
-                local show_genres=$(echo "$series_details" | jq -r '[.genres[].name] | join(", ") // "N/A"' 2>/dev/null)
-                
-                # Prepare poster file for preview
-                local poster_file=""
-                local cache_dir="${HOME}/.cache/termflix/posters"
-                mkdir -p "$cache_dir"
-                if [[ -n "$show_poster" ]]; then
-                    local hash=$(echo -n "$show_poster" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
-                    poster_file="${cache_dir}/${hash}.png"
-                    if [[ ! -f "$poster_file" ]]; then
-                        curl -sL --max-time 3 "$show_poster" -o "${poster_file}.tmp" 2>/dev/null
-                        if [[ -f "${poster_file}.tmp" && -s "${poster_file}.tmp" ]]; then
-                            if command -v sips &>/dev/null; then
-                                sips -s format png --resampleWidth 400 "${poster_file}.tmp" --out "$poster_file" &>/dev/null
-                            else
-                                mv "${poster_file}.tmp" "$poster_file"
-                            fi
-                            rm -f "${poster_file}.tmp" 2>/dev/null
-                        fi
-                    fi
-                fi
-                
-                # Export metadata for Stage 2 preview script
-                export STAGE2_POSTER="$poster_file"
-                export STAGE2_TITLE="$series_name"
-                export STAGE2_SOURCES="[Shows]"
-                export STAGE2_AVAIL="Season $current_s_num"
-                export STAGE2_PLOT="$show_overview"
-                export STAGE2_IMDB="$show_rating"
-                export TERMFLIX_STAGE2_CONTEXT="catalog"
-                
-                local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
-                
-                # Launch Split-View Episode Picker (like Movies Stage 2)
-                local sel_episode
-                sel_episode=$(printf "%s" "$episode_list" | fzf \
-                    --ansi \
-                    --delimiter='|' \
-                    --with-nth=2 \
-                    --height=100% \
-                    --layout=reverse \
-                    --border=rounded \
-                    --margin=1 \
-                    --padding=1 \
-                    --prompt='❯ ' \
-                    --pointer='▶' \
-                    --header="Pick Episode - [$series_name] Season $current_s_num →" \
-                    --header-first \
-                    --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2')" \
-                    --preview "TERMFLIX_STAGE2_CONTEXT=\"catalog\" $stage2_preview" \
-                    --preview-window=left:55%:wrap:border-right \
-                    --bind='ctrl-s:abort' \
-                    --bind='ctrl-h:abort' \
-                    --expect=ctrl-s,enter \
-                    2>/dev/null)
-                
-                # Cleanup exports
-                unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_PLOT STAGE2_IMDB
-                [[ "$TERM" == "xterm-kitty" ]] && kitten icat --clear 2>/dev/null
-                
-                [[ -z "$sel_episode" ]] && return 1 # Back/Cancel
-                
-                local sel_key=$(echo "$sel_episode" | head -1)
-                local sel_val=$(echo "$sel_episode" | tail -1)
-
-                # Handle Season Switching (Ctrl+S)
-                if [[ "$sel_key" == "ctrl-s" ]]; then
-                    # Show season list
-                    local seasons_json
-                    seasons_json=$(echo "$series_details" | jq -c '.seasons[] | select(.season_number > 0)')
-                    local season_pick_list=""
-                    while read -r s; do
-                        local sn=$(echo "$s" | jq -r '.season_number')
-                        local sname=$(echo "$s" | jq -r '.name')
-                        season_pick_list+=$(printf "Season %02d | %s\n" "$sn" "$sname")
-                    done <<< "$seasons_json"
-
-                    local new_s
-                    new_s=$(echo -e "$season_pick_list" | fzf --height=15 --layout=reverse --border --prompt="Switch Season > " --ansi 2>/dev/null)
-                    if [[ -n "$new_s" ]]; then
-                        current_s_num=$(echo "$new_s" | cut -d' ' -f2)
-                        current_s_num=$((10#$current_s_num))
-                        continue # Re-loop with new season
-                    fi
-                    continue # No change, stay in episode list
-                fi
-
-                # Handle Episode selection
-                if [[ -n "$sel_val" ]]; then
-                    # Extract episode number from format "idx|display"
-                    local e_num_picked=$(echo "$sel_val" | cut -d'|' -f1)
-                    e_num_picked=$((10#$e_num_picked))
-                    
-                    # 4. Search for specific episode torrents
-                    local search_query
-                    search_query=$(printf "%s S%02dE%02d" "$series_name" "$current_s_num" "$e_num_picked")
-                    
-                    echo -e "${CYAN}Searching for ${YELLOW}$search_query${RESET}${CYAN}...${RESET}"
-                    
-                    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-                    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
-                    
-                    local search_results
-                    search_results=$(python3 "$script_path" --query "$search_query" --limit 20 --category shows 2>/dev/null | grep "^COMBINED")
-                    
-                    if [[ -n "$search_results" ]]; then
-                        # Override original selection data for the rest of handle_fzf_selection (Stage 2)
-                        rest_data=$(echo "$search_results" | head -1)
-                        source="COMBINED"
-                        break # Exit loop to proceed to quality picker
-                    else
-                        echo -e "${RED}No torrents found for this episode.${RESET}"
-                        sleep 2
-                        # stay in episode picker
-                    fi
-                fi
-            done
-        else
-            echo -e "${YELLOW}Metadata not found for $series_name. Falling back to direct search...${RESET}"
-            sleep 1
-            
-            # Use fetch_multi_source_catalog.py directly for raw series search
-            local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-            [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
-            
-            local search_results
-            search_results=$(python3 "$script_path" --query "$series_name" --limit 20 2>/dev/null | grep "^COMBINED")
-            
-            if [[ -n "$search_results" ]]; then
-                rest_data=$(echo "$search_results" | head -1)
-                source="COMBINED"
-                # Fall through to Stage 2 picker
-            else
-                echo -e "${RED}No torrents found for $series_name.${RESET}"
-                sleep 2
-                return 1
-            fi
-        fi
-    fi
 
     # CTRL+L HANDLER: Force Stage 2 for single-source items
     # When user presses Ctrl+L, convert single source to COMBINED format
@@ -779,7 +520,9 @@ handle_fzf_selection() {
                       --pointer='▶' \
                       --header="Pick Version - [${c_name}] →" \
                       --header-first \
-                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
+                      --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+                      --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+                      --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" $stage2_preview" \
                       --preview-window=left:55%:wrap:border-right \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
@@ -811,10 +554,12 @@ handle_fzf_selection() {
                       --padding=1 \
                       --prompt="▶ Pick Version: " \
                       --header="🎬 Available Versions: (Ctrl+H to back)" \
-                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
+                      --color=fg:#f8f8f2,bg:-1,hl:#E879F9 \
+                      --color=fg+:#ffffff,bg+:#2d1f3d,hl+:#E879F9 \
+                      --color=prompt:#5EEAD4,pointer:#E879F9 \
+                      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+                      --border-label-pos=bottom \
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
-                       --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
-                       --border-label-pos=bottom \
                       --preview-window=left:45%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       --no-select-1 \

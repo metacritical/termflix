@@ -325,7 +325,15 @@ display_catalog() {
     local total_pages_loaded=10  # Initial pages loaded
     local current_page=1
     local items_per_page=50
+    
+    # Check for saved cursor position (from season picker return)
     local last_selected_index=1
+    if [[ -f "/tmp/termflix_last_index" ]]; then
+        local saved_idx
+        saved_idx=$(cat "/tmp/termflix_last_index" 2>/dev/null)
+        [[ "$saved_idx" =~ ^[0-9]+$ ]] && last_selected_index="$saved_idx"
+        rm -f "/tmp/termflix_last_index"
+    fi
     
     local skip_reload=false
     
@@ -401,7 +409,10 @@ display_catalog() {
         local selection_line
         selection_line=$(show_fzf_catalog "$title" page_results "$current_page" "$total_display" "$last_selected_index")
         local fzf_ret=$?
-        
+
+        # Debug logging
+        echo "$(date): show_fzf_catalog returned $fzf_ret" >> /tmp/termflix_trace.log
+
         # Handle category switching and page navigation
         case $fzf_ret in
             101) return 101 ;;  # Movies
@@ -412,6 +423,7 @@ display_catalog() {
             106) return 106 ;;  # Genre dropdown
             109) return 109 ;;  # Refresh
             110) return 110 ;;  # Year dropdown
+            111) return 111 ;;  # Season Picker
             107)  # Next page (>)
                 if [[ $current_page -lt $total_pages ]]; then
                     ((current_page++))
@@ -435,16 +447,16 @@ display_catalog() {
             handle_fzf_selection "$selection_line"
             local ret_code=$?
             
-            if [ $ret_code -eq 10 ]; then
+            if [[ $ret_code -eq 10 ]]; then
                 # User pressed Ctrl+H / Back - skip reload on next iteration for speed
                 skip_reload=true
                 continue
-            elif [ $ret_code -eq 0 ]; then
+            elif [[ $ret_code -eq 0 ]]; then
                 # Successful stream - return to catalog list
                 continue
             else
-                # Error or cancel
-                break
+                # Error, cancel or metadata failure - just go back to list
+                continue
             fi
         else
             # No selection - cancelled
