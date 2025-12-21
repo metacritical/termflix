@@ -156,16 +156,31 @@ main() {
                 ;;
             --clear)
                 local cache_dir="$HOME/.config/termflix/cache"
+                local multi_source_cache="$HOME/.cache/termflix/multi_source"
+                local cleared=0
+                
+                # Clear catalog cache
                 if [ -d "$cache_dir" ]; then
-                    local deleted_count=$(find "$cache_dir" -name "catalog_*.txt" -type f | wc -l | tr -d ' ')
+                    local deleted_count=$(find "$cache_dir" -name "catalog_*.txt" -type f 2>/dev/null | wc -l | tr -d ' ')
                     rm -rf "$cache_dir"/catalog_*.txt 2>/dev/null
                     if [ "$deleted_count" -gt 0 ]; then
-                        echo -e "${GREEN}✓ Cleared ${deleted_count} cache file(s)${RESET}"
-                    else
-                        echo -e "${YELLOW}No cache files found to clear${RESET}"
+                        echo -e "${GREEN}✓ Cleared ${deleted_count} catalog cache file(s)${RESET}"
+                        cleared=1
                     fi
-                else
-                    echo -e "${YELLOW}Cache directory does not exist${RESET}"
+                fi
+                
+                # Clear multi-source cache (API responses)
+                if [ -d "$multi_source_cache" ]; then
+                    local ms_count=$(find "$multi_source_cache" -type f 2>/dev/null | wc -l | tr -d ' ')
+                    rm -rf "$multi_source_cache" 2>/dev/null
+                    if [ "$ms_count" -gt 0 ]; then
+                        echo -e "${GREEN}✓ Cleared ${ms_count} multi-source cache file(s)${RESET}"
+                        cleared=1
+                    fi
+                fi
+                
+                if [ "$cleared" -eq 0 ]; then
+                    echo -e "${YELLOW}No cache files found to clear${RESET}"
                 fi
                 exit 0
                 ;;

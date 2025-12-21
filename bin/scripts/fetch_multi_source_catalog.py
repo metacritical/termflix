@@ -293,6 +293,108 @@ def extract_quality(name: str) -> str:
     return 'Unknown'
 
 # ═══════════════════════════════════════════════════════════════
+# EZTV API (Dedicated TV Shows Source)
+# ═══════════════════════════════════════════════════════════════
+
+EZTV_API_URL = 'https://eztv.re/api/get-torrents'
+
+def fetch_eztv_shows(limit: int = 50, page: int = 1) -> List[Dict]:
+    """
+    Fetch latest TV shows from EZTV API.
+    Returns list of torrent dicts with normalized field names.
+    """
+    cache_key = get_cache_key('eztv_shows', f'{limit}_{page}')
+    cached = get_cached(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except:
+            pass
+    
+    url = f"{EZTV_API_URL}?limit={limit}&page={page}"
+    response = fetch_url(url, timeout=8)
+    if not response:
+        return []
+    
+    try:
+        data = json.loads(response)
+        torrents_raw = data.get('torrents', [])
+        
+        results = []
+        for t in torrents_raw[:limit]:
+            # Normalize to TPB-like format
+            info_hash = t.get('hash', '')
+            if not info_hash:
+                continue
+                
+            results.append({
+                'source': 'EZTV',
+                'name': t.get('title', t.get('filename', 'Unknown')),
+                'info_hash': info_hash.upper(),
+                'seeders': int(t.get('seeds', 0)),
+                'size': int(t.get('size_bytes', 0)),
+                'imdb': t.get('imdb_id', 'N/A')
+            })
+        
+        if results:
+            set_cache(cache_key, json.dumps(results))
+        return results
+        
+    except Exception:
+        return []
+
+
+def search_eztv(query: str) -> List[Dict]:
+    """Search EZTV for TV show torrents."""
+    cache_key = get_cache_key('eztv_search', query)
+    cached = get_cached(cache_key)
+    if cached:
+        try:
+            return json.loads(cached)
+        except:
+            pass
+    
+    # EZTV doesn't have a text search API, so we fetch latest and filter
+    # For IMDB-based search, use imdb_id parameter
+    if query.startswith('tt'):
+        url = f"{EZTV_API_URL}?imdb_id={query.replace('tt', '')}&limit=50"
+    else:
+        # No direct text search, return empty (will rely on TPB for text search)
+        return []
+    
+    response = fetch_url(url, timeout=8)
+    if not response:
+        return []
+    
+    try:
+        data = json.loads(response)
+        torrents_raw = data.get('torrents', [])
+        
+        results = []
+        for t in torrents_raw:
+            info_hash = t.get('hash', '')
+            if not info_hash:
+                continue
+                
+            results.append({
+                'source': 'EZTV',
+                'name': t.get('title', t.get('filename', 'Unknown')),
+                'info_hash': info_hash.upper(),
+                'seeders': int(t.get('seeds', 0)),
+                'size': int(t.get('size_bytes', 0)),
+                'imdb': t.get('imdb_id', 'N/A'),
+                'magnet': t.get('magnet_url', f"magnet:?xt=urn:btih:{info_hash}")
+            })
+        
+        if results:
+            set_cache(cache_key, json.dumps(results))
+        return results
+        
+    except Exception:
+        return []
+
+
+# ═══════════════════════════════════════════════════════════════
 # TPB FALLBACK (when YTS is unavailable)
 # ═══════════════════════════════════════════════════════════════
 
@@ -330,7 +432,14 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
             raw_items.append(item)
 
         if category in [205, 208]: # TV Shows Categories
-            return group_shows_by_series(raw_items, limit)
+            # Multi-source: Also fetch from EZTV and merge
+            eztv_items = fetch_eztv_shows(limit=limit)
+            # Add source field to TPB items
+            for item in raw_items:
+                item['source'] = 'TPB'
+            # Merge all items and group by series
+            all_items = raw_items + eztv_items
+            return group_shows_by_series(all_items, limit)
         
         # Standard movie processing for TPB fallback
         results = []
@@ -363,52 +472,87 @@ def fetch_tpb_fallback_catalog(limit: int = 50, category: int = 207) -> List[str
     except Exception:
         return []
 
+def normalize_series_name(name: str) -> str:
+    """Normalize series name for consistent grouping."""
+    # Primary strategy: Extract just the series name BEFORE episode/season markers
+    # Pattern matches: "Show Name S01E01...", "Show.Name.S01...", "Show Name 1x01..."
+    
+    # Try to extract series name before episode marker
+    series_match = re.match(r'^(.+?)[\.\s]+(?:S\d{1,2}(?:E\d{1,4})?|\d+x\d+|Season\s*\d+)', name, re.IGNORECASE)
+    if series_match:
+        name = series_match.group(1)
+    
+    # Remove release group at end (e.g., -MeGusta, -ETHEL)
+    name = re.sub(r'-[A-Za-z0-9]+$', '', name)
+    
+    # Remove quality/codec patterns that might still be in prefix
+    name = re.sub(r'[\.\s]+(1080p|720p|480p|2160p|4K)', '', name, flags=re.IGNORECASE)
+    
+    # Remove bracketed/parenthesized content
+    name = re.sub(r'\[.*?\]', '', name)
+    name = re.sub(r'\(.*?\)', '', name)
+    
+    # Remove trailing year (e.g., "Show Name 2024")
+    name = re.sub(r'[\.\s]+(?:19|20)\d{2}$', '', name)
+    
+    # Replace dots/underscores with spaces
+    name = name.replace('.', ' ').replace('_', ' ')
+    
+    # Clean up whitespace and trailing dashes
+    name = re.sub(r'[-\s]+$', '', name)
+    name = re.sub(r'\s+', ' ', name).strip()
+    
+    # Title case for consistency
+    name = name.title()
+    
+    return name
+
+
 def group_shows_by_series(items: List[Dict], limit: int) -> List[str]:
     """Group individual TV torrents by series title."""
     from collections import defaultdict
     series_groups = defaultdict(list)
     
-    # Common TV patterns: S01E01, 1x01, Season 1, etc.
-    series_name_pattern = re.compile(r'^(.+?)([\.\s]+(S\d{1,2}E\d{1,2}|Season\s*\d+|\d+x\d+)|$)', re.IGNORECASE)
-    
     for item in items:
-        name = item.get('name', 'Unknown')
+        raw_name = item.get('name', 'Unknown')
+        series_name = normalize_series_name(raw_name)
         
-        # Extract series name
-        match = series_name_pattern.search(name)
-        if match:
-            series_name = match.group(1).replace('.', ' ').strip()
-            # Clean up trailing year if present: "Show Name 2024" -> "Show Name"
-            series_name = re.sub(r'\s+\d{4}$', '', series_name)
-        else:
-            series_name = name
+        # Skip if normalization resulted in empty string
+        if not series_name:
+            continue
             
         series_groups[series_name].append(item)
     
     results = []
     # Sort series by the highest seeds in any of its torrents
     sorted_series = sorted(series_groups.items(), 
-                          key=lambda x: max(int(i.get('seeders', 0)) for i in x[1]), 
+                          key=lambda x: max(int(i.get('seeders', i.get('seeds', 0))) for i in x[1]), 
                           reverse=True)
     
     for series_name, torrents in sorted_series[:limit]:
         # Aggregate data for Stage 1
-        sources = ["TPB"] * len(torrents)
+        # Handle both TPB format (info_hash) and EZTV format (hash)
+        sources = [t.get('source', 'TPB') for t in torrents]
         qualities = [extract_quality(t.get('name', '')) for t in torrents]
-        seeds = [str(t.get('seeders', 0)) for t in torrents]
+        seeds = [str(t.get('seeders', t.get('seeds', 0))) for t in torrents]
         sizes = []
         for t in torrents:
-            size_bytes = int(t.get('size', 0))
+            size_bytes = int(t.get('size', t.get('size_bytes', 0)))
             size_mb = size_bytes // (1024 * 1024)
             sizes.append(f"{size_mb}MB" if size_mb < 1024 else f"{size_mb/1024:.1f}GB")
         
-        magnets = [f"magnet:?xt=urn:btih:{t.get('info_hash')}" for t in torrents]
+        # Handle both hash field names
+        magnets = []
+        for t in torrents:
+            h = t.get('info_hash', t.get('hash', ''))
+            if h:
+                magnets.append(f"magnet:?xt=urn:btih:{h}")
+        
         imdb = torrents[0].get('imdb', 'N/A')
         
         # For the display name in Stage 1, use the Series Name
         # Create a combined standard item
         title = f"{series_name}"
-        # magnet is just a representative one for stage 1 identification
         combined = (
             f"COMBINED|{title}|"
             f"{'^'.join(sources)}|"

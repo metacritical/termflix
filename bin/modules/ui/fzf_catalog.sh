@@ -192,7 +192,7 @@ show_fzf_catalog() {
       --pointer='▶'
       --header=\"$menu_header\"
       --header-first
-      --preview-window=right:55%:wrap:border-left
+      --preview-window=right:45%:wrap:border-left
       --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'
@@ -514,8 +514,32 @@ handle_fzf_selection() {
                     search_results=$(python3 "$script_path" --query "$search_query" --limit 20 --category shows 2>/dev/null | grep "^COMBINED")
                     
                     if [[ -n "$search_results" ]]; then
-                        # Override original selection data for the rest of handle_fzf_selection (Stage 2)
-                        rest_data=$(echo "$search_results" | head -1)
+                        # Aggregate ALL search results into a single COMBINED entry
+                        # Each line is: COMBINED|name|source|quality|seeds|size|magnet|poster|imdb|genre|count
+                        local all_sources="" all_qualities="" all_seeds="" all_sizes="" all_magnets=""
+                        local first_name="" torrent_count=0
+                        
+                        while IFS='|' read -r _ name src qual seeds size magnet _ _ _ _; do
+                            [[ -z "$first_name" ]] && first_name="$name"
+                            torrent_count=$((torrent_count + 1))
+                            
+                            if [[ -z "$all_sources" ]]; then
+                                all_sources="$src"
+                                all_qualities="$qual"
+                                all_seeds="$seeds"
+                                all_sizes="$size"
+                                all_magnets="$magnet"
+                            else
+                                all_sources="${all_sources}^${src}"
+                                all_qualities="${all_qualities}^${qual}"
+                                all_seeds="${all_seeds}^${seeds}"
+                                all_sizes="${all_sizes}^${size}"
+                                all_magnets="${all_magnets}^${magnet}"
+                            fi
+                        done <<< "$search_results"
+                        
+                        # Create aggregated COMBINED entry
+                        rest_data="COMBINED|${first_name}|${all_sources}|${all_qualities}|${all_seeds}|${all_sizes}|${all_magnets}|N/A|N/A|Shows|${torrent_count}"
                         source="COMBINED"
                         break # Exit loop to proceed to quality picker
                     else
@@ -815,7 +839,7 @@ handle_fzf_selection() {
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
                        --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
                        --border-label-pos=bottom \
-                      --preview-window=left:45%:wrap \
+                      --preview-window=left:55%:wrap \
                       --bind='ctrl-h:abort,ctrl-o:abort' \
                       --no-select-1 \
                       2>/dev/null)
