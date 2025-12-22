@@ -1,0 +1,154 @@
+{
+    "genres": {
+        "Action": {
+            "emoji": "💥",
+            "color": "#ef4444"
+        },
+        "Adult": {
+            "emoji": "🔞",
+            "color": "#991b1b"
+        },
+        "Adventure": {
+            "emoji": "🗺️",
+            "color": "#f97316"
+        },
+        "Animation": {
+            "emoji": "🎨",
+            "color": "#a855f7"
+        },
+        "Biography": {
+            "emoji": "📖",
+            "color": "#6366f1"
+        },
+        "Comedy": {
+            "emoji": "😂",
+            "color": "#facc15"
+        },
+        "Crime": {
+            "emoji": "🔪",
+            "color": "#991b1b"
+        },
+        "Documentary": {
+            "emoji": "🎥",
+            "color": "#64748b"
+        },
+        "Drama": {
+            "emoji": "🎭",
+            "color": "#8b5cf6"
+        },
+        "Family": {
+            "emoji": "👨‍👩‍👧‍👦",
+            "color": "#22c55e"
+        },
+        "Fantasy": {
+            "emoji": "🧙",
+            "color": "#c084fc"
+        },
+        "Film-Noir": {
+            "emoji": "🌑",
+            "color": "#1e293b"
+        },
+        "Game-Show": {
+            "emoji": "🎰",
+            "color": "#eab308"
+        },
+        "History": {
+            "emoji": "📜",
+            "color": "#a16207"
+        },
+        "Horror": {
+            "emoji": "👻",
+            "color": "#dc2626"
+        },
+        "Music": {
+            "emoji": "🎵",
+            "color": "#ec4899"
+        },
+        "Musical": {
+            "emoji": "🎤",
+            "color": "#f472b6"
+        },
+        "Mystery": {
+            "emoji": "🔍",
+            "color": "#6b21a8"
+        },
+        "News": {
+            "emoji": "📰",
+            "color": "#0284c7"
+        },
+        "Reality-TV": {
+            "emoji": "📺",
+            "color": "#14b8a6"
+        },
+        "Romance": {
+            "emoji": "❤️",
+            "color": "#f43f5e"
+        },
+        "Sci-Fi": {
+            "emoji": "🚀",
+            "color": "#06b6d4"
+        },
+        "Science Fiction": {
+            "emoji": "🚀",
+            "color": "#06b6d4"
+        },
+        "Short": {
+            "emoji": "⏱️",
+            "color": "#94a3b8"
+        },
+        "Sport": {
+            "emoji": "⚽",
+            "color": "#16a34a"
+        },
+        "Sports": {
+            "emoji": "⚽",
+            "color": "#16a34a"
+        },
+        "Talk-Show": {
+            "emoji": "🎙️",
+            "color": "#0891b2"
+        },
+        "Thriller": {
+            "emoji": "😱",
+            "color": "#be123c"
+        },
+        "War": {
+            "emoji": "⚔️",
+            "color": "#78716c"
+        },
+        "War & Politics": {
+            "emoji": "⚔️",
+            "color": "#78716c"
+        },
+        "Western": {
+            "emoji": "🤠",
+            "color": "#b45309"
+        },
+        "Action & Adventure": {
+            "emoji": "💥",
+            "color": "#ef4444"
+        },
+        "Sci-Fi & Fantasy": {
+            "emoji": "🚀",
+            "color": "#06b6d4"
+        },
+        "Kids": {
+            "emoji": "🧒",
+            "color": "#22c55e"
+        },
+        "Soap": {
+            "emoji": "💔",
+            "color": "#f43f5e"
+        },
+        "TV Movie": {
+            "emoji": "📺",
+            "color": "#64748b"
+        }
+    },
+    "_meta": {
+        "source": "IMDB official genres + TMDB TV variants",
+        "count": 36,
+        "imdb_core": 28,
+        "tmdb_variants": 8
+    }
+}

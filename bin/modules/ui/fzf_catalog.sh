@@ -217,7 +217,7 @@ show_fzf_catalog() {
       --color=pointer:#ff79c6:bold
       --header=\"$menu_header\"
       --header-first
-      --preview-window=right:45%:wrap:border-left
+      --preview-window=right:50%:wrap:border-left
       --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season \"
       --border-label-pos=bottom
       --bind='ctrl-/:toggle-preview'

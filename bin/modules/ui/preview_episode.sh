@@ -18,7 +18,6 @@ _SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 # Source dependencies
 source "${_SCRIPT_DIR}/../core/colors.sh"
 [[ -f "${_SCRIPT_DIR}/../core/theme.sh" ]] && source "${_SCRIPT_DIR}/../core/theme.sh"
-[[ -f "${_SCRIPT_DIR}/image_display.sh" ]] && source "${_SCRIPT_DIR}/image_display.sh"
 
 # Alias semantic colors
 MAGENTA="${THEME_GLOW:-${C_GLOW}}"
@@ -47,11 +46,50 @@ s_year=$(echo "$SERIES_METADATA" | jq -r '.first_air_date // ""' 2>/dev/null)
 s_year="${s_year:0:4}"
 
 # ═══════════════════════════════════════════════════════════════
-# HEADER - Episode Title (no results count header)
+# POSTER - Render FIRST so @0x0 doesn't overlap text
 # ═══════════════════════════════════════════════════════════════
 
-# Episode title
-echo -e "${BOLD}${MAGENTA}${e_name}${RESET}"
+poster_file="$SERIES_POSTER"
+
+IS_KITTY_MODE=false
+if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
+    IS_KITTY_MODE=true
+fi
+
+if [[ "$IS_KITTY_MODE" == "true" ]]; then
+    # KITTY MODE: Large poster with absolute positioning at 0x0
+    FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+    [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
+    
+    IMAGE_WIDTH=40
+    IMAGE_HEIGHT=30
+    
+    if [[ -f "$poster_file" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --scale-up --align=left \
+            "$poster_file" 2>/dev/null
+    fi
+    
+    # Add newlines AFTER icat to push text below the image
+    for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
+else
+    # BLOCK MODE: Use viu/chafa (renders inline naturally)
+    if [[ -n "$poster_file" && -f "$poster_file" ]]; then
+        if command -v viu &>/dev/null; then
+            viu -w 50 -h 35 "$poster_file" 2>/dev/null
+        elif command -v chafa &>/dev/null; then
+            chafa --size=50x35 "$poster_file" 2>/dev/null
+        fi
+        echo
+    fi
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# HEADER - Episode Title (now BELOW poster in Kitty mode)
+# ═══════════════════════════════════════════════════════════════
+
+echo -e "📺  ${BOLD}${MAGENTA}${e_name}${RESET}"
 echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
@@ -77,44 +115,7 @@ echo
 
 echo -e "${GRAY}Ctrl+H to go back • Enter to select${RESET}"
 echo -e "${GRAY}────────────────────────────────────────${RESET}"
-
-# ═══════════════════════════════════════════════════════════════
-# POSTER - Large like Movies Stage 2
-# ═══════════════════════════════════════════════════════════════
-
-poster_file="$SERIES_POSTER"
-
-IS_KITTY_MODE=false
-if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
-    IS_KITTY_MODE=true
-fi
-
-if [[ "$IS_KITTY_MODE" == "true" ]]; then
-    # KITTY MODE: Large poster with absolute positioning
-    FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
-    [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
-    
-    if [[ -f "$poster_file" ]]; then
-        IMAGE_WIDTH=40
-        IMAGE_HEIGHT=30
-        
-        kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-            --scale-up --align=left \
-            "$poster_file" 2>/dev/null
-    fi
-    echo
-else
-    # BLOCK MODE: Use viu/chafa
-    if [[ -n "$poster_file" && -f "$poster_file" ]]; then
-        if command -v viu &>/dev/null; then
-            viu -w 50 -h 35 "$poster_file" 2>/dev/null
-        elif command -v chafa &>/dev/null; then
-            chafa --size=50x35 "$poster_file" 2>/dev/null
-        fi
-        echo
-    fi
-fi
+echo
 
 # ═══════════════════════════════════════════════════════════════
 # DESCRIPTION & GENRE

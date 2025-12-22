@@ -33,6 +33,7 @@ while [ -L "$SCRIPT_SOURCE" ]; do
     [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR/$SCRIPT_SOURCE"
 done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+export SCRIPT_DIR
 
 # Define scripts directory (Python scripts location)
 # SCRIPT_DIR is bin/, so we go up and into lib/termflix/scripts

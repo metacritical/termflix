@@ -122,7 +122,7 @@ RESULTS=$(printf '%s' "$episode_list" | fzf \
     --info=default \
     --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
     --border-label-pos=bottom \
-    --expect=enter,ctrl-e,ctrl-s,ctrl-h,esc \
+    --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
     --ansi \
     --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')" \
     --preview-window=left:55%:wrap:border-right \
@@ -132,7 +132,7 @@ KEY=$(echo "$RESULTS" | head -1)
 SELECTED=$(echo "$RESULTS" | tail -1)
 
 # Cleanup
-[[ "$TERM" == "xterm-kitty" ]] && kitten icat --clear 2>/dev/null
+[[ "$TERM" == "xterm-kitty" ]] && kitten icat --clear >/dev/null 2>&1
 
 if [[ -z "$KEY" ]]; then
     exit 0 # Back
@@ -142,7 +142,7 @@ case "$KEY" in
     ctrl-e|ctrl-s)
         echo "SWITCH_SEASON"
         ;;
-    ctrl-h|esc)
+    ctrl-h|ctrl-l|esc)
         # explicitly signal back
         echo "BACK"
         ;;

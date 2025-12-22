@@ -30,6 +30,7 @@ if [[ -f "${SCRIPT_DIR}/../core/theme.sh" ]]; then
     source "${SCRIPT_DIR}/../core/theme.sh"
 fi
 source "${SCRIPT_DIR}/../core/colors.sh"
+[[ -f "${SCRIPT_DIR}/../core/genres.sh" ]] && source "${SCRIPT_DIR}/../core/genres.sh"
 
 # Alias semantic colors (with theme fallback)
 MAGENTA="${THEME_GLOW:-$C_GLOW}"
@@ -130,6 +131,12 @@ if [[ -f "$TMDB_MODULE" ]]; then
                     full_details=$(get_tv_details "$tmdb_id" 2>/dev/null)
                     total_seasons=$(echo "$full_details" | python3 -c "import sys, json; print(json.load(sys.stdin).get('number_of_seasons', ''))" 2>/dev/null)
                     
+                    # Extract genres from TMDB for TV shows
+                    if [[ -z "$movie_genre" || "$movie_genre" == "N/A" || "$movie_genre" == "Shows" ]]; then
+                        tmdb_genres=$(echo "$full_details" | python3 -c "import sys, json; data=json.load(sys.stdin); print(', '.join([g.get('name', '') for g in data.get('genres', [])]))" 2>/dev/null)
+                        [[ -n "$tmdb_genres" && "$tmdb_genres" != "null" ]] && movie_genre="$tmdb_genres"
+                    fi
+                    
                     # Use persistent season if available, else latest
                     if [[ -n "$selected_preview_season" ]] && [ "$selected_preview_season" -le "${total_seasons:-1}" ]; then
                         latest_season_num="$selected_preview_season"
@@ -210,7 +217,9 @@ header_btn=""
 [[ "$is_series" == "true" && -n "$latest_season_num" ]] && header_btn="  ${BOLD}${BLUE}[Season ${latest_season_num} ▾]${RESET}"
 
 # Top Title Header with Box Elements
-echo -e "${BOLD}${PURPLE}${display_title}${RESET}${header_btn}"
+content_emoji="🎬"
+[[ "$is_series" == "true" ]] && content_emoji="📺"
+echo -e "${content_emoji}  ${BOLD}${PURPLE}${display_title}${RESET}${header_btn}"
 echo -e "${THEME_DIM:-$GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
 echo
 
@@ -274,7 +283,7 @@ else
     echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
 fi
 
-# --- Rich Metadata Line (Year | Rating | Genre) ---
+# --- Rich Metadata Line (Year | Rating | Seasons) ---
 metadata_line=""
 if [[ -n "$movie_year" && "$movie_year" != "N/A" ]]; then
     metadata_line+="${BOLD}Year:${RESET} ${CYAN}${movie_year}${RESET}"
@@ -283,16 +292,18 @@ if [[ -n "$movie_rating" && "$movie_rating" != "N/A" ]]; then
     [[ -n "$metadata_line" ]] && metadata_line+="  │  "
     metadata_line+="${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}/10${RESET}"
 fi
-if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
-    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
-    metadata_line+="${BOLD}Genre:${RESET} ${PURPLE}${movie_genre}${RESET}"
-fi
 if [[ "$is_series" == "true" && -n "$total_seasons" ]]; then
     [[ -n "$metadata_line" ]] && metadata_line+="  │  "
     metadata_line+="${BOLD}Seasons:${RESET} ${CYAN}${total_seasons}${RESET}"
 fi
 
 [[ -n "$metadata_line" ]] && echo -e "$metadata_line"
+
+# --- Genre Line (separate to prevent truncation) ---
+if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
+    styled_genre=$(style_genres "$movie_genre" 2>/dev/null || echo "$movie_genre")
+    echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+fi
 echo
 
 # --- 7. UI: Poster ---

@@ -82,9 +82,9 @@ echo "[$(date)] total_seasons=$total_seasons" >> /tmp/season_picker.log 2>/dev/n
 season_list=""
 for ((i=1; i<=total_seasons; i++)); do
     if [[ "$i" == "$CURRENT_SEASON" ]]; then
-        season_list+="➜ Season ${i}\n"
+        season_list+="● Season ${i}\n"
     else
-        season_list+="  Season ${i}\n"
+        season_list+="○ Season ${i}\n"
     fi
 done
 

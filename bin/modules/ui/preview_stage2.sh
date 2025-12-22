@@ -130,7 +130,8 @@ if [[ "$should_render_catalog" == true ]]; then
         while IFS= read -r line || [[ -n "$line" ]]; do
             [[ -z "$line" ]] && continue
             # Format: display<TAB>idx|rest
-            local display idx_part
+            display=""
+            idx_part=""
             IFS=$'\t' read -r display idx_part <<< "$line"
             IFS='|' read -r idx _ <<< "$idx_part"
             
@@ -180,7 +181,7 @@ else
     if [[ "$IS_KITTY_MODE" == "false" ]]; then
         # Block mode: Show metadata before poster (skip if Unknown Title)
         if [[ "$title" != "Unknown Title" ]]; then
-            echo -e "${BOLD}${MAGENTA}${title}${RESET}"
+            echo -e "🎬  ${BOLD}${MAGENTA}${title}${RESET}"
             echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
             echo
         fi
@@ -203,7 +204,7 @@ if [[ "$IS_KITTY_MODE" == "true" ]]; then
     # KITTY MODE: Display metadata and larger poster
     
     # Show metadata before poster
-    echo -e "${BOLD}${MAGENTA}${title}${RESET}"
+    echo -e "🎬  ${BOLD}${MAGENTA}${title}${RESET}"
     echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
     echo
     
