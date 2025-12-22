@@ -136,7 +136,7 @@ if [[ "$should_render_catalog" == true ]]; then
             
             if [[ -n "$selected_index" && "$idx" == "$selected_index" ]]; then
                 # Highlight the originally selected movie
-                echo -e "${MAGENTA}▶ ${BOLD}${display}${RESET}"
+                echo -e "${MAGENTA}➤ ${BOLD}${display}${RESET}"
             else
                 echo "  $display"
             fi
@@ -173,7 +173,7 @@ if [[ -f "$BUFFER_STATUS_FILE" ]]; then
     elif [[ "$b_status" == "READY" ]]; then
         echo -e "${BOLD}${GREEN}✓ Buffer ready!${RESET}"
     elif [[ "$b_status" == "PLAYING" ]]; then
-        echo -e "${BOLD}${GREEN}▶ Now playing${RESET}"
+        echo -e "${BOLD}${GREEN}➤ Now playing${RESET}"
     fi
 else
     # Show metadata if not streaming

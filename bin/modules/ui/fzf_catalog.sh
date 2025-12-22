@@ -86,7 +86,7 @@ show_fzf_catalog() {
              if [[ -f "${HOME}/.config/termflix/watch_history.json" ]]; then
                  if command -v jq &>/dev/null; then
                      local pct=$(jq -r --arg h "$magnet_hash" '.[$h].percentage // 0' "${HOME}/.config/termflix/watch_history.json" 2>/dev/null)
-                     [[ "$pct" =~ ^[0-9]+$ ]] && [[ "$pct" -gt 0 ]] && watched_icon="▶ "
+                     [[ "$pct" =~ ^[0-9]+$ ]] && [[ "$pct" -gt 0 ]] && watched_icon="➤ "
                  fi
              fi
          fi
@@ -213,7 +213,8 @@ show_fzf_catalog() {
       --padding=1
       --info=hidden
       --prompt=\"< Page ${current_page}/${total_pages}${page_suffix} > \"
-      --pointer='▶'
+      --pointer='➤'
+      --color=pointer:#ff79c6:bold
       --header=\"$menu_header\"
       --header-first
       --preview-window=right:45%:wrap:border-left
@@ -262,7 +263,8 @@ show_fzf_catalog() {
         --delimiter=$'\t' \
         --with-nth=1 \
         --preview "$preview_script {2..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,ctrl-e,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
+        --bind "ctrl-e:execute(${FZF_CATALOG_DIR}/season_picker.sh {2..})+reload(printf '%s' \"$fzf_display\")" \
         $pos_bind \
         --exit-0 2>/dev/null)
     fzf_exit_code=$?
@@ -292,11 +294,7 @@ show_fzf_catalog() {
         ctrl-v) return 105 ;;  # Sort dropdown
         ctrl-g) return 106 ;;  # Genre dropdown
         ctrl-f) return 110 ;;  # Search
-        ctrl-e)                # Season Picker
-            echo "$(date): Ctrl+E pressed, saving selection and returning 111" >> /tmp/fzf_debug.log
-            echo "$selected_line" > "/tmp/termflix_selection"
-            return 111
-            ;;
+        # ctrl-e is now handled internally via --bind execute
         ctrl-r) return 109 ;;  # Refresh
         ">"|ctrl-right) return 107 ;;  # Next page
         "<"|ctrl-left) return 108 ;;   # Previous page
@@ -620,7 +618,7 @@ handle_fzf_selection() {
                         
                         local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
                             --margin=1 --padding=1 \
-                            --pointer='▶' \
+                            --pointer='➤' \
                             --prompt="> " \
                             --header="Episode: ${ep_title}" \
                             --header-first \
@@ -773,7 +771,7 @@ handle_fzf_selection() {
                      # pct is empty when there is no history entry for this hash
                      if [[ -n "$pct" ]]; then
                          progress_bar="$(generate_progress_bar "$pct")"
-                         # Only mark as "watched" (▶) once there's at least some progress
+                         # Only mark as "watched" (➤) once there's at least some progress
                          if [[ "$pct" -ge 0 ]]; then
                              watched_indicator="👀"
                          fi
@@ -910,7 +908,7 @@ handle_fzf_selection() {
                       --margin=1 \
                       --padding=1 \
                       --prompt='❯ ' \
-                      --pointer='▶' \
+                      --pointer='➤' \
                       --header="Pick Version - [${c_name}] →" \
                       --header-first \
                        --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
@@ -943,7 +941,7 @@ handle_fzf_selection() {
                       --border=rounded \
                       --margin=1 \
                       --padding=1 \
-                      --prompt="▶ Pick Version: " \
+                      --prompt="➤ Pick Version: " \
                       --header="🎬 Available Versions: (Ctrl+H to back)" \
                        --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
                       --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \

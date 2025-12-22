@@ -145,6 +145,14 @@ if [[ -f "$TMDB_MODULE" ]]; then
 import sys, json
 from datetime import datetime
 
+# ANSI color codes matching theme
+ORANGE = '\033[38;5;208m'  # Episode numbers
+WHITE = '\033[97m'
+CYAN = '\033[36m'
+GREEN = '\033[32m'
+GRAY = '\033[90m'
+RESET = '\033[0m'
+
 data = json.load(sys.stdin)
 today = datetime.now()
 lines = []
@@ -162,16 +170,21 @@ for e in data.get('episodes', []):
             # Check if episode has aired
             if air_date > today:
                 status = '🔒'  # Upcoming
+                date_color = GRAY
             else:
                 status = '  '  # Aired (can be watched)
+                date_color = GREEN
         except:
             date_display = air_date_str
             status = '  '
+            date_color = CYAN
     else:
         date_display = 'TBA'
         status = '🔒'
+        date_color = GRAY
     
-    lines.append(f'{status} E{ep_num:02d} │ {name[:25]:<25} │ {date_display}')
+    # Colorful format: magenta episode num, white name, colored date
+    lines.append(f'{status} {ORANGE}E{ep_num:02d}{RESET} │ {WHITE}{name[:25]:<25}{RESET} │ {date_color}{date_display}{RESET}')
 
 print('\\n'.join(lines))
 " 2>/dev/null)
@@ -358,16 +371,11 @@ echo
 # --- 8. UI: Dashboard (Episodes OR Sources) ---
 if [[ "$is_series" == "true" ]]; then
     if [[ -n "$episodes_list_raw" ]]; then
-        echo -e "${BOLD}${BLUE}󱜙 Season ${latest_season_num} Episodes:${RESET}"
+        echo -e "${BOLD}${MAGENTA}󱜙 Season ${latest_season_num} Episodes:${RESET}"
         echo -e "${THEME_DIM:-$GRAY}────────────────────────────────────────────────────────────${RESET}"
-        # Display each episode on its own line with subtle styling
+        # Display each episode - colors are embedded in Python output
         while IFS= read -r ep_line; do
-            # Check for lock icon (upcoming episode)
-            if [[ "$ep_line" == *"🔒"* ]]; then
-                echo -e "${THEME_DIM:-$GRAY}${ep_line}${RESET}"
-            else
-                echo -e "${CYAN}${ep_line}${RESET}"
-            fi
+            echo -e "$ep_line"
         done <<< "$episodes_list_raw" | head -n 12
     else
         echo -e "${GRAY}No episode data found for this series.${RESET}"

@@ -26,7 +26,7 @@ fi
 # ═══════════════════════════════════════════════════════════════
 #
 # USAGE GUIDE:
-#   C_GLOW      → Selection highlights, focused items, pointers (▶)
+#   C_GLOW      → Selection highlights, focused items, pointers (➤)
 #   C_SUBTLE    → Secondary/helper text, disabled labels
 #   C_MUTED     → Disabled elements, less important info
 #   C_SURFACE   → Light backgrounds, surfaces

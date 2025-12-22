@@ -115,7 +115,7 @@ RESULTS=$(printf '%s' "$episode_list" | fzf \
     --padding=1 \
     --delimiter='|' \
     --with-nth=2 \
-    --pointer='▶' \
+    --pointer='➤' \
     --prompt="> " \
     --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
     --header-first \

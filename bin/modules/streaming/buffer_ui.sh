@@ -440,7 +440,7 @@ PREVIEW_EOF
         --border-label=" Esc:Back " \
         --border-label-pos=bottom \
         --prompt='⬇ Buffering ' \
-        --pointer='▶' \
+        --pointer='➤' \
         --header="Streaming: ${title}" \
         --header-first \
         --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \

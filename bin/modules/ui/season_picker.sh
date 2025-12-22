@@ -3,7 +3,14 @@
 # Termflix Interactive Season Picker
 # usage: season_picker.sh "TITLE" "IMDB_ID"
 
-TITLE="$1"
+clear
+
+if [[ "$1" == *"|"* ]]; then
+    # Probably raw metadata: index|source|name|...
+    TITLE=$(echo "$1" | cut -d'|' -f3)
+else
+    TITLE="$1"
+fi
 # Robust IMDB ID extraction: Scan all arguments starting from $2
 IMDB_ID=""
 shift 1
@@ -48,7 +55,7 @@ SEASON_FILE="/tmp/tf_s_${SLUG}"
 # Determine current season
 CURRENT_SEASON=$(cat "$SEASON_FILE" 2>/dev/null || echo 1)
 
-# Fetch total seasons from TMDB
+# Fetch total seasons from TMDB (SILENTLY to preserve background)
 if tmdb_configured; then
     metadata_json=""
     if [[ -n "$IMDB_ID" && "$IMDB_ID" != "N/A" ]]; then
@@ -72,27 +79,36 @@ fi
 echo "[$(date)] total_seasons=$total_seasons" >> /tmp/season_picker.log 2>/dev/null
 
 # Generate Season List for FZF
-# Highlight current season with a star
 season_list=""
 for ((i=1; i<=total_seasons; i++)); do
-    prefix="  "
-    [[ "$i" == "$CURRENT_SEASON" ]] && prefix="👉"
-    season_list+="${prefix} Season ${i}\n"
+    if [[ "$i" == "$CURRENT_SEASON" ]]; then
+        season_list+="➜ Season ${i}\n"
+    else
+        season_list+="  Season ${i}\n"
+    fi
 done
 
 echo "[$(date)] season_list generated: $total_seasons items" >> /tmp/season_picker.log 2>/dev/null
 
-# Show FZF Picker - REMOVE 2>/dev/null to see errors
-echo "[$(date)] Launching FZF picker..." >> /tmp/season_picker.log 2>/dev/null
+# Show FZF Picker as a centered popup (Clean Simplified Modal)
+# Override inherited FZF_DEFAULT_OPTS to avoid catalog shortcuts
+export FZF_DEFAULT_OPTS=""
 
-SELECTED=$(echo -e "$season_list" | fzf \
-    --height=12 \
+SELECTED=$(printf "$season_list" | fzf \
+    --height=70% \
+    --margin=15%,20% \
     --layout=reverse \
-    --border \
-    --prompt="Select Season > " \
+    --border=rounded \
+    --padding=1 \
+    --info=inline \
+    --prompt="Select Season ➜ " \
     --header="Series: $CLEAN_TITLE (${total_seasons} seasons)" \
-    --pointer="▶" \
-    --color="hl:${THEME_ACCENT:-#e879f9},bg+:${THEME_BG_SEL:-#374151}" \
+    --border-label=" [ Enter:Select | Esc:Back ] " \
+    --border-label-pos=bottom \
+    --pointer="➜" \
+    --color="fg:#ffffff,fg+:#ffffff,hl:${THEME_HEX_GLOW:-#e879f9},hl+:${THEME_HEX_GLOW:-#e879f9},pointer:${THEME_HEX_GLOW:-#e879f9},border:${THEME_HEX_GLOW:-#e879f9},prompt:${THEME_HEX_GLOW:-#e879f9},info:${THEME_HEX_GLOW:-#e879f9},bg+:${THEME_HEX_BG_SELECTION:-#374151}" \
+    --bind "esc:abort" \
+    --header-first \
     2>>/tmp/season_picker.log)
 
 echo "[$(date)] FZF returned, SELECTED='$SELECTED'" >> /tmp/season_picker.log 2>/dev/null

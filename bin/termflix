@@ -609,49 +609,7 @@ main() {
                     fi
                     continue
                     ;;
-                111)
-                    # Interactive Season Picker (^E)
-                    echo "$(date): Main loop received exit code 111" >> /tmp/termflix_trace.log
-
-                    if [[ -f "/tmp/termflix_selection" ]]; then
-                        local raw_sel=$(cat "/tmp/termflix_selection")
-                        rm -f "/tmp/termflix_selection"
-
-                        if [[ -n "$raw_sel" ]]; then
-                             echo "$(date): Processing selection for season picker" >> /tmp/termflix_trace.log
-
-                             # Clear screen instead of reset (reset can kill TTY)
-                             clear
-
-                             # Extract fields (Title at 4; COMBINED imdb typically at 11)
-                             # "Display|Index|Source|Title|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDB|Category|..."
-                             local title
-                             title=$(echo "$raw_sel" | cut -d'|' -f4)
-                             
-                             # Extract index (field 2) for cursor restoration
-                             local sel_index
-                             sel_index=$(echo "$raw_sel" | cut -d'|' -f2)
-                             [[ "$sel_index" =~ ^[0-9]+$ ]] && echo "$sel_index" > /tmp/termflix_last_index
-                             
-                             local f10 f11 f12
-                             f10=$(echo "$raw_sel" | cut -d'|' -f10)
-                             f11=$(echo "$raw_sel" | cut -d'|' -f11)
-                             f12=$(echo "$raw_sel" | cut -d'|' -f12)
-
-                             echo "$(date): Launching season picker with title: '$title'" >> /tmp/termflix_trace.log
-                             echo "$(date): Arguments: f10='$f10' f11='$f11' f12='$f12'" >> /tmp/termflix_trace.log
-
-                             # Launch picker in foreground (it scans args for first tt*)
-                             "$SCRIPT_DIR/modules/ui/season_picker.sh" "$title" "$f10" "$f11" "$f12"
-
-                             # Force refresh to update preview
-                             export FORCE_REFRESH=true
-                        fi
-                    else
-                        echo "$(date): ERROR - No /tmp/termflix_selection file found!" >> /tmp/termflix_trace.log
-                    fi
-                    continue
-                    ;;
+                # Case 111 (Season Picker) is now handled internally via FZF execute binding in fzf_catalog.sh
                 *)   break ;;  # User cancelled or streamed
             esac
         done
