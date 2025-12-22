@@ -37,10 +37,13 @@ CACHE_TTL = 14400  # 4 hours
 # Global flags
 REFRESH_CACHE = False
 
-# Headers
+# Headers - must look like a real browser to avoid rate limiting
 HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-    'Accept': 'application/json'
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Connection': 'keep-alive',
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -55,13 +58,24 @@ def create_ssl_context():
     return ctx
 
 def fetch_url(url: str, timeout: int = TIMEOUT) -> Optional[str]:
-    """Fetch URL with retries."""
+    """Fetch URL with retries and gzip support."""
+    import gzip
+    import io
+    
     for attempt in range(MAX_RETRIES):
         try:
             req = urllib.request.Request(url, headers=HEADERS)
             ctx = create_ssl_context()
             with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-                return resp.read().decode('utf-8')
+                data = resp.read()
+                # Handle gzip encoding
+                encoding = resp.headers.get('Content-Encoding', '')
+                if 'gzip' in encoding:
+                    data = gzip.decompress(data)
+                elif 'deflate' in encoding:
+                    import zlib
+                    data = zlib.decompress(data)
+                return data.decode('utf-8')
         except Exception:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(0.5 * (attempt + 1))
@@ -222,6 +236,28 @@ def parse_yts_torrents(movie: Dict) -> List[Dict]:
 # TPB API
 # ═══════════════════════════════════════════════════════════════
 
+def fetch_url_curl(url: str, timeout: int = 10) -> Optional[str]:
+    """Fetch URL using curl subprocess (better browser emulation)."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            [
+                'curl', '-sL', '--max-time', str(timeout),
+                '-H', 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                '-H', 'Accept: application/json, text/plain, */*',
+                '-H', 'Accept-Language: en-US,en;q=0.9',
+                url
+            ],
+            capture_output=True,
+            text=True,
+            timeout=timeout + 5
+        )
+        if result.returncode == 0 and result.stdout and not result.stdout.startswith('429'):
+            return result.stdout
+    except Exception:
+        pass
+    return None
+
 def search_tpb(query: str, category: int = 207) -> List[Dict]:
     """Search TPB for torrents matching query (Default: HD Movies 207)."""
     # Check cache first
@@ -236,7 +272,8 @@ def search_tpb(query: str, category: int = 207) -> List[Dict]:
     encoded_query = urllib.parse.quote_plus(query)
     url = f"{TPB_SEARCH_URL}?q={encoded_query}&cat={category}"
     
-    response = fetch_url(url, timeout=5)
+    # Use curl for TPB (better at avoiding rate limits)
+    response = fetch_url_curl(url, timeout=8)
     if not response:
         return []
     

@@ -107,7 +107,7 @@ source "${SCRIPT_DIR}/image_display.sh"
 # Export additional series metadata for preview
 export SERIES_METADATA="$metadata_json"
 
-RESULTS=$(echo -e "$episode_list" | fzf \
+RESULTS=$(printf '%s' "$episode_list" | fzf \
     --height=100% \
     --layout=reverse \
     --border=rounded \
@@ -170,13 +170,15 @@ RESULTS=$(echo -e "$episode_list" | fzf \
         printf "  %s%s%s\n" "$WHITE" "$s_genres" "$RESET"
         echo
         
-        # --- UI: Poster (40x30) ---
+        # --- UI: Poster (skip in Kitty - causes overlap issues in FZF inline preview) ---
         if [[ -f "$SERIES_POSTER" ]]; then
             if [[ "$TERM" == "xterm-kitty" ]]; then
-                kitten icat --transfer-mode=file --stdin=no --place=40x30@0x0 --scale-up --align=left "$SERIES_POSTER" 2>/dev/null
-                for i in {1..30}; do echo; done
+                # Skip icat in FZF inline preview - causes overlap and navigation issues
+                # The poster is already visible in Stage 1 preview
+                echo "[Poster available - see Stage 1 preview]"
+                echo
             else
-                viu -w 40 -h 30 "$SERIES_POSTER" 2>/dev/null || chafa --size=40x30 "$SERIES_POSTER" 2>/dev/null
+                viu -w 40 -h 20 "$SERIES_POSTER" 2>/dev/null || chafa --size=40x20 "$SERIES_POSTER" 2>/dev/null
                 echo
             fi
         fi

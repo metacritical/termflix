@@ -213,18 +213,11 @@ get_latest_shows() {
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" --category shows $extra_args 2>/dev/null
-        local ret=$?
-        [[ $ret -eq 0 ]] && return 0
+        return $?
     fi
     
-    # Fallback to legacy TPB HD TV Shows if Python script fails
-    local tpb_url="https://apibay.org/precompiled/data_top100_208.json"
-    if command -v curl &> /dev/null && command -v jq &> /dev/null; then
-        local tpb_response=$(curl -s --max-time 10 "$tpb_url" 2>/dev/null)
-        if [ -n "$tpb_response" ]; then
-            echo "$tpb_response" | jq -r '.[]? | select(.info_hash != null and .info_hash != "") | "TPB|\(.name)|magnet:?xt=urn:btih:\(.info_hash)|\(.seeders) seeds|\(.size / 1024 / 1024 | floor)MB|TV Show"' 2>/dev/null
-        fi
-    fi
+    # No fallback - prefer showing "no results" over broken ungrouped data
+    return 1
 }
 
 # Get catalog by genre

@@ -218,7 +218,7 @@ if [[ "$source" == "COMBINED" ]]; then
     fi
     echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
     
-    # Fetch OMDB metadata for Runtime early
+    # Fetch OMDB metadata for Runtime and Rating
     movie_runtime=""
     if [[ -f "$OMDB_MODULE" && "$is_series" == "false" ]]; then
         source "$OMDB_MODULE" 2>/dev/null
@@ -227,6 +227,9 @@ if [[ "$source" == "COMBINED" ]]; then
             if [[ -n "$omdb_json" ]] && echo "$omdb_json" | grep -q '"Response":"True"'; then
                 [[ -z "$movie_genre" || "$movie_genre" == "N/A" ]] && movie_genre=$(echo "$omdb_json" | extract_omdb_genre 2>/dev/null)
                 movie_runtime=$(echo "$omdb_json" | extract_omdb_runtime 2>/dev/null)
+                # Extract IMDB rating
+                omdb_rating=$(echo "$omdb_json" | extract_omdb_rating 2>/dev/null)
+                [[ -n "$omdb_rating" && "$omdb_rating" != "N/A" ]] && movie_rating="$omdb_rating"
             fi
         fi
     fi
@@ -254,10 +257,14 @@ else
     echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
 fi
 
-# --- Rich Metadata Line (Year | Genre) ---
+# --- Rich Metadata Line (Year | Rating | Genre) ---
 metadata_line=""
 if [[ -n "$movie_year" && "$movie_year" != "N/A" ]]; then
     metadata_line+="${BOLD}Year:${RESET} ${CYAN}${movie_year}${RESET}"
+fi
+if [[ -n "$movie_rating" && "$movie_rating" != "N/A" ]]; then
+    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
+    metadata_line+="${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}/10${RESET}"
 fi
 if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
     [[ -n "$metadata_line" ]] && metadata_line+="  │  "
@@ -389,8 +396,21 @@ else
                 "1337x") src_color="$MAGENTA" ;;
             esac
             
-            # Format line without domain, fix spacing between emoji and text
-            printf "  ${ORANGE}🧲${RESET} ${src_color}[%s]${RESET} %-8s  -  %-10s  -  ${GREEN}👥 %s seeds${RESET}\n" "$item_src" "$item_qual" "$item_size" "$item_seed"
+            # Seed color based on count (green=high, yellow=medium, red=low)
+            seed_color="$GREEN"
+            seed_num="${item_seed//[^0-9]/}"  # Extract numeric part
+            if [[ -n "$seed_num" ]]; then
+                if [[ "$seed_num" -ge 100 ]]; then
+                    seed_color="$GREEN"
+                elif [[ "$seed_num" -ge 10 ]]; then
+                    seed_color="$YELLOW"
+                else
+                    seed_color="${THEME_ERROR:-$C_ERROR}"  # Red for low seeds
+                fi
+            fi
+            
+            # Format line without domain, with color-coded seeds
+            printf "  ${ORANGE}🧲${RESET} ${src_color}[%s]${RESET} %-8s  -  %-10s  -  ${seed_color}👥 %s seeds${RESET}\n" "$item_src" "$item_qual" "$item_size" "$item_seed"
         done
     else
         echo -e "${BOLD}Source:${RESET} ${GREEN}[${source}]${RESET} │ ${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET}"

@@ -21,7 +21,16 @@ _TERMFLIX_THEME_LOADED=1
 # CONFIGURATION
 # ═══════════════════════════════════════════════════════════════
 
-TERMFLIX_THEME="${TERMFLIX_THEME:-charm}"
+# Read theme from config file if TERMFLIX_THEME not already set via environment
+if [[ -z "${TERMFLIX_THEME:-}" ]]; then
+    # Try to read THEME from config file directly (avoid circular dependency with config.sh)
+    _config_file="${HOME}/.config/termflix/config"
+    if [[ -f "$_config_file" ]]; then
+        _theme_from_config=$(grep "^THEME=" "$_config_file" 2>/dev/null | cut -d'=' -f2 | tr -d '[:space:]"'"'"'')
+        [[ -n "$_theme_from_config" ]] && TERMFLIX_THEME="$_theme_from_config"
+    fi
+fi
+export TERMFLIX_THEME="${TERMFLIX_THEME:-charm}"
 TERMFLIX_THEME_DIR="${TERMFLIX_THEME_DIR:-$(dirname "${BASH_SOURCE[0]}")/../../themes}"
 TERMFLIX_USER_THEME_DIR="${HOME}/.config/termflix/themes"
 TERMFLIX_THEME_CACHE=""
@@ -171,13 +180,13 @@ parse_theme_css() {
             # --glow -> THEME_GLOW, --bg-selection -> THEME_BG_SELECTION
             local bash_name=$(echo "$var_name" | tr '[:lower:]-' '[:upper:]_')
             
-            # Store hex value for later use (e.g., by FZF)
-            eval "THEME_HEX_${bash_name}=\"${hex_value}\""
+            # Store hex value for later use (e.g., by FZF) - EXPORT for subprocesses
+            eval "export THEME_HEX_${bash_name}=\"${hex_value}\""
             
             # Convert to ANSI and store
             local ansi_code
             ansi_code=$(hex_to_ansi "$hex_value")
-            eval "THEME_${bash_name}=\"\${ansi_code}\""
+            eval "export THEME_${bash_name}=\"\${ansi_code}\""
         fi
     done <<< "$content"
 }

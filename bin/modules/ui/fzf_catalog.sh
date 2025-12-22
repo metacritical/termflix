@@ -573,7 +573,7 @@ handle_fzf_selection() {
                         # Use theme colors for consistency with Movies Stage 2
                         local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
                         
-                        local v_pick=$(echo -e "$options" | fzf --ansi --layout=reverse --border=rounded \
+                        local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
                             --margin=1 --padding=1 \
                             --pointer='▶' \
                             --prompt="> " \
