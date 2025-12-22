@@ -74,6 +74,7 @@ show_fzf_catalog() {
          
          # Parse for display
          IFS='|' read -r source name rest <<< "$result"
+         name="${name%|}"  # Strip any trailing |
          
          # Check watch history - extract magnet hash from rest data
          local watched_icon=""
@@ -94,8 +95,8 @@ show_fzf_catalog() {
          local display_line
          display_line=$(printf "%3d. %s%s" "$i" "$watched_icon" "$name")
          
-         # Store full data for preview snapshot
-         fzf_display+="$display_line|$i|$result"$'\n'
+         # Store full data for preview snapshot (use tab as separator for FZF to hide)
+         fzf_display+="${display_line}"$'\t'"${i}|${result}"$'\n'
     done
 
     # Persist the last catalog view to temp files so Stage 2
@@ -258,9 +259,9 @@ show_fzf_catalog() {
     local selection
     local fzf_exit_code=0
     selection=$(printf "%s" "$fzf_display" | fzf \
-        --delimiter='|' \
+        --delimiter=$'\t' \
         --with-nth=1 \
-        --preview "$preview_script {3..}" \
+        --preview "$preview_script {2..}" \
         --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,ctrl-e,enter,\>,\<,ctrl-right,ctrl-left \
         $pos_bind \
         --exit-0 2>/dev/null)
@@ -304,8 +305,10 @@ show_fzf_catalog() {
         # If no selection line (e.g. only key was output), return fail
     [[ -z "$selected_line" ]] && return 1
 
-    # Extract the actual data (everything after first |)
-    IFS='|' read -r _ index rest <<< "$selected_line"
+    # Extract the actual data (format: display<TAB>index|rest)
+    local display_part data_part
+    IFS=$'\t' read -r display_part data_part <<< "$selected_line"
+    IFS='|' read -r index rest <<< "$data_part"
     echo "$key|$index|$rest"
     return 0
 }
@@ -517,10 +520,42 @@ handle_fzf_selection() {
                         local ep_plot=$(echo "$ep_details" | jq -r '.overview // "No description"')
                         local ep_rating=$(echo "$ep_details" | jq -r '.vote_average // "N/A"')
                         
-                        export TERMFLIX_STAGE2_TITLE="${ep_title}"
+                        export TERMFLIX_STAGE2_TITLE="${ep_title} - [${series_name}] - S$(printf '%02d' "$current_s_num")E$(printf '%02d' "$e_num_picked")"
                         export TERMFLIX_STAGE2_PLOT="${ep_plot}"
                         export TERMFLIX_STAGE2_IMDB="${ep_rating}"
-                        export TERMFLIX_STAGE2_POSTER="$show_poster" # Keep series poster
+                        # Try EZTV episode screenshot first, then TMDB still, then series poster
+                        local poster_file=""
+                        local small_screenshot="" large_screenshot="" tmdb_still=""
+                        local ep_pattern=$(printf "S%02dE%02d" "$current_s_num" "$e_num_picked")
+                        
+                        # Extract episode screenshots from EZTV cache
+                        if [[ -f "$eztv_cache" ]]; then
+                            small_screenshot=$(jq -r --arg ep "$ep_pattern" '.torrents[]? | select(.filename | test($ep; "i")) | .small_screenshot | select(. != "" and . != null)' "$eztv_cache" 2>/dev/null | head -1)
+                            large_screenshot=$(jq -r --arg ep "$ep_pattern" '.torrents[]? | select(.filename | test($ep; "i")) | .large_screenshot | select(. != "" and . != null)' "$eztv_cache" 2>/dev/null | head -1)
+                            # Fix URLs (EZTV uses protocol-relative URLs starting with //)
+                            [[ -n "$small_screenshot" && "$small_screenshot" == "//"* ]] && small_screenshot="https:${small_screenshot}"
+                            [[ -n "$large_screenshot" && "$large_screenshot" == "//"* ]] && large_screenshot="https:${large_screenshot}"
+                        fi
+                        
+                        # Fallback: Try TMDB episode still image
+                        if [[ -z "$small_screenshot" ]]; then
+                            local still_path=$(echo "$ep_details" | jq -r '.still_path // empty' 2>/dev/null)
+                            if [[ -n "$still_path" && "$still_path" != "null" ]]; then
+                                tmdb_still="https://image.tmdb.org/t/p/w500${still_path}"
+                            fi
+                        fi
+                        
+                        # Download: EZTV screenshot > TMDB still > series poster
+                        local cache_dir="${HOME}/.cache/termflix/posters"; mkdir -p "$cache_dir"
+                        local image_url="${small_screenshot:-${tmdb_still:-$show_poster}}"
+                        
+                        if [[ -n "$image_url" && "$image_url" != "N/A" ]]; then
+                            local hash=$(echo -n "$image_url" | python3 -c "import sys,hashlib;print(hashlib.md5(sys.stdin.read().encode()).hexdigest())" 2>/dev/null)
+                            poster_file="${cache_dir}/${hash}.png"
+                            [[ ! -f "$poster_file" ]] && curl -sL --max-time 5 "$image_url" -o "$poster_file" 2>/dev/null
+                        fi
+                        export TERMFLIX_STAGE2_POSTER="$poster_file"
+                        export TERMFLIX_STAGE2_LARGE_SCREENSHOT="$large_screenshot"
                         export TERMFLIX_STAGE2_AVAIL=$(echo "$search_results" | cut -d'|' -f4 | sort -u | tr '\n' ' ' | sed 's/ $//;s/ /, /g')
                         export TERMFLIX_STAGE2_SOURCES="EZTV"
                         
@@ -548,7 +583,17 @@ handle_fzf_selection() {
                         local RED="${THEME_ERROR:-$C_ERROR:-$'\e[38;5;196m'}"
                         local RESET=$'\e[0m'
 
-                        for i in "${!magnets_arr[@]}"; do
+                        # Create sorted indices by seeds (highest first)
+                        local sorted_indices=()
+                        for i in "${!seeds_arr[@]}"; do
+                            sorted_indices+=("$i:${seeds_arr[$i]}")
+                        done
+                        # Sort by seeds descending
+                        IFS=$'\n' sorted_indices=($(printf '%s\n' "${sorted_indices[@]}" | sort -t: -k2 -rn))
+                        unset IFS
+
+                        for entry in "${sorted_indices[@]}"; do
+                            local i="${entry%%:*}"
                             local s="${sources_arr[$i]}"; local q="${qualities_arr[$i]}"
                             local sd="${seeds_arr[$i]}"; local sz="${sizes_arr[$i]}"
                             

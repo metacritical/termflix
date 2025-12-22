@@ -42,13 +42,15 @@ if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
 fi
 
 # Get environment variables set by fzf_catalog.sh
+# Check both STAGE2_* and TERMFLIX_STAGE2_* (Shows uses TERMFLIX_ prefix)
 selected_index="${STAGE2_SELECTED_INDEX:-}"
-title="${STAGE2_TITLE:-Unknown Title}"
-poster_file="${STAGE2_POSTER:-}"
-sources="${STAGE2_SOURCES:-}"
-avail="${STAGE2_AVAIL:-}"
-plot="${STAGE2_PLOT:-}"
-imdb="${STAGE2_IMDB:-}"
+title="${STAGE2_TITLE:-${TERMFLIX_STAGE2_TITLE:-Unknown Title}}"
+poster_file="${STAGE2_POSTER:-${TERMFLIX_STAGE2_POSTER:-}}"
+sources="${STAGE2_SOURCES:-${TERMFLIX_STAGE2_SOURCES:-}}"
+avail="${STAGE2_AVAIL:-${TERMFLIX_STAGE2_AVAIL:-}}"
+plot="${STAGE2_PLOT:-${TERMFLIX_STAGE2_PLOT:-}}"
+imdb="${STAGE2_IMDB:-${TERMFLIX_STAGE2_IMDB:-}}"
+large_screenshot="${TERMFLIX_STAGE2_LARGE_SCREENSHOT:-}"
 
 # Try environment first, otherwise fall back to snapshot files
 header="${TERMFLIX_LAST_FZF_HEADER:-}"
@@ -79,26 +81,43 @@ fi
 # HEADER AND CATALOG RENDERING
 # ═══════════════════════════════════════════════════════════════
 
-# Render header (matches Stage 1 style)
-if [[ -n "$header" ]]; then
+stage2_context="${TERMFLIX_STAGE2_CONTEXT:-${TERMFLIX_STAGE1_CONTEXT:-}}"
+
+# Only render header when NOT in search/shows context AND title is known
+# Shows workflow doesn't set context properly, so also check for TERMFLIX_STAGE2_TITLE
+should_show_header=true
+if [[ "$stage2_context" == "search" || "$stage2_context" == "shows" || "$stage2_context" == "tv" ]]; then
+    should_show_header=false
+elif [[ -n "${TERMFLIX_STAGE2_TITLE:-}" ]]; then
+    should_show_header=false
+elif [[ "$title" == "Unknown Title" ]]; then
+    should_show_header=false
+fi
+
+if [[ "$should_show_header" == "true" && -n "$header" ]]; then
     echo -e "${BOLD}${CYAN}${header}${RESET}"
     echo
 fi
-
-stage2_context="${TERMFLIX_STAGE2_CONTEXT:-${TERMFLIX_STAGE1_CONTEXT:-}}"
 
 # DEBUG: Log resolved context (only when --debug flag is set)
 if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
     echo "[DEBUG preview_stage2] stage2_context=$stage2_context" >&2
 fi
 
-# Only render the full Stage 1 catalog snapshot when we are NOT in a search context.
-# In search → Stage 2, the left pane should focus on details for the selected title,
-# not repeat the entire search results list (which also clips the poster).
+# Only render the full Stage 1 catalog snapshot when we are NOT in a search/shows context.
+# In search → Stage 2 or Shows, the left pane should focus on details for the selected title,
+# not repeat the entire catalog list (which also clips the poster).
 should_render_catalog=true
-if [[ "$stage2_context" == "search" ]]; then
+if [[ "$stage2_context" == "search" || "$stage2_context" == "shows" || "$stage2_context" == "tv" ]]; then
     should_render_catalog=false
-    [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Hiding catalog (search context)" >&2
+    [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Hiding catalog ($stage2_context context)" >&2
+# Also hide catalog if TERMFLIX_STAGE2_TITLE is set (Shows workflow uses this prefix)
+elif [[ -n "${TERMFLIX_STAGE2_TITLE:-}" ]]; then
+    should_render_catalog=false
+    [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Hiding catalog (TERMFLIX_STAGE2 detected)" >&2
+# Also hide catalog if title is unknown (Shows version picker without proper context)
+elif [[ "$title" == "Unknown Title" ]]; then
+    should_render_catalog=false
 else
     [[ "${TORRENT_DEBUG:-false}" == "true" ]] && echo "[DEBUG preview_stage2] Showing catalog (catalog context)" >&2
 fi
@@ -110,7 +129,10 @@ if [[ "$should_render_catalog" == true ]]; then
         # Re-render the movie list with selection marker
         while IFS= read -r line || [[ -n "$line" ]]; do
             [[ -z "$line" ]] && continue
-            IFS='|' read -r display idx _ <<< "$line"
+            # Format: display<TAB>idx|rest
+            local display idx_part
+            IFS=$'\t' read -r display idx_part <<< "$line"
+            IFS='|' read -r idx _ <<< "$idx_part"
             
             if [[ -n "$selected_index" && "$idx" == "$selected_index" ]]; then
                 # Highlight the originally selected movie
@@ -156,10 +178,12 @@ if [[ -f "$BUFFER_STATUS_FILE" ]]; then
 else
     # Show metadata if not streaming
     if [[ "$IS_KITTY_MODE" == "false" ]]; then
-        # Block mode: Show metadata before poster
-        echo -e "${BOLD}${MAGENTA}${title}${RESET}"
-        echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-        echo
+        # Block mode: Show metadata before poster (skip if Unknown Title)
+        if [[ "$title" != "Unknown Title" ]]; then
+            echo -e "${BOLD}${MAGENTA}${title}${RESET}"
+            echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+            echo
+        fi
         
         [[ -n "$sources" ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}${sources}${RESET}"
         [[ -n "$avail" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${avail}${RESET}"
@@ -250,7 +274,8 @@ else
                 echo -e "${DIM}[No poster cached]${RESET}"
             fi
         else
-            echo -e "${DIM}[No title info]${RESET}"
+            # No title info - skip silently (Shows workflow may not set title)
+            :
         fi
     fi
     
@@ -260,5 +285,10 @@ else
     if [[ -n "$plot" && "$plot" != "N/A" ]]; then
         echo -e "${DIM}${plot}${RESET}"
         echo
+    fi
+    
+    # Show clickable link for large episode screenshot if available
+    if [[ -n "$large_screenshot" ]]; then
+        echo -e "${DIM}📷 HD Screenshot: ${CYAN}${large_screenshot}${RESET}"
     fi
 fi

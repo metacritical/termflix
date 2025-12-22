@@ -42,8 +42,12 @@ ORANGE="${THEME_ORANGE:-$C_ORANGE}"
 PURPLE="${THEME_PURPLE:-$C_PURPLE}"
 
 # --- 3. Parse Input ---
-# Format: Source|Title|RestOfData...
-IFS='|' read -r source title rest <<< "$input_line"
+# Format: index|Source|Title|RestOfData... (after TAB delimiter change)
+# Skip the index field and parse the rest
+idx_field=""
+actual_data=""
+IFS='|' read -r idx_field actual_data <<< "$input_line"
+IFS='|' read -r source title rest <<< "$actual_data"
 
 # --- 4. Identify Type & Sanitize ---
 is_series="false"
