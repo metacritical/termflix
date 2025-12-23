@@ -3,7 +3,7 @@
 # Episode Preview Script - Matches Movies Stage 2 Layout
 # -------------------------------------------------------
 # Used in Shows Stage 2 (Episode Picker) preview pane.
-# Provides the same large poster + metadata layout as Movies.
+# Layout: Title → Sources → Available → [Poster] → Description → Genre
 #
 
 # Resolve script location
@@ -18,6 +18,7 @@ _SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 # Source dependencies
 source "${_SCRIPT_DIR}/../core/colors.sh"
 [[ -f "${_SCRIPT_DIR}/../core/theme.sh" ]] && source "${_SCRIPT_DIR}/../core/theme.sh"
+[[ -f "${_SCRIPT_DIR}/../core/genres.sh" ]] && source "${_SCRIPT_DIR}/../core/genres.sh"
 
 # Alias semantic colors
 MAGENTA="${THEME_GLOW:-${C_GLOW}}"
@@ -45,48 +46,14 @@ s_title=$(echo "$SERIES_METADATA" | jq -r '.name // .title // "Unknown Series"' 
 s_year=$(echo "$SERIES_METADATA" | jq -r '.first_air_date // ""' 2>/dev/null)
 s_year="${s_year:0:4}"
 
-# ═══════════════════════════════════════════════════════════════
-# POSTER - Render FIRST so @0x0 doesn't overlap text
-# ═══════════════════════════════════════════════════════════════
-
-poster_file="$SERIES_POSTER"
-
+# Check Kitty mode
 IS_KITTY_MODE=false
 if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
     IS_KITTY_MODE=true
 fi
 
-if [[ "$IS_KITTY_MODE" == "true" ]]; then
-    # KITTY MODE: Large poster with absolute positioning at 0x0
-    FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
-    [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
-    
-    IMAGE_WIDTH=40
-    IMAGE_HEIGHT=30
-    
-    if [[ -f "$poster_file" ]]; then
-        kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
-            --scale-up --align=left \
-            "$poster_file" 2>/dev/null
-    fi
-    
-    # Add newlines AFTER icat to push text below the image
-    for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
-else
-    # BLOCK MODE: Use viu/chafa (renders inline naturally)
-    if [[ -n "$poster_file" && -f "$poster_file" ]]; then
-        if command -v viu &>/dev/null; then
-            viu -w 50 -h 35 "$poster_file" 2>/dev/null
-        elif command -v chafa &>/dev/null; then
-            chafa --size=50x35 "$poster_file" 2>/dev/null
-        fi
-        echo
-    fi
-fi
-
 # ═══════════════════════════════════════════════════════════════
-# HEADER - Episode Title (now BELOW poster in Kitty mode)
+# 1. HEADER - Title (FIRST)
 # ═══════════════════════════════════════════════════════════════
 
 echo -e "📺  ${BOLD}${MAGENTA}${e_name}${RESET}"
@@ -94,12 +61,14 @@ echo -e "${GRAY}━━━━━━━━━━━━━━━━━━━━━�
 echo
 
 # ═══════════════════════════════════════════════════════════════
-# METADATA - Sources, Runtime, Rating
+# 2. METADATA - Sources, Runtime, Rating
 # ═══════════════════════════════════════════════════════════════
 
 # Sources (show available sources for this episode from EZTV cache)
+EZTV_CACHE="${TMPDIR:-/tmp}/termflix_eztv_cache.json"
 if [[ -f "$EZTV_CACHE" ]]; then
-    torrent_count=$(jq -r --argjson ep "$ep_no" --argjson s "${S_NUM:-1}" '.torrents[]? | select(.season == ($s | tostring) and .episode == ($ep | tostring)) | .hash' "$EZTV_CACHE" 2>/dev/null | wc -l | tr -d ' ')
+    S_NUM="${S_NUM:-1}"
+    torrent_count=$(jq -r --argjson ep "$ep_no" --argjson s "${S_NUM}" '.torrents[]? | select(.season == ($s | tostring) and .episode == ($ep | tostring)) | .hash' "$EZTV_CACHE" 2>/dev/null | wc -l | tr -d ' ')
     [[ "$torrent_count" -gt 0 ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}[EZTV]${RESET} - ${torrent_count} 🧲"
 fi
 
@@ -113,21 +82,81 @@ fi
 [[ -n "$meta_line" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${meta_line}${RESET}"
 echo
 
-echo -e "${GRAY}Ctrl+H to go back • Enter to select${RESET}"
-echo -e "${GRAY}────────────────────────────────────────${RESET}"
-echo
-
 # ═══════════════════════════════════════════════════════════════
-# DESCRIPTION & GENRE
+# 3. POSTER - After metadata
 # ═══════════════════════════════════════════════════════════════
 
-# Plot/Summary - print color, then text (fmt can't handle ANSI codes)
-if [[ -n "$e_plot" && "$e_plot" != "No description available." ]]; then
+poster_file="$SERIES_POSTER"
+FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+[[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
+
+if [[ "$IS_KITTY_MODE" == "true" ]]; then
+    # KITTY MODE: Poster size (50x30)
+    KITTY_WIDTH=50
+    KITTY_HEIGHT=30
+    
+    if [[ -f "$poster_file" ]]; then
+        kitten icat --transfer-mode=file --stdin=no \
+            --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x4 \
+            --scale-up --align=left \
+            "$poster_file" 2>/dev/null
+        # Add newlines to push cursor below image
+        for ((i=0; i<KITTY_HEIGHT; i++)); do echo; done
+    fi
+else
+    # BLOCK MODE: Poster size (40x30)
+    if [[ -n "$poster_file" && -f "$poster_file" ]]; then
+        if command -v viu &>/dev/null; then
+            viu -w 40 -h 30 "$poster_file" 2>/dev/null
+        elif command -v chafa &>/dev/null; then
+            chafa --size=40x30 "$poster_file" 2>/dev/null
+        fi
+        echo
+    fi
+fi
+
+# ═══════════════════════════════════════════════════════════════
+# 4. METADATA AFTER POSTER - Rating, Release Date, Genre
+# ═══════════════════════════════════════════════════════════════
+
+echo  # Line after poster
+
+# Rating
+if [[ "$e_rating" != "N/A" && "$e_rating" != "0" && "$e_rating" != "null" && -n "$e_rating" ]]; then
+    echo -e "${BOLD}Rating:${RESET} ${YELLOW}⭐ $(printf "%.1f" "$e_rating")${RESET}"
+fi
+
+# Release Date
+if [[ "$e_date" != "TBA" && "$e_date" != "null" && -n "$e_date" ]]; then
+    echo -e "${BOLD}Release Date:${RESET} ${CYAN}${e_date}${RESET}"
+fi
+
+# Genre (moved from bottom)
+if [[ -n "$s_genres" && "$s_genres" != "null" ]]; then
+    if command -v style_genres &>/dev/null; then
+        styled_genre=$(style_genres "$s_genres" 2>/dev/null || echo "$s_genres")
+        echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+    else
+        echo -e "${BOLD}Genre:${RESET} ${s_genres}"
+    fi
+fi
+
+echo  # Line before description
+
+# ═══════════════════════════════════════════════════════════════
+# 5. DESCRIPTION
+# ═══════════════════════════════════════════════════════════════
+
+# Plot/Summary
+if [[ -n "$e_plot" && "$e_plot" != "No description available." && "$e_plot" != "null" ]]; then
     printf "%s" "$GRAY"
     echo "$e_plot" | fmt -w 50
     printf "%s" "$RESET"
     echo
 fi
 
-# Genre footer
-echo -e "${s_genres}"
+# ═══════════════════════════════════════════════════════════════
+# 6. SHORTCUTS FOOTER
+# ═══════════════════════════════════════════════════════════════
+
+echo -e "${GRAY}Ctrl+H to go back • Enter to select${RESET}"
