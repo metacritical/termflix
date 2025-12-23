@@ -24,7 +24,7 @@ STAGE2_SOURCES="[YTS][TPB]" \
 STAGE2_AVAIL="1080p (2.1GB), 720p (1.2GB)" \
 STAGE2_PLOT="A computer hacker learns about the true nature of reality." \
 STAGE2_IMDB="8.7" \
-/Users/pankajdoharey/Development/termflix/bin/modules/ui/previews/preview_stage2.sh 2>&1 | grep -E "\[DEBUG|should_render"
+/Users/pankajdoharey/Development/termflix/modules/ui/previews/preview_stage2.sh 2>&1 | grep -E "\[DEBUG|should_render"
 
 echo
 echo "✓ If you see 'Hiding catalog (search context)', it's working!"
@@ -48,7 +48,7 @@ STAGE2_SOURCES="[YTS][TPB]" \
 STAGE2_AVAIL="1080p (2.1GB), 720p (1.2GB)" \
 STAGE2_PLOT="A computer hacker learns about the true nature of reality." \
 STAGE2_IMDB="8.7" \
-/Users/pankajdoharey/Development/termflix/bin/modules/ui/previews/preview_stage2.sh 2>&1 | grep -E "\[DEBUG|should_render"
+/Users/pankajdoharey/Development/termflix/modules/ui/previews/preview_stage2.sh 2>&1 | grep -E "\[DEBUG|should_render"
 
 echo
 echo "✓ If you see 'Showing catalog (catalog context)', it's working!"

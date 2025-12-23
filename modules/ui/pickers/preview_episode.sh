@@ -15,7 +15,7 @@ while [ -L "$SCRIPT_SOURCE" ]; do
 done
 _SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 UI_DIR="$(cd "${_SCRIPT_DIR}/.." && pwd)"
-ROOT_DIR="$(cd "${UI_DIR}/../../.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../.." && pwd)"
 
 # Source dependencies
 source "${UI_DIR}/../core/colors.sh"

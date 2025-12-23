@@ -12,11 +12,11 @@ MODULE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Main streaming logic for peerflix and transmission-cli
 #
 
-# Note: calculate_optimal_buffer() is now in bin/modules/streaming/buffer_monitor.sh
+# Note: calculate_optimal_buffer() is now in modules/streaming/buffer_monitor.sh
 # Function removed during Dec 2025 refactoring to reduce torrent.sh size
 
 
-# Note: has_subtitles() is now in bin/modules/streaming/subtitle_manager.sh
+# Note: has_subtitles() is now in modules/streaming/subtitle_manager.sh
 # Function removed during Dec 2025 refactoring to reduce torrent.sh size
 
 # ============================================================
@@ -1709,7 +1709,7 @@ EOF
     # Return 0 to indicate successful stream (catalog will loop)
     return 0
     
-    # Note: Player monitoring logic extracted to bin/modules/streaming/player.sh
+    # Note: Player monitoring logic extracted to modules/streaming/player.sh
     # Function monitor_player_process() handles VLC/mpv fork detection and cleanup
     # Removed during Dec 2025 refactoring to reduce torrent.sh size
 }

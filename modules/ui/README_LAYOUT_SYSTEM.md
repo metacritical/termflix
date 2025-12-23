@@ -40,7 +40,7 @@ Define layouts declaratively in XML:
 ## Directory Structure
 
 ```
-bin/modules/ui/
+modules/ui/
 ├── catalog/
 │   ├── fzf_catalog.sh             # Main catalog UI
 │   └── preview_fzf.sh             # Catalog preview pane
@@ -79,7 +79,7 @@ bin/modules/ui/
 
 ```bash
 # Source the parser
-source bin/modules/ui/lib/ui_parser.sh
+source modules/ui/lib/ui_parser.sh
 
 # Run fzf with a layout
 selection=$(printf "%s" "$data" | run_fzf_layout "episode-picker")
@@ -286,7 +286,7 @@ SELECTED=$(echo "$RESULTS" | tail -1)
 source "${UI_DIR}/lib/ui_parser.sh"
 export CLEAN_TITLE="Series Name"
 export SEASON_NUM="1"
-export UI_DIR="/path/to/bin/modules/ui"
+export UI_DIR="/path/to/modules/ui"
 
 RESULTS=$(printf "%s" "$episode_list" | run_fzf_layout "episode-picker")
 

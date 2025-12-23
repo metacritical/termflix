@@ -31,8 +31,8 @@ get_latest_movies() {
     [[ -n "$CURRENT_CATEGORY" ]] && extra_args+=" --category $CURRENT_CATEGORY"
     
     # Use multi-source Python script (combines YTS + TPB)
-    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" --category movies $extra_args 2>/dev/null
@@ -90,8 +90,8 @@ get_trending_movies() {
     [[ -n "$CURRENT_CATEGORY" ]] && extra_args+=" --category $CURRENT_CATEGORY"
     
     # Use multi-source Python script with download_count sort (trending)
-    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" --sort download_count --category movies $extra_args 2>/dev/null
@@ -145,8 +145,8 @@ get_popular_movies() {
     [[ -n "$CURRENT_CATEGORY" ]] && extra_args+=" --category $CURRENT_CATEGORY"
     
     # Use multi-source Python script with rating sort (popular)
-    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" --sort rating --category movies $extra_args 2>/dev/null
@@ -208,8 +208,8 @@ get_latest_shows() {
     [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
     [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order-by $CURRENT_ORDER"
     
-    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" --category shows $extra_args 2>/dev/null
@@ -252,8 +252,8 @@ get_catalog_by_genre() {
     [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order $CURRENT_ORDER"
 
     # Use multi-source Python script
-    local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+    local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+    [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
     
     if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
         python3 "$script_path" --limit "$limit" --page "$page" $extra_args 2>/dev/null

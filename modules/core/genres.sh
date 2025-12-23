@@ -15,7 +15,7 @@ _TERMFLIX_GENRES_LOADED=1
 
 # Resolve script directory
 _GENRE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# genres.sh is in /bin/modules/core/, genres.json is in /bin/data/
+# genres.sh is in /modules/core/, genres.json is in /data/
 _GENRES_JSON="${_GENRE_SCRIPT_DIR}/../../data/genres.json"
 
 # ANSI color helpers

@@ -2,7 +2,7 @@
 # Test script for watch history functionality
 
 # Source the watch history module
-source bin/modules/watch_history.sh
+source modules/watch_history.sh
 
 echo "=== Testing Watch History Module ==="
 echo

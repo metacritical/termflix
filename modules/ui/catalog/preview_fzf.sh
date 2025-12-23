@@ -21,10 +21,10 @@ done
 # Always set SCRIPT_DIR after resolving symlinks
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 UI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ROOT_DIR="$(cd "${UI_DIR}/../../.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../.." && pwd)"
 
 if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
-    TERMFLIX_SCRIPTS_DIR="$(cd "${UI_DIR}/../../scripts" 2>/dev/null && pwd)"
+    TERMFLIX_SCRIPTS_DIR="$(cd "${ROOT_DIR}/lib/termflix/scripts" 2>/dev/null && pwd)"
 fi
 
 # --- 2. Source Theme & Colors ---

@@ -20,7 +20,7 @@ STAGE2_SOURCES="[YTS][TPB]" \
 STAGE2_AVAIL="1080p, 720p" \
 STAGE2_PLOT="Test plot" \
 STAGE2_IMDB="8.5" \
-/Users/pankajdoharey/Development/termflix/bin/modules/ui/previews/preview_stage2.sh 2>&1 | head -20
+/Users/pankajdoharey/Development/termflix/modules/ui/previews/preview_stage2.sh 2>&1 | head -20
 
 echo
 echo "=== Expected Debug Output ==="

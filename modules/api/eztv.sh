@@ -15,7 +15,7 @@ _TERMFLIX_EZTV_LOADED=1
 # Get script directory
 EZTV_SCRIPT_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EZTV_BIN_DIR="${EZTV_SCRIPT_DIR}/../.."
-EZTV_PYTHON_SCRIPT="${EZTV_BIN_DIR}/scripts/search_eztv.py"
+EZTV_PYTHON_SCRIPT="${TERMFLIX_SCRIPTS_DIR:-${EZTV_BIN_DIR}/lib/termflix/scripts}/search_eztv.py"
 
 # Source dependencies
 if [[ -f "${EZTV_SCRIPT_DIR}/../core/config.sh" ]]; then

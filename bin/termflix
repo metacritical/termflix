@@ -35,19 +35,21 @@ done
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
 export SCRIPT_DIR
 
-# Define scripts directory (Python scripts location)
-# SCRIPT_DIR is bin/, so we go up and into lib/termflix/scripts
+# Define scripts directories
+# SCRIPT_DIR is bin/, so we go up into lib/termflix/scripts for core Python backends.
 TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../lib/termflix/scripts" && pwd)"
-export TERMFLIX_SCRIPTS_DIR
+# Standalone helper scripts live in scripts/python.
+TERMFLIX_HELPER_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../scripts/python" && pwd)"
+export TERMFLIX_SCRIPTS_DIR TERMFLIX_HELPER_SCRIPTS_DIR
 
 # ============================================================
 # MODULE LOADING
 # ============================================================
 
 # Core Modules
-source "$SCRIPT_DIR/modules/core/colors.sh"
-source "$SCRIPT_DIR/modules/core/config.sh"
-source "$SCRIPT_DIR/modules/core/deps.sh"
+source "$SCRIPT_DIR/../modules/core/colors.sh"
+source "$SCRIPT_DIR/../modules/core/config.sh"
+source "$SCRIPT_DIR/../modules/core/deps.sh"
 
 # Load Configured Theme
 # (theme.sh is loaded early by colors.sh with defaults, so we reload here if config overrides)
@@ -57,21 +59,21 @@ if [[ -n "$CFG_THEME" && "$CFG_THEME" != "charm" ]]; then
 fi
 
 # API Modules
-source "$SCRIPT_DIR/modules/api/tmdb.sh"
-source "$SCRIPT_DIR/modules/api/omdb.sh"
+source "$SCRIPT_DIR/../modules/api/tmdb.sh"
+source "$SCRIPT_DIR/../modules/api/omdb.sh"
 
 # UI Modules
-source "$SCRIPT_DIR/modules/ui/lib/status.sh"
-source "$SCRIPT_DIR/modules/ui/lib/help.sh"
-source "$SCRIPT_DIR/modules/ui/catalog/fzf_catalog.sh"
+source "$SCRIPT_DIR/../modules/ui/lib/status.sh"
+source "$SCRIPT_DIR/../modules/ui/lib/help.sh"
+source "$SCRIPT_DIR/../modules/ui/catalog/fzf_catalog.sh"
 
 # Feature Modules
-source "$SCRIPT_DIR/modules/posters.sh"
-source "$SCRIPT_DIR/modules/search.sh"
-source "$SCRIPT_DIR/modules/catalog.sh"
-source "$SCRIPT_DIR/modules/watch_history.sh"
-source "$SCRIPT_DIR/modules/torrent.sh"
-source "$SCRIPT_DIR/modules/streaming/player.sh"
+source "$SCRIPT_DIR/../modules/posters.sh"
+source "$SCRIPT_DIR/../modules/search.sh"
+source "$SCRIPT_DIR/../modules/catalog.sh"
+source "$SCRIPT_DIR/../modules/watch_history.sh"
+source "$SCRIPT_DIR/../modules/torrent.sh"
+source "$SCRIPT_DIR/../modules/streaming/player.sh"
 
 # Initialize directories
 init_termflix_dirs

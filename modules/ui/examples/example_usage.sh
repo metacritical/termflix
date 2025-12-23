@@ -32,7 +32,7 @@ example_episode_picker() {
     # Set environment variables that layout expects
     export CLEAN_TITLE="Example Series"
     export SEASON_NUM="1"
-    export UI_DIR="${UI_DIR:-/path/to/bin/modules/ui}"
+    export UI_DIR="${UI_DIR:-/path/to/modules/ui}"
 
     local results
     results=$(printf "%s" "$episode_list" | run_fzf_layout "episode-picker")

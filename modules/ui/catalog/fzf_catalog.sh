@@ -246,7 +246,7 @@ show_fzf_catalog() {
     local preview_script="${FZF_CATALOG_DIR}/preview_fzf.sh"
     
     # 3.5. Launch background precache for first 50 movies
-    local precache_script="${FZF_CATALOG_DIR}/../../scripts/precache_catalog.py"
+    local precache_script="${TERMFLIX_HELPER_SCRIPTS_DIR:-${FZF_CATALOG_DIR}/../../scripts/python}/precache_catalog.py"
     if [[ -f "$precache_script" ]] && command -v python3 &>/dev/null; then
         # Pipe catalog data to precache script in background (suppress ALL output)
         (printf "%s" "$fzf_input" | python3 "$precache_script" 50 >/dev/null 2>&1) &
@@ -484,7 +484,7 @@ handle_fzf_selection() {
                     fi
                     
                     # ADDITIONAL SOURCE: ALWAYS search TPB for more results (parallel with EZTV)
-                    local fetcher_script="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
+                    local fetcher_script="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
                     local tpb_results=$(python3 "$fetcher_script" --query "$search_query" --limit 15 --category shows 2>/dev/null | grep "^COMBINED")
                     
                     # Merge TPB results with EZTV results
@@ -651,8 +651,8 @@ handle_fzf_selection() {
                         # Pass series_name (not ep_title) for backdrop search
                         local plot_text="${ep_plot:-}"
                         export TERMFLIX_CONTENT_TYPE="show"
-                        if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
-                            source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
+                        if [[ -f "$SCRIPT_DIR/../modules/streaming/buffer_ui.sh" ]]; then
+                            source "$SCRIPT_DIR/../modules/streaming/buffer_ui.sh"
                             show_inline_buffer_ui "$series_name" "${show_poster:-}" "$plot_text" "$mag" "EZTV" "${qualities_arr[$idx]}" "$idx" "$imdb_id"
                         else
                             stream_torrent "$mag" "" false false
@@ -671,8 +671,8 @@ handle_fzf_selection() {
             sleep 1
             
             # Use fetch_multi_source_catalog.py directly for raw series search
-            local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "$0")/../scripts}/fetch_multi_source_catalog.py"
-            [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/fetch_multi_source_catalog.py"
+            local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+            [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
             
             local search_results
             search_results=$(python3 "$script_path" --query "$series_name" --limit 20 2>/dev/null | grep "^COMBINED")
@@ -728,8 +728,8 @@ handle_fzf_selection() {
          poster="$c_poster"
          
          # Source watch history module for progress display (Stage 2)
-         if [[ -f "$SCRIPT_DIR/modules/watch_history.sh" ]]; then
-             source "$SCRIPT_DIR/modules/watch_history.sh"
+        if [[ -f "$SCRIPT_DIR/../modules/watch_history.sh" ]]; then
+            source "$SCRIPT_DIR/../modules/watch_history.sh"
          fi
          
          # Prepare version options for "Right Pane" FZF with nice formatting
@@ -814,8 +814,8 @@ handle_fzf_selection() {
              echo "0|0|0|0|0|BUFFERING" > "$BUFFER_STATUS_FILE"
              if [ -z "$TORRENT_TOOL" ]; then check_deps; fi
              export TERMFLIX_BUFFER_STATUS="$BUFFER_STATUS_FILE"
-             if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
-                 source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
+            if [[ -f "$SCRIPT_DIR/../modules/streaming/buffer_ui.sh" ]]; then
+                source "$SCRIPT_DIR/../modules/streaming/buffer_ui.sh"
                  local plot_text="${c_plot:-$plot}"
                  local ver_idx=""
                  if [[ -n "$ver_pick" ]]; then ver_idx=$(echo "$ver_pick" | cut -d'|' -f1); fi
