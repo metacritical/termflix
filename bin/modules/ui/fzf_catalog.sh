@@ -641,10 +641,12 @@ handle_fzf_selection() {
                         local mag="${magnets_arr[$idx]}"
                         
                         # STREAM IT - Use same buffer UI as Movies
+                        # Pass series_name (not ep_title) for backdrop search
                         local plot_text="${ep_plot:-}"
+                        export TERMFLIX_CONTENT_TYPE="show"
                         if [[ -f "$SCRIPT_DIR/modules/streaming/buffer_ui.sh" ]]; then
                             source "$SCRIPT_DIR/modules/streaming/buffer_ui.sh"
-                            show_inline_buffer_ui "$ep_title" "${show_poster:-}" "$plot_text" "$mag" "EZTV" "${qualities_arr[$idx]}" "$idx" "$imdb_id"
+                            show_inline_buffer_ui "$series_name" "${show_poster:-}" "$plot_text" "$mag" "EZTV" "${qualities_arr[$idx]}" "$idx" "$imdb_id"
                         else
                             stream_torrent "$mag" "" false false
                         fi
