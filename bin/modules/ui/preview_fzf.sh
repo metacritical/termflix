@@ -271,9 +271,11 @@ if [[ "$source" == "COMBINED" ]]; then
         fi
     done
     
-    # Show Available + Runtime on same line
+    # Show Available + Seasons on same line (for shows)
     avail_line="${BOLD}Available:${RESET} ${CYAN}${quals_display}${RESET}"
-    if [[ -n "$movie_runtime" && "$movie_runtime" != "N/A" ]]; then
+    if [[ "$is_series" == "true" && -n "$total_seasons" ]]; then
+        avail_line+="  │  ${BOLD}Seasons:${RESET} ${CYAN}${total_seasons}${RESET}"
+    elif [[ -n "$movie_runtime" && "$movie_runtime" != "N/A" ]]; then
         avail_line+="  │  ${BOLD}Runtime:${RESET} ${CYAN}${movie_runtime}${RESET}"
     fi
     echo -e "$avail_line"
@@ -283,21 +285,7 @@ else
     echo -e "${BOLD}Quality:${RESET} ${CYAN}${quality}${RESET} │ ${BOLD}Size:${RESET} ${YELLOW}${size}${RESET} │ ${BOLD}Seeds:${RESET} ${GREEN}${seeds}${RESET}"
 fi
 
-# --- Rich Metadata Line (Year | Rating | Seasons) ---
-metadata_line=""
-if [[ -n "$movie_year" && "$movie_year" != "N/A" ]]; then
-    metadata_line+="${BOLD}Year:${RESET} ${CYAN}${movie_year}${RESET}"
-fi
-if [[ -n "$movie_rating" && "$movie_rating" != "N/A" ]]; then
-    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
-    metadata_line+="${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}/10${RESET}"
-fi
-if [[ "$is_series" == "true" && -n "$total_seasons" ]]; then
-    [[ -n "$metadata_line" ]] && metadata_line+="  │  "
-    metadata_line+="${BOLD}Seasons:${RESET} ${CYAN}${total_seasons}${RESET}"
-fi
-
-[[ -n "$metadata_line" ]] && echo -e "$metadata_line"
+# (Seasons already shown in Available line above for shows)
 
 # --- Genre Line (separate to prevent truncation) ---
 if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
@@ -332,19 +320,27 @@ fi
 
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Clear previous image with blank, then draw poster
+        # Kitty: Scale poster based on available space
+        # Use FZF_PREVIEW_COLUMNS/LINES if available, else defaults
+        KITTY_WIDTH=${FZF_PREVIEW_COLUMNS:-40}
+        KITTY_HEIGHT=${FZF_PREVIEW_LINES:-30}
+        # Limit to reasonable max
+        ((KITTY_WIDTH = KITTY_WIDTH > 45 ? 45 : KITTY_WIDTH))
+        ((KITTY_HEIGHT = KITTY_HEIGHT > 30 ? 30 : KITTY_HEIGHT))
+        
+        # Clear previous image with blank, then draw poster
         BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
         if [[ -f "$BLANK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
-                --place=20x16@0x0 \
+                --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x6 \
                 --scale-up "$BLANK_IMG" 2>/dev/null
         fi
         kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x6 \
             --scale-up --align=left \
             "$poster_path" 2>/dev/null
         # Add newlines to reserve space after image
-        for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
+        for ((i=0; i<KITTY_HEIGHT; i++)); do echo; done
     else
         # Block mode: viu/chafa writes text-based image
         if command -v viu &>/dev/null; then 
@@ -360,7 +356,6 @@ else
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
         if [[ -f "$FALLBACK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
-                --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
                 --scale-up --align=left "$FALLBACK_IMG" 2>/dev/null
             for ((i=0; i<IMAGE_HEIGHT; i++)); do echo; done
         else

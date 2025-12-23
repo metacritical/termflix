@@ -218,21 +218,25 @@ if [[ "$IS_KITTY_MODE" == "true" ]]; then
     [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
     
     if [[ -f "$poster_file" ]]; then
-        # Larger poster size to match text mode
-        IMAGE_WIDTH=40
-        IMAGE_HEIGHT=30
+        # Kitty: DOUBLED poster size (80x60 default, max 90x60)
+        KITTY_WIDTH=${FZF_PREVIEW_COLUMNS:-80}
+        KITTY_HEIGHT=${FZF_PREVIEW_LINES:-60}
+        # Limit to reasonable max (doubled from 45x30)
+        ((KITTY_WIDTH = KITTY_WIDTH > 90 ? 90 : KITTY_WIDTH))
+        ((KITTY_HEIGHT = KITTY_HEIGHT > 60 ? 60 : KITTY_HEIGHT))
         
-        # Display inline (no absolute positioning in search mode)
         kitten icat --transfer-mode=file --stdin=no \
-            --place=${IMAGE_WIDTH}x${IMAGE_HEIGHT}@0x0 \
+            --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x6 \
             --scale-up --align=left \
             "$poster_file" 2>/dev/null
+        
+        # Add newlines to reserve space after image
+        for ((i=0; i<KITTY_HEIGHT; i++)); do echo; done
     fi
     
-    echo
-    
-    # Display plot/description
+    # Display plot/description AFTER poster
     if [[ -n "$plot" && "$plot" != "N/A" ]]; then
+        echo
         echo -e "${DIM}${plot}${RESET}"
         echo
     fi
@@ -241,7 +245,7 @@ else
     # Image flows naturally in the text stream
     
     if [[ -n "$poster_file" && -f "$poster_file" ]]; then
-        display_image "$poster_file" 50 35
+        display_image "$poster_file" 80 70
     else
         # Try to download poster if we have a cached URL
         cache_dir="${HOME}/.cache/termflix/posters"
