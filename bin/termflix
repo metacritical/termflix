@@ -158,6 +158,8 @@ main() {
             --clear)
                 local cache_dir="$HOME/.config/termflix/cache"
                 local multi_source_cache="$HOME/.cache/termflix/multi_source"
+                local poster_cache="$HOME/.cache/termflix/posters"
+                local backdrop_cache="${TMPDIR:-/tmp}/termflix_backdrops"
                 local cleared=0
                 
                 # Clear catalog cache
@@ -176,6 +178,26 @@ main() {
                     rm -rf "$multi_source_cache" 2>/dev/null
                     if [ "$ms_count" -gt 0 ]; then
                         echo -e "${GREEN}✓ Cleared ${ms_count} multi-source cache file(s)${RESET}"
+                        cleared=1
+                    fi
+                fi
+                
+                # Clear poster cache
+                if [ -d "$poster_cache" ]; then
+                    local poster_count=$(find "$poster_cache" -type f 2>/dev/null | wc -l | tr -d ' ')
+                    rm -rf "$poster_cache" 2>/dev/null
+                    if [ "$poster_count" -gt 0 ]; then
+                        echo -e "${GREEN}✓ Cleared ${poster_count} poster cache file(s)${RESET}"
+                        cleared=1
+                    fi
+                fi
+                
+                # Clear backdrop cache
+                if [ -d "$backdrop_cache" ]; then
+                    local backdrop_count=$(find "$backdrop_cache" -type f 2>/dev/null | wc -l | tr -d ' ')
+                    rm -rf "$backdrop_cache" 2>/dev/null
+                    if [ "$backdrop_count" -gt 0 ]; then
+                        echo -e "${GREEN}✓ Cleared ${backdrop_count} backdrop cache file(s)${RESET}"
                         cleared=1
                     fi
                 fi
