@@ -14,11 +14,13 @@ while [ -L "$SCRIPT_SOURCE" ]; do
     [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
 done
 _SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+UI_DIR="$(cd "${_SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../../.." && pwd)"
 
 # Source dependencies
-source "${_SCRIPT_DIR}/../core/colors.sh"
-[[ -f "${_SCRIPT_DIR}/../core/theme.sh" ]] && source "${_SCRIPT_DIR}/../core/theme.sh"
-[[ -f "${_SCRIPT_DIR}/../core/genres.sh" ]] && source "${_SCRIPT_DIR}/../core/genres.sh"
+source "${UI_DIR}/../core/colors.sh"
+[[ -f "${UI_DIR}/../core/theme.sh" ]] && source "${UI_DIR}/../core/theme.sh"
+[[ -f "${UI_DIR}/../core/genres.sh" ]] && source "${UI_DIR}/../core/genres.sh"
 
 # Alias semantic colors
 MAGENTA="${THEME_GLOW:-${C_GLOW}}"
@@ -87,7 +89,7 @@ echo
 # ═══════════════════════════════════════════════════════════════
 
 poster_file="$SERIES_POSTER"
-FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+FALLBACK_IMG="${ROOT_DIR}/lib/torrent/img/movie_night.jpg"
 [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
 
 if [[ "$IS_KITTY_MODE" == "true" ]]; then

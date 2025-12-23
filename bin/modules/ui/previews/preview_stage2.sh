@@ -19,13 +19,18 @@ while [ -L "$SCRIPT_SOURCE" ]; do
     [[ $SCRIPT_SOURCE != /* ]] && SCRIPT_SOURCE="$SCRIPT_DIR_TMP/$SCRIPT_SOURCE"
 done
 _SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+UI_DIR="$(cd "${_SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../../.." && pwd)"
 
 # Source dependencies
-source "${_SCRIPT_DIR}/../core/colors.sh"
-source "${_SCRIPT_DIR}/image_display.sh"
+source "${UI_DIR}/../core/colors.sh"
+source "${UI_DIR}/lib/image_display.sh"
+
+# Source genre styling for pill buttons
+[[ -f "${UI_DIR}/../core/genres.sh" ]] && source "${UI_DIR}/../core/genres.sh"
 
 # Optionally source theme for enhanced colors
-[[ -f "${_SCRIPT_DIR}/../core/theme.sh" ]] && source "${_SCRIPT_DIR}/../core/theme.sh"
+[[ -f "${UI_DIR}/../core/theme.sh" ]] && source "${UI_DIR}/../core/theme.sh"
 
 # Alias semantic colors for this script
 MAGENTA="${THEME_GLOW:-${C_GLOW}}"
@@ -50,6 +55,7 @@ sources="${STAGE2_SOURCES:-${TERMFLIX_STAGE2_SOURCES:-}}"
 avail="${STAGE2_AVAIL:-${TERMFLIX_STAGE2_AVAIL:-}}"
 plot="${STAGE2_PLOT:-${TERMFLIX_STAGE2_PLOT:-}}"
 imdb="${STAGE2_IMDB:-${TERMFLIX_STAGE2_IMDB:-}}"
+genre="${STAGE2_GENRE:-${TERMFLIX_STAGE2_GENRE:-}}"
 large_screenshot="${TERMFLIX_STAGE2_LARGE_SCREENSHOT:-}"
 
 # Try environment first, otherwise fall back to snapshot files
@@ -189,6 +195,11 @@ else
         [[ -n "$sources" ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}${sources}${RESET}"
         [[ -n "$avail" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${avail}${RESET}"
         [[ -n "$imdb" && "$imdb" != "N/A" ]] && echo -e "${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb}${RESET}"
+        # Genre with pill button styling
+        if [[ -n "$genre" && "$genre" != "N/A" ]]; then
+            styled_genre=$(style_genres "$genre" 2>/dev/null || echo "$genre")
+            echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+        fi
         echo
     fi
     
@@ -211,19 +222,21 @@ if [[ "$IS_KITTY_MODE" == "true" ]]; then
     [[ -n "$sources" ]] && echo -e "${BOLD}Sources:${RESET} ${GREEN}${sources}${RESET}"
     [[ -n "$avail" ]] && echo -e "${BOLD}Available:${RESET} ${CYAN}${avail}${RESET}"
     [[ -n "$imdb" && "$imdb" != "N/A" ]] && echo -e "${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${imdb}${RESET}"
+    # Genre with pill button styling
+    if [[ -n "$genre" && "$genre" != "N/A" ]]; then
+        styled_genre=$(style_genres "$genre" 2>/dev/null || echo "$genre")
+        echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+    fi
     echo
     
     # Resolve fallback image path
-    FALLBACK_IMG="${_SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+    FALLBACK_IMG="${ROOT_DIR}/lib/torrent/img/movie_night.jpg"
     [[ -z "$poster_file" || ! -f "$poster_file" ]] && poster_file="$FALLBACK_IMG"
     
     if [[ -f "$poster_file" ]]; then
-        # Kitty: DOUBLED poster size (80x60 default, max 90x60)
-        KITTY_WIDTH=${FZF_PREVIEW_COLUMNS:-80}
-        KITTY_HEIGHT=${FZF_PREVIEW_LINES:-60}
-        # Limit to reasonable max (doubled from 45x30)
-        ((KITTY_WIDTH = KITTY_WIDTH > 90 ? 90 : KITTY_WIDTH))
-        ((KITTY_HEIGHT = KITTY_HEIGHT > 60 ? 60 : KITTY_HEIGHT))
+        # Kitty: Fixed poster size (50x30)
+        KITTY_WIDTH=50
+        KITTY_HEIGHT=30
         
         kitten icat --transfer-mode=file --stdin=no \
             --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x6 \
@@ -234,18 +247,13 @@ if [[ "$IS_KITTY_MODE" == "true" ]]; then
         for ((i=0; i<KITTY_HEIGHT; i++)); do echo; done
     fi
     
-    # Display plot/description AFTER poster
-    if [[ -n "$plot" && "$plot" != "N/A" ]]; then
-        echo
-        echo -e "${DIM}${plot}${RESET}"
-        echo
-    fi
+    # Genre is shown as styled pills in metadata section above
 else
     # BLOCK MODE: Use universal image display helper
     # Image flows naturally in the text stream
     
     if [[ -n "$poster_file" && -f "$poster_file" ]]; then
-        display_image "$poster_file" 80 70
+        display_image "$poster_file" 50 25
     else
         # Try to download poster if we have a cached URL
         cache_dir="${HOME}/.cache/termflix/posters"
@@ -286,11 +294,7 @@ else
     
     echo
     
-    # Display plot in block mode
-    if [[ -n "$plot" && "$plot" != "N/A" ]]; then
-        echo -e "${DIM}${plot}${RESET}"
-        echo
-    fi
+    # Genre is now displayed as styled pills in the metadata section above
     
     # Show clickable link for large episode screenshot if available
     if [[ -n "$large_screenshot" ]]; then

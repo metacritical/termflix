@@ -61,9 +61,9 @@ source "$SCRIPT_DIR/modules/api/tmdb.sh"
 source "$SCRIPT_DIR/modules/api/omdb.sh"
 
 # UI Modules
-source "$SCRIPT_DIR/modules/ui/status.sh"
-source "$SCRIPT_DIR/modules/ui/help.sh"
-source "$SCRIPT_DIR/modules/ui/fzf_catalog.sh"
+source "$SCRIPT_DIR/modules/ui/lib/status.sh"
+source "$SCRIPT_DIR/modules/ui/lib/help.sh"
+source "$SCRIPT_DIR/modules/ui/catalog/fzf_catalog.sh"
 
 # Feature Modules
 source "$SCRIPT_DIR/modules/posters.sh"

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Main Catalog Layout
+  Used for browsing movies/shows with preview panel
+-->
+<fzf-layout id="main-catalog" name="Content Catalog">
+  <layout direction="reverse" height="100%" margin="1" padding="1" info="hidden"/>
+  <preview position="right" size="50%" wrap="true" border="border-left"
+            script="${UI_DIR:-}/catalog/preview_fzf.sh {2..}"/>
+  <header first="true">${menu_header:-}</header>
+  <border style="rounded" label=" ⌨ Enter:Select  Ctrl+J/K:Nav  &lt;/&gt;:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season " label-pos="bottom"/>
+  <prompt pointer="➤">&lt; Page ${current_page:-1}/${total_pages:-1}${page_suffix:-} &gt;</prompt>
+  <colors theme="default">
+    <color name="fg" value="#6b7280"/>
+    <color name="bg" value="#1e1e2e"/>
+    <color name="hl" value="#818cf8"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="bg+" value="#5865f2"/>
+    <color name="hl+" value="#c4b5fd"/>
+    <color name="info" value="#6b7280"/>
+    <color name="prompt" value="#5eead4"/>
+    <color name="pointer" value="#ff79c6"/>
+    <color name="marker" value="#818cf8"/>
+    <color name="spinner" value="#818cf8"/>
+    <color name="header" value="#a78bfa"/>
+    <color name="border" value="#5865f2"/>
+    <color name="gutter" value="#1e1e2e"/>
+  </colors>
+  <bindings delimiter="&#x09;" with-nth="1" expect="ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,&gt;,&lt;,ctrl-right,ctrl-left">
+    <bind key="ctrl-e" action="execute" script="${UI_DIR:-}/pickers/season_picker.sh {2..}" reload="true"/>
+    <bind key="ctrl-/" action="toggle-preview"/>
+    <bind key="ctrl-d" action="preview-down"/>
+    <bind key="ctrl-u" action="preview-up"/>
+    <bind key="ctrl-o" return-code="101"/>
+    <bind key="ctrl-s" return-code="102"/>
+    <bind key="ctrl-w" return-code="103"/>
+    <bind key="ctrl-t" return-code="104"/>
+    <bind key="ctrl-v" return-code="105"/>
+    <bind key="ctrl-g" return-code="106"/>
+    <bind key="ctrl-f" return-code="110"/>
+    <bind key="ctrl-r" return-code="109"/>
+    <bind key="&gt;" return-code="107"/>
+    <bind key="&lt;" return-code="108"/>
+  </bindings>
+</fzf-layout>

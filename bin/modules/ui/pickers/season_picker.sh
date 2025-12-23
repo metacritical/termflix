@@ -39,8 +39,9 @@ done
 
 # Resolve directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CORE_DIR="${SCRIPT_DIR}/../core"
-API_DIR="${SCRIPT_DIR}/../api"
+UI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CORE_DIR="${UI_DIR}/../core"
+API_DIR="${UI_DIR}/../api"
 
 # Source modules
 [[ -f "${CORE_DIR}/colors.sh" ]] && source "${CORE_DIR}/colors.sh"

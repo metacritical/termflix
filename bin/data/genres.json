@@ -6,7 +6,7 @@
         },
         "Adult": {
             "emoji": "🔞",
-            "color": "#991b1b"
+            "color": "#dc2626"
         },
         "Adventure": {
             "emoji": "🗺️",
@@ -22,15 +22,15 @@
         },
         "Comedy": {
             "emoji": "😂",
-            "color": "#facc15"
+            "color": "#22c55e"
         },
         "Crime": {
             "emoji": "🔪",
-            "color": "#991b1b"
+            "color": "#dc2626"
         },
         "Documentary": {
             "emoji": "🎥",
-            "color": "#64748b"
+            "color": "#6366f1"
         },
         "Drama": {
             "emoji": "🎭",
@@ -38,7 +38,7 @@
         },
         "Family": {
             "emoji": "👨‍👩‍👧‍👦",
-            "color": "#22c55e"
+            "color": "#10b981"
         },
         "Fantasy": {
             "emoji": "🧙",
@@ -46,19 +46,19 @@
         },
         "Film-Noir": {
             "emoji": "🌑",
-            "color": "#1e293b"
+            "color": "#6366f1"
         },
         "Game-Show": {
             "emoji": "🎰",
-            "color": "#eab308"
+            "color": "#f59e0b"
         },
         "History": {
             "emoji": "📜",
-            "color": "#a16207"
+            "color": "#d97706"
         },
         "Horror": {
             "emoji": "👻",
-            "color": "#dc2626"
+            "color": "#ef4444"
         },
         "Music": {
             "emoji": "🎵",
@@ -70,11 +70,11 @@
         },
         "Mystery": {
             "emoji": "🔍",
-            "color": "#6b21a8"
+            "color": "#8b5cf6"
         },
         "News": {
             "emoji": "📰",
-            "color": "#0284c7"
+            "color": "#0ea5e9"
         },
         "Reality-TV": {
             "emoji": "📺",
@@ -94,23 +94,23 @@
         },
         "Short": {
             "emoji": "⏱️",
-            "color": "#94a3b8"
+            "color": "#6366f1"
         },
         "Sport": {
             "emoji": "⚽",
-            "color": "#16a34a"
+            "color": "#22c55e"
         },
         "Sports": {
             "emoji": "⚽",
-            "color": "#16a34a"
+            "color": "#22c55e"
         },
         "Talk-Show": {
             "emoji": "🎙️",
-            "color": "#0891b2"
+            "color": "#0ea5e9"
         },
         "Thriller": {
             "emoji": "😱",
-            "color": "#be123c"
+            "color": "#ef4444"
         },
         "War": {
             "emoji": "⚔️",
@@ -122,7 +122,7 @@
         },
         "Western": {
             "emoji": "🤠",
-            "color": "#b45309"
+            "color": "#d97706"
         },
         "Action & Adventure": {
             "emoji": "💥",
@@ -142,13 +142,12 @@
         },
         "TV Movie": {
             "emoji": "📺",
-            "color": "#64748b"
+            "color": "#6366f1"
         }
     },
     "_meta": {
         "source": "IMDB official genres + TMDB TV variants",
         "count": 36,
-        "imdb_core": 28,
-        "tmdb_variants": 8
+        "note": "Vibrant colors for white text contrast"
     }
 }

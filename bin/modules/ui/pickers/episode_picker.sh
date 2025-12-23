@@ -15,9 +15,10 @@ SEASON_NUM="${3:-1}"
 
 # Resolve directories
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BIN_DIR="${SCRIPT_DIR}/../.."
-CORE_DIR="${SCRIPT_DIR}/../core"
-API_DIR="${SCRIPT_DIR}/../api"
+UI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+CORE_DIR="${UI_DIR}/../core"
+API_DIR="${UI_DIR}/../api"
+LIB_DIR="${UI_DIR}/lib"
 
 # Source modules
 [[ -f "${CORE_DIR}/colors.sh" ]] && source "${CORE_DIR}/colors.sh"
@@ -102,7 +103,7 @@ export SERIES_POSTER="$POSTER_PATH"
 export S_NUM="$SEASON_NUM"
 
 # Source display helper for preview
-source "${SCRIPT_DIR}/image_display.sh"
+source "${LIB_DIR}/image_display.sh"
 
 # Export additional series metadata for preview
 export SERIES_METADATA="$metadata_json"

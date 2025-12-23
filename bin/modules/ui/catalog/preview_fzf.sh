@@ -20,17 +20,19 @@ while [ -L "$SCRIPT_SOURCE" ]; do
 done
 # Always set SCRIPT_DIR after resolving symlinks
 SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"
+UI_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../../.." && pwd)"
 
 if [[ -z "$TERMFLIX_SCRIPTS_DIR" ]]; then
-    TERMFLIX_SCRIPTS_DIR="$(cd "$SCRIPT_DIR/../../scripts" 2>/dev/null && pwd)"
+    TERMFLIX_SCRIPTS_DIR="$(cd "${UI_DIR}/../../scripts" 2>/dev/null && pwd)"
 fi
 
 # --- 2. Source Theme & Colors ---
-if [[ -f "${SCRIPT_DIR}/../core/theme.sh" ]]; then
-    source "${SCRIPT_DIR}/../core/theme.sh"
+if [[ -f "${UI_DIR}/../core/theme.sh" ]]; then
+    source "${UI_DIR}/../core/theme.sh"
 fi
-source "${SCRIPT_DIR}/../core/colors.sh"
-[[ -f "${SCRIPT_DIR}/../core/genres.sh" ]] && source "${SCRIPT_DIR}/../core/genres.sh"
+source "${UI_DIR}/../core/colors.sh"
+[[ -f "${UI_DIR}/../core/genres.sh" ]] && source "${UI_DIR}/../core/genres.sh"
 
 # Alias semantic colors (with theme fallback)
 MAGENTA="${THEME_GLOW:-$C_GLOW}"
@@ -69,8 +71,8 @@ display_title="$title"
 display_title="${display_title% [SERIES]}"
 
 # Define API Modules
-TMDB_MODULE="${SCRIPT_DIR}/../api/tmdb.sh"
-OMDB_MODULE="${SCRIPT_DIR}/../api/omdb.sh"
+TMDB_MODULE="${UI_DIR}/../api/tmdb.sh"
+OMDB_MODULE="${UI_DIR}/../api/omdb.sh"
 
 # --- 5. Logic & Data Fetching ---
 # Initialize metadata variables
@@ -329,7 +331,7 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
         ((KITTY_HEIGHT = KITTY_HEIGHT > 30 ? 30 : KITTY_HEIGHT))
         
         # Clear previous image with blank, then draw poster
-        BLANK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/blank.png"
+        BLANK_IMG="${ROOT_DIR}/lib/torrent/img/blank.png"
         if [[ -f "$BLANK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \
                 --place=${KITTY_WIDTH}x${KITTY_HEIGHT}@0x6 \
@@ -352,7 +354,7 @@ if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     echo  # Empty line after image
 else
     # No poster - use fallback
-    FALLBACK_IMG="${SCRIPT_DIR%/bin/modules/ui}/lib/torrent/img/movie_night.jpg"
+    FALLBACK_IMG="${ROOT_DIR}/lib/torrent/img/movie_night.jpg"
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
         if [[ -f "$FALLBACK_IMG" ]]; then
             kitten icat --transfer-mode=file --stdin=no \

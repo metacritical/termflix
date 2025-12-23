@@ -6,6 +6,7 @@
 
 # Resolve module directory (needed for season picker and preview scripts)
 FZF_CATALOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+UI_DIR="$(cd "${FZF_CATALOG_DIR}/.." && pwd)"
 
 # Format display line for FZF (show clean movie name with source badges)
 format_fzf_display() {
@@ -149,31 +150,37 @@ show_fzf_catalog() {
     # Logo: text with gradient colors
     local logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
     
-    # Helper for button formatting with underlined + colored shortcut
-    # Usage: fmt_btn "state" "prefix" "shortcut" "suffix"
-    # Example: fmt_btn "o" "m" "O" "vies" => m[O]vies (O is cyan+underlined)
+    # Helper for pill button formatting with colored background
+    # When active: colored bg + white text
+    # When inactive: just text with underlined shortcut
     fmt_btn() {
         local state="$1"
         local prefix="$2"
         local shortcut="$3"
         local suffix="$4"
+        local H_BG_ACTIVE=$'\e[48;2;88;101;242m'  # Discord blue bg
+        local H_WHITE=$'\e[97m'                    # Bright white fg
         if [[ "$state" == "o" ]]; then
-            echo -ne "[${H_SEL}● ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_SEL}${suffix}${H_RESET}]"
+            # Active: pill with colored background
+            echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${prefix}${shortcut}${suffix} ${H_RESET}"
         else
-            echo -ne "[${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix}]"
+            # Inactive: just text with underlined shortcut
+            echo -ne " ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} "
         fi
     }
 
-    # Special formatter for Dropdown with underlined + colored shortcut
+    # Special formatter for Dropdown pills
     fmt_drop() {
         local state="$1"
         local prefix="$2"
         local shortcut="$3"
         local suffix="$4"
+        local H_BG_ACTIVE=$'\e[48;2;139;92;246m'  # Purple bg for dropdowns
+        local H_WHITE=$'\e[97m'
         if [[ "$state" == "o" ]]; then
-            echo -ne "[${H_SEL}● ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_SEL}${suffix} ▾${H_RESET}]"
+            echo -ne "${H_BG_ACTIVE}${H_WHITE} ${prefix}${shortcut}${suffix} ▾ ${H_RESET}"
         else
-            echo -ne "[${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} ▾]"
+            echo -ne " ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} ▾ "
         fi
     }
     
@@ -253,7 +260,7 @@ show_fzf_catalog() {
     fi
     
     # Season picker path (for Ctrl+E binding)
-    local season_picker="${FZF_CATALOG_DIR}/season_picker.sh"
+    local season_picker="${UI_DIR}/pickers/season_picker.sh"
     
     # 4. Run FZF
     # Important: Use printf instead of echo -ne for better handling
@@ -264,7 +271,7 @@ show_fzf_catalog() {
         --with-nth=1 \
         --preview "$preview_script {2..}" \
         --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
-        --bind "ctrl-e:execute(${FZF_CATALOG_DIR}/season_picker.sh {2..})+reload(printf '%s' \"$fzf_display\")" \
+        --bind "ctrl-e:execute(${UI_DIR}/pickers/season_picker.sh {2..})+reload(printf '%s' \"$fzf_display\")" \
         $pos_bind \
         --exit-0 2>/dev/null)
     fzf_exit_code=$?
@@ -402,7 +409,7 @@ handle_fzf_selection() {
             
             # OUTER LOOP: Series Interaction (Season -> Episode -> Version -> Back)
             while true; do
-                local picker_path="${SCRIPT_DIR}/modules/ui/episode_picker.sh"
+                local picker_path="${UI_DIR}/pickers/episode_picker.sh"
                 local picker_output
                 picker_output=$("$picker_path" "$series_name" "$imdb_id" "$current_s_num")
                 
@@ -413,7 +420,7 @@ handle_fzf_selection() {
                 
                 # 1. Handle Season Switching
                 if [[ "$picker_output" == "SWITCH_SEASON" ]]; then
-                    local s_picker_path="${SCRIPT_DIR}/modules/ui/season_picker.sh"
+                    local s_picker_path="${UI_DIR}/pickers/season_picker.sh"
                     local new_s
                     new_s=$("$s_picker_path" "$series_name" "$imdb_id")
                     if [[ -n "$new_s" ]]; then
@@ -611,7 +618,7 @@ handle_fzf_selection() {
                             options+="${i}|${line}"$'\n'
                         done
                         
-                        local preview_script="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
+                        local preview_script="${UI_DIR}/previews/preview_stage2.sh"
                         
                         # Use theme colors for consistency with Movies Stage 2
                         local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
@@ -706,9 +713,9 @@ handle_fzf_selection() {
              echo "[DEBUG fzf_catalog] Derived stage2_context=$stage2_context" >&2
          fi
          export TERMFLIX_STAGE2_CONTEXT="$stage2_context"
-         # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Plot
-         local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot
-         IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_plot <<< "$rest_data"
+         # rest_data format: COMBINED|Name|Sources|Qualities|Seeds|Sizes|Magnets|Poster|IMDBRating|Genre|Count
+         local c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_genre c_count
+         IFS='|' read -r _ c_name c_sources c_qualities c_seeds c_sizes c_magnets c_poster c_imdb c_genre c_count <<< "$rest_data"
          
          # Split into arrays
          IFS='^' read -ra sources_arr <<< "$c_sources"
@@ -889,7 +896,7 @@ handle_fzf_selection() {
               export STAGE2_TITLE="$c_name"
               export STAGE2_SOURCES="$s_badges"
               export STAGE2_AVAIL="$q_disp"
-              export STAGE2_PLOT="$c_plot"
+              export STAGE2_GENRE="$c_genre"
               export STAGE2_IMDB="$c_imdb"
               
               # Save options to file for Buffer UI reconstruction
@@ -897,7 +904,7 @@ handle_fzf_selection() {
 
               if [[ "$TERM" == "xterm-kitty" ]]; then
                   # KITTY MODE: Poster/Sources/Exports already prepared above
-                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
+                  local stage2_preview="${UI_DIR}/previews/preview_stage2.sh"
                   
                   # 5. Run FZF w/ Left Pane Preview (Picker on Right)
                   ver_pick=$(printf "%s" "$options" | fzf \
@@ -921,18 +928,18 @@ handle_fzf_selection() {
                       2>/dev/null)
                       
                   # Cleanup
-                  unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_PLOT
+                  unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_GENRE
                   kitten icat --clear 2>/dev/null
               else
                   # BLOCK MODE: Preview on LEFT
                   # Must pass env vars explicitly since FZF subprocess doesn't inherit them
-                  local stage2_preview="${SCRIPT_DIR}/modules/ui/preview_stage2.sh"
+                  local stage2_preview="${UI_DIR}/previews/preview_stage2.sh"
                   
                   ver_pick=$(STAGE2_POSTER="$poster_file" \
                              STAGE2_TITLE="$c_name" \
                              STAGE2_SOURCES="$s_badges" \
                              STAGE2_AVAIL="$q_disp" \
-                             STAGE2_PLOT="$c_plot" \
+                             STAGE2_GENRE="$c_genre" \
                              STAGE2_IMDB="$c_imdb" \
                               printf "%s" "$options" | fzf \
                       --ansi \
@@ -946,7 +953,7 @@ handle_fzf_selection() {
                       --prompt="➤ Pick Version: " \
                       --header="🎬 Available Versions: (Ctrl+H to back)" \
                        --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
-                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_PLOT=\"${c_plot//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
+                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_GENRE=\"${c_genre//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
                        --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
                        --border-label-pos=bottom \
                       --preview-window=left:55%:wrap \

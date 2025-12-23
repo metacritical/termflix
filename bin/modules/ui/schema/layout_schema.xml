@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Termflix UI Layout Schema
+  XML DSL for defining fzf-based interfaces
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <!-- Layout container -->
+  <xs:element name="fzf-layout">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="layout" type="LayoutConfig"/>
+        <xs:element name="preview" type="PreviewConfig" minOccurs="0"/>
+        <xs:element name="header" type="HeaderConfig" minOccurs="0"/>
+        <xs:element name="border" type="BorderConfig"/>
+        <xs:element name="prompt" type="PromptConfig"/>
+        <xs:element name="colors" type="ColorConfig" minOccurs="0"/>
+        <xs:element name="bindings" type="BindingsConfig" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="name" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Layout geometry -->
+  <xs:complexType name="LayoutConfig">
+    <xs:attribute name="direction" type="LayoutDirection" default="reverse"/>
+    <xs:attribute name="height" type="xs:string" default="100%"/>
+    <xs:attribute name="margin" type="xs:string" default="1"/>
+    <xs:attribute name="padding" type="xs:string" default="1"/>
+    <xs:attribute name="info" type="InfoMode" default="default"/>
+  </xs:complexType>
+
+  <xs:simpleType name="LayoutDirection">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="reverse"/>
+      <xs:enumeration value="default"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="InfoMode">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="default"/>
+      <xs:enumeration value="hidden"/>
+      <xs:enumeration value="inline"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Preview window -->
+  <xs:complexType name="PreviewConfig">
+    <xs:attribute name="position" type="PreviewPosition" default="right"/>
+    <xs:attribute name="size" type="xs:string" default="50%"/>
+    <xs:attribute name="wrap" type="xs:boolean" default="true"/>
+    <xs:attribute name="border" type="xs:string"/>
+    <xs:attribute name="script" type="xs:string"/>
+    <xs:attribute name="delimiter" type="xs:string"/>
+    <xs:attribute name="with-nth" type="xs:string"/>
+  </xs:complexType>
+
+  <xs:simpleType name="PreviewPosition">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="left"/>
+      <xs:enumeration value="right"/>
+      <xs:enumeration value="up"/>
+      <xs:enumeration value="down"/>
+      <xs:enumeration value="hidden"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Header -->
+  <xs:complexType name="HeaderConfig">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="first" type="xs:boolean" default="true"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Border -->
+  <xs:complexType name="BorderConfig">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="style" type="BorderStyle" default="rounded"/>
+        <xs:attribute name="label" type="xs:string"/>
+        <xs:attribute name="label-pos" type="LabelPosition" default="bottom"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="BorderStyle">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="rounded"/>
+      <xs:enumeration value="sharp"/>
+      <xs:enumeration value="bold"/>
+      <xs:enumeration value="block"/>
+      <xs:enumeration value="thinline"/>
+      <xs:enumeration value="double"/>
+      <xs:enumeration value="hidden"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="LabelPosition">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="top"/>
+      <xs:enumeration value="bottom"/>
+      <xs:enumeration value="left"/>
+      <xs:enumeration value="right"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Prompt -->
+  <xs:complexType name="PromptConfig">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="pointer" type="xs:string"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <!-- Color scheme -->
+  <xs:complexType name="ColorConfig">
+    <xs:sequence>
+      <xs:element name="color" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="name" type="ColorName" use="required"/>
+          <xs:attribute name="value" type="xs:string" use="required"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="theme" type="xs:string"/>
+  </xs:complexType>
+
+  <xs:simpleType name="ColorName">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="fg"/>
+      <xs:enumeration value="bg"/>
+      <xs:enumeration value="hl"/>
+      <xs:enumeration value="fg+"/>
+      <xs:enumeration value="bg+"/>
+      <xs:enumeration value="hl+"/>
+      <xs:enumeration value="info"/>
+      <xs:enumeration value="prompt"/>
+      <xs:enumeration value="pointer"/>
+      <xs:enumeration value="marker"/>
+      <xs:enumeration value="spinner"/>
+      <xs:enumeration value="header"/>
+      <xs:enumeration value="border"/>
+      <xs:enumeration value="gutter"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Key bindings -->
+  <xs:complexType name="BindingsConfig">
+    <xs:sequence>
+      <xs:element name="bind" minOccurs="0" maxOccurs="unbounded">
+        <xs:complexType>
+          <xs:attribute name="key" type="xs:string" use="required"/>
+          <xs:attribute name="action" type="xs:string" use="required"/>
+          <xs:attribute name="return-code" type="xs:string"/>
+          <xs:attribute name="script" type="xs:string"/>
+          <xs:attribute name="reload" type="xs:boolean" default="false"/>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+    <xs:attribute name="delimiter" type="xs:string"/>
+    <xs:attribute name="with-nth" type="xs:string"/>
+    <xs:attribute name="expect" type="xs:string"/>
+  </xs:complexType>
+
+</xs:schema>

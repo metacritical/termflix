@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Simple Menu Layout
+  Used for quick popups (Type, Sort, Genre, etc.)
+-->
+<fzf-layout id="simple-menu" name="Simple Menu">
+  <layout direction="reverse" info="hidden"/>
+  <header first="true">${menu_header:-}</header>
+  <border style="rounded"/>
+  <prompt>&gt;</prompt>
+  <colors theme="default">
+    <color name="fg" value="#6b7280"/>
+    <color name="bg" value="#1e1e2e"/>
+    <color name="hl" value="#818cf8"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="bg+" value="#5865f2"/>
+    <color name="hl+" value="#c4b5fd"/>
+    <color name="info" value="#6b7280"/>
+    <color name="prompt" value="#5eead4"/>
+    <color name="pointer" value="#818cf8"/>
+    <color name="marker" value="#818cf8"/>
+    <color name="spinner" value="#818cf8"/>
+    <color name="header" value="#a78bfa"/>
+    <color name="border" value="#5865f2"/>
+    <color name="gutter" value="#1e1e2e"/>
+  </colors>
+</fzf-layout>

@@ -51,13 +51,13 @@
 
 ## Files Modified
 
-1. `bin/modules/ui/preview_stage2.sh`
+1. `bin/modules/ui/previews/preview_stage2.sh`
    - Conditional debug logging
    - Enhanced Kitty mode display
    - Larger poster size
    - Added metadata and plot
 
-2. `bin/modules/ui/fzf_catalog.sh`
+2. `bin/modules/ui/catalog/fzf_catalog.sh`
    - Conditional debug logging
 
 3. `bin/modules/catalog.sh`
