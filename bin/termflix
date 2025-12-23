@@ -251,7 +251,7 @@ main() {
                 # Change theme preference
                 if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
                     # Get list of themes from bundled and user dirs
-                    local bundled_themes=$(ls "$SCRIPT_DIR/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
                     local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
                     local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
                     
@@ -272,7 +272,7 @@ main() {
                 
                 # Check if theme exists (using find_theme_file logic mostly)
                 local theme_found=false
-                if [[ -f "$SCRIPT_DIR/themes/${new_theme}.css" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.css" ]]; then
+                if [[ -f "$SCRIPT_DIR/../themes/${new_theme}.css" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.css" ]]; then
                     theme_found=true
                 fi
                 
@@ -285,7 +285,7 @@ main() {
                     exit 0
                 else
                     echo -e "${RED}Error:${RESET} Theme '$new_theme' not found"
-                    local bundled_themes=$(ls "$SCRIPT_DIR/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
                     echo -e "${CYAN}Available themes:${RESET} $(echo "$bundled_themes" | xargs)"
                     exit 1
                 fi

@@ -45,7 +45,12 @@ show_inline_buffer_ui() {
     # Fetch backdrop from Google Images (non-blocking with timeout)
     # Falls back to poster if no wide backdrop found
     local backdrop_image=""
-    local BACKDROP_SCRIPT="${TERMFLIX_HELPER_SCRIPTS_DIR:-${BASH_SOURCE%/*}/../../scripts/python}/fetch_backdrop.py"
+    local stream_dir
+    stream_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local root_dir
+    root_dir="$(cd "${stream_dir}/../.." && pwd)"
+    local helper_dir="${TERMFLIX_HELPER_SCRIPTS_DIR:-${root_dir}/scripts/python}"
+    local BACKDROP_SCRIPT="${helper_dir}/fetch_backdrop.py"
     
     # Detect content type (show vs movie) based on environment
     local content_type="movie"

@@ -7,6 +7,8 @@
 # Resolve module directory (needed for season picker and preview scripts)
 FZF_CATALOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UI_DIR="$(cd "${FZF_CATALOG_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${UI_DIR}/../.." && pwd)"
+HELPER_SCRIPTS_DIR="${TERMFLIX_HELPER_SCRIPTS_DIR:-${ROOT_DIR}/scripts/python}"
 
 # Format display line for FZF (show clean movie name with source badges)
 format_fzf_display() {
@@ -246,7 +248,7 @@ show_fzf_catalog() {
     local preview_script="${FZF_CATALOG_DIR}/preview_fzf.sh"
     
     # 3.5. Launch background precache for first 50 movies
-    local precache_script="${TERMFLIX_HELPER_SCRIPTS_DIR:-${FZF_CATALOG_DIR}/../../scripts/python}/precache_catalog.py"
+    local precache_script="${HELPER_SCRIPTS_DIR}/precache_catalog.py"
     if [[ -f "$precache_script" ]] && command -v python3 &>/dev/null; then
         # Pipe catalog data to precache script in background (suppress ALL output)
         (printf "%s" "$fzf_input" | python3 "$precache_script" 50 >/dev/null 2>&1) &
@@ -484,7 +486,7 @@ handle_fzf_selection() {
                     fi
                     
                     # ADDITIONAL SOURCE: ALWAYS search TPB for more results (parallel with EZTV)
-                    local fetcher_script="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
+                    local fetcher_script="${HELPER_SCRIPTS_DIR}/fetch_multi_source_catalog.py"
                     local tpb_results=$(python3 "$fetcher_script" --query "$search_query" --limit 15 --category shows 2>/dev/null | grep "^COMBINED")
                     
                     # Merge TPB results with EZTV results
@@ -671,8 +673,7 @@ handle_fzf_selection() {
             sleep 1
             
             # Use fetch_multi_source_catalog.py directly for raw series search
-            local script_path="${TERMFLIX_HELPER_SCRIPTS_DIR:-$(dirname "$0")/../scripts/python}/fetch_multi_source_catalog.py"
-            [[ ! -f "$script_path" ]] && script_path="$(dirname "${BASH_SOURCE[0]}")/../../scripts/python/fetch_multi_source_catalog.py"
+            local script_path="${HELPER_SCRIPTS_DIR}/fetch_multi_source_catalog.py"
             
             local search_results
             search_results=$(python3 "$script_path" --query "$series_name" --limit 20 2>/dev/null | grep "^COMBINED")

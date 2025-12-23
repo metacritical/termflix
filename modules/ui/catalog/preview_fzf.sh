@@ -299,7 +299,7 @@ echo
 # --- 7. UI: Poster ---
 IMAGE_HEIGHT=30; IMAGE_WIDTH=40; poster_path=""
 if [[ -z "$poster_url" || "$poster_url" == "N/A" ]]; then
-    POSTER_SCRIPT="$(cd \"$SCRIPT_DIR/../../..\" 2>/dev/null && pwd)/lib/termflix/scripts/get_poster.py"
+    POSTER_SCRIPT="${ROOT_DIR}/lib/termflix/scripts/get_poster.py"
     if [[ -f "$POSTER_SCRIPT" ]]; then
         poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title_for_api ($movie_year)" 2>/dev/null)
     fi
