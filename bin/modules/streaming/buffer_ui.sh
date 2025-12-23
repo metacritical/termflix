@@ -31,25 +31,51 @@ show_inline_buffer_ui() {
     [[ -f "$PLAYER_MODULE" ]] && source "$PLAYER_MODULE"
     [[ -f "$PROGRESS_MODULE" ]] && source "$PROGRESS_MODULE"
     
-    # Fetch backdrop if IMDB ID available (background, non-blocking)
-    local backdrop_image="$poster"
-    if [[ -n "$imdb_id" ]] && command -v get_tmdb_backdrop &>/dev/null; then
-        local fetched_backdrop=$(get_tmdb_backdrop "$imdb_id" 2>/dev/null)
-        if [[ -n "$fetched_backdrop" ]] && [[ -f "$fetched_backdrop" ]]; then
-            backdrop_image="$fetched_backdrop"
-        fi
-    fi
-    
     # Launch MPV splash screen with backdrop (parallel to FZF buffering)
     local splash_pid=""
     local splash_socket=""
     
-    # Debug helper
+    # Debug helper (defined early so it can be used below)
     debug_log() {
         if [[ "${TERMFLIX_DEBUG:-false}" == "true" ]]; then
             echo "DEBUG: $1" >&2
         fi
     }
+    
+    # Fetch backdrop from Google Images (non-blocking with timeout)
+    # Falls back to poster if no wide backdrop found
+    local backdrop_image=""
+    local BACKDROP_SCRIPT="${BASH_SOURCE%/*}/../../scripts/fetch_backdrop.py"
+    
+    # Detect content type (show vs movie) based on environment
+    local content_type="movie"
+    if [[ -n "$TMDB_SERIES_ID" || -n "$SERIES_METADATA" || "$TERMFLIX_CONTENT_TYPE" == "show" ]]; then
+        content_type="show"
+    fi
+    
+    # Fetch with 3-second timeout, retry up to 3 times
+    if [[ -f "$BACKDROP_SCRIPT" ]] && command -v python3 &>/dev/null; then
+        # Show actual search query format
+        local search_term="${title} ${content_type} backdrop"
+        echo -e "🔍 Searching: ${search_term}"
+        debug_log "Fetching backdrop via Google Images for: $title (type: $content_type)"
+        local fetched_backdrop=""
+        local retry=0
+        while [[ -z "$fetched_backdrop" || ! -f "$fetched_backdrop" ]] && [[ $retry -lt 3 ]]; do
+            fetched_backdrop=$(timeout 3 python3 "$BACKDROP_SCRIPT" "$title" --type "$content_type" 2>/dev/null)
+            ((retry++))
+        done
+        if [[ -n "$fetched_backdrop" ]] && [[ -f "$fetched_backdrop" ]]; then
+            backdrop_image="$fetched_backdrop"
+            debug_log "Using Google Images backdrop: $fetched_backdrop"
+        else
+            debug_log "No wide backdrop found, using poster as fallback"
+            backdrop_image="$poster"
+        fi
+    else
+        # Script not available, use poster
+        backdrop_image="$poster"
+    fi
     
     debug_log "Checking splash screen preconditions..."
     debug_log "backdrop_image=$backdrop_image"
