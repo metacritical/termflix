@@ -1699,7 +1699,7 @@ EOF
     
     # Monitor player - when it exits, clean up peerflix
     # TRAP HANDLER: Call record_watch_progress on interrupt, then cleanup
-    trap 'echo -e "\n${YELLOW}Interrupted. Saving progress and stopping peerflix...${RESET}"; record_watch_progress; kill $peerflix_pid 2>/dev/null || true; trap - INT TERM; return 130' INT TERM
+    trap 'echo -e "\n${YELLOW}Interrupted. Saving progress and stopping peerflix...${RESET}"; export TERMFLIX_IPC_POSITION="${last_ipc_position:-0}"; export TERMFLIX_IPC_DURATION="${last_ipc_duration:-0}"; record_watch_progress; kill $peerflix_pid 2>/dev/null || true; trap - INT TERM; return 130' INT TERM
     
     # Wait for player to exit
     # IMPORTANT: If player_pid is the splash screen (IPC transition), it is NOT a child process of this shell.
