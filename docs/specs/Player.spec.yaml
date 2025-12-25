@@ -6,7 +6,7 @@
 feature:
   name: "MPV Player Integration"
   description: "Manages MPV media player for splash screen display and video playback, including IPC communication and OSD customization."
-  version: "1.0"
+  version: "1.1"
 
 files:
   - modules/streaming/player.sh
@@ -71,13 +71,18 @@ mpv_args:
     - "--input-ipc-server: Enable IPC control"
     - "--image-display-duration=inf: Keep showing indefinitely"
     - "--keep-open=yes: Don't close when image ends"
-    - "--fullscreen: Display fullscreen"
-    - "--panscan=1.0: Zoom to fill screen"
+    - "--geometry=1280x720+100+100: Windowed mode (macOS fix)"
+    - "--no-fullscreen: Keep terminal visible for FZF updates"
+    - "--ontop: Keep MPV window on top"
+    - "--panscan=1.0: Zoom to fill window"
   cache:
     - "--cache=yes"
     - "--cache-secs=300 (5 minutes)"
     - "--demuxer-max-bytes=512M"
     - "--demuxer-max-back-bytes=256M"
+  watch_history:
+    - "--terminal=yes: Enable terminal output for AV: timestamps"
+    - "--msg-level=all=status: Output status messages for position tracking"
 
 integration:
   sources_from:

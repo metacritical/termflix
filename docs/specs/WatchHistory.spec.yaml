@@ -1,0 +1,83 @@
+---
+# AgentSpec: Watch History Module
+# Version: 1.1
+# Last Updated: 2025-12-25
+
+feature:
+  name: "Watch History"
+  description: "Tracks user watch progress for movies and shows, displaying resume indicators in Stage 2 version picker."
+  version: "1.1"
+
+files:
+  - modules/torrent.sh (record_watch_progress function)
+  - ~/.config/termflix/watch_history.json
+
+data_model:
+  storage: "~/.config/termflix/watch_history.json"
+  key_format: "Torrent hash (40-char hex, lowercase)"
+  fields:
+    title: "Movie/show title"
+    last_position: "Seconds watched"
+    duration: "Total duration in seconds"
+    percentage: "Calculated watch percentage"
+    quality: "Video quality (1080p, 720p, etc.)"
+    size: "File size"
+    last_watched: "ISO 8601 timestamp"
+    completed: "Boolean (>90% watched)"
+
+position_extraction:
+  method_1:
+    description: "MPV watch_later file"
+    path: "~/.config/termflix/watch_later/{md5(url)}.conf"
+    field: "start="
+    
+  method_2:
+    description: "MPV terminal log parsing (fallback)"
+    log_file: "$TMPDIR/termflix_mpv_debug.log"
+    pattern: "AV: HH:MM:SS / HH:MM:SS"
+    mpv_flags_required:
+      - "--terminal=yes"
+      - "--msg-level=all=status"
+
+pipeline:
+  - stage: set_globals
+    description: "Set global variables for watch tracking"
+    vars:
+      - TERMFLIX_WATCH_SOURCE
+      - TERMFLIX_WATCH_STREAM_URL
+      - TERMFLIX_MPV_LOG
+      
+  - stage: playback
+    description: "User watches video via MPV"
+    
+  - stage: record_progress
+    trigger: "MPV exit (normal 'q' or signal INT/TERM)"
+    function: "record_watch_progress"
+    logic:
+      - "Extract torrent hash from magnet link"
+      - "Try Method 1: read MPV watch_later file"
+      - "Fallback Method 2: parse MPV log for AV: timestamps"
+      - "Save to watch_history.json"
+
+display:
+  location: "Stage 2 version picker (right column)"
+  format: "👀 icon + percentage + progress bar"
+  visibility_threshold: "Only show if percentage > 0"
+
+resilience:
+  - issue: "MPV log not capturing AV: timestamps"
+    solution: "Added --terminal=yes --msg-level=all=status flags"
+  - issue: "HTTP streams don't create watch_later files"
+    solution: "Method 2 fallback parses MPV terminal output"
+  - issue: "Position always 5 seconds"
+    solution: "Fixed MPV launch to capture terminal output to log file"
+
+debug:
+  log_file: "/tmp/termflix_history_debug.log"
+  contents:
+    - "Source magnet link"
+    - "Torrent hash extraction"
+    - "Watch file path and existence"
+    - "Method used (1 or 2)"
+    - "Position and duration extracted"
+    - "Save confirmation"

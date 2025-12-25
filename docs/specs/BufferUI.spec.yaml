@@ -6,7 +6,7 @@
 feature:
   name: "Buffer UI (Stage 3 Streaming)"
   description: "Manages the streaming buffer UI displayed during torrent playback, including backdrop fetching, splash screen, trailer links, and progress monitoring."
-  version: "1.1"
+  version: "1.2"
 
 files:
   - modules/streaming/buffer_ui.sh
@@ -63,11 +63,12 @@ pipeline:
   - stage: fzf_buffer_ui
     description: "FZF interface showing buffering progress"
     features:
-      - "Live preview with buffering percentage"
+      - "Live preview with buffering percentage at TOP (always visible)"
       - "Poster display (viu/chafa/kitty)"
       - "Trailer links section with YouTube URLs"
       - "FZF listen port for API-driven refresh"
       - "Auto-refresh every 0.3s via background sidecar"
+      - "Sidecar auto-abort: closes FZF when MPV exits"
 
 data_flow:
   status_file_format: "progress|speed_bytes|peers|total_peers|buffered_mb|state|stream_url|peerflix_pid"
@@ -94,6 +95,12 @@ resilience:
     solution: "Safe expansion ${var:-} and trap restoration"
   - issue: "Poster is N/A or URL"
     solution: "Fallback chain + URL download with MD5 caching"
+  - issue: "macOS throttles background window updates"
+    solution: "Changed MPV splash to windowed mode (1280x720)"
+  - issue: "FZF progress bar not visible (buried below poster)"
+    solution: "Reorganized preview output: progress bar at TOP"
+  - issue: "FZF doesn't close when MPV exits"
+    solution: "Sidecar sends 'abort' to FZF when stream_pid dies"
 
 integration:
   sources_from:
