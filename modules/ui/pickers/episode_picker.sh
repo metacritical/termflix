@@ -108,26 +108,45 @@ source "${LIB_DIR}/image_display.sh"
 # Export additional series metadata for preview
 export SERIES_METADATA="$metadata_json"
 
-RESULTS=$(printf '%s' "$episode_list" | fzf \
-    --height=100% \
-    --layout=reverse \
-    --border=rounded \
-    --margin=1 \
-    --padding=1 \
-    --delimiter='|' \
-    --with-nth=2 \
-    --pointer='➤' \
-    --prompt="> " \
-    --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
-    --header-first \
-    --info=default \
-    --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
-    --border-label-pos=bottom \
-    --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
-    --ansi \
-    --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')" \
-    --preview-window=left:55%:wrap:border-right \
-    --preview "ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\"")
+# ════════════════════════════════════════════════════════════════
+# TML Parser Integration
+# ════════════════════════════════════════════════════════════════
+export CLEAN_TITLE
+export SEASON_NUM
+export SCRIPT_DIR
+
+source "${UI_DIR}/tml/parser/tml_parser.sh"
+tml_parse "${UI_DIR}/layouts/episode-picker.xml"
+FZF_ARGS=$(tml_get_fzf_args)
+
+# Preview script added inline (can't be in XML due to special chars)
+PREVIEW_CMD="ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\""
+
+RESULTS=$(printf '%s' "$episode_list" | eval "fzf --ansi $FZF_ARGS --preview \"$PREVIEW_CMD\"")
+
+# ════════════════════════════════════════════════════════════════
+# OLD HARDCODED FZF CONFIG (preserved for reference)
+# ════════════════════════════════════════════════════════════════
+# RESULTS=$(printf '%s' "$episode_list" | fzf \
+#     --height=100% \
+#     --layout=reverse \
+#     --border=rounded \
+#     --margin=1 \
+#     --padding=1 \
+#     --delimiter='|' \
+#     --with-nth=2 \
+#     --pointer='➤' \
+#     --prompt="> " \
+#     --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
+#     --header-first \
+#     --info=default \
+#     --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
+#     --border-label-pos=bottom \
+#     --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
+#     --ansi \
+#     --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')" \
+#     --preview-window=left:55%:wrap:border-right \
+#     --preview "ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\"")
 
 KEY=$(echo "$RESULTS" | head -1)
 SELECTED=$(echo "$RESULTS" | tail -1)

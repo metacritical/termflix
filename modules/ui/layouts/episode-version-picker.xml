@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Episode Version Picker Layout
+  For TV show episode torrent selection (line 630 in fzf_catalog.sh)
+  Variables: ep_title
+-->
+<fzf-layout id="episode-version-picker" name="Episode Version Picker">
+  <layout direction="reverse" margin="1" padding="1"/>
+  <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back " label-pos="bottom"/>
+  <prompt pointer="➤">&gt; </prompt>
+  <header first="true">Episode: ${ep_title:-Episode}</header>
+  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <colors theme="dynamic"/>
+  <bindings delimiter="|" with-nth="2" expect="ctrl-h,esc">
+  </bindings>
+</fzf-layout>

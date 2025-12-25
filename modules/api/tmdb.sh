@@ -127,7 +127,9 @@ try:
             'overview': r.get('overview', ''),
             'release_date': r.get('release_date', ''),
             'vote_average': r.get('vote_average', 0),
-            'poster_path': r.get('poster_path', '')
+            'poster_path': r.get('poster_path', ''),
+            'original_language': r.get('original_language', ''),
+            'genre_ids': r.get('genre_ids', [])
         }))
     else:
         print(json.dumps({'error': 'No results found'}))
@@ -236,6 +238,7 @@ try:
             'first_air_date': r.get('first_air_date', ''),
             'vote_average': r.get('vote_average', 0),
             'poster_path': r.get('poster_path', ''),
+            'original_language': r.get('original_language', ''),
             'media_type': 'tv'
         }))
     else:
@@ -307,6 +310,8 @@ try:
             'release_date': r.get('release_date', ''),
             'vote_average': r.get('vote_average', 0),
             'poster_path': r.get('poster_path', ''),
+            'original_language': r.get('original_language', ''),
+            'genre_ids': r.get('genre_ids', []),
             'media_type': 'movie'
         }))
     # Check TV results
@@ -320,6 +325,8 @@ try:
             'first_air_date': r.get('first_air_date', ''),
             'vote_average': r.get('vote_average', 0),
             'poster_path': r.get('poster_path', ''),
+            'original_language': r.get('original_language', ''),
+            'genre_ids': r.get('genre_ids', []),
             'media_type': 'tv'
         }))
     else:

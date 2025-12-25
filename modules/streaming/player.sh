@@ -82,25 +82,42 @@ launch_splash_screen() {
         "--image-display-duration=inf"  # Keep showing indefinitely
         "--title=TermFlix™ - $movie_title"
         "--force-media-title=$movie_title"
-        "--osd-level=3"  # Show all OSD messages
-        "--osd-msg1=Buffering..."  # Initial message
-        "--osd-font-size=48"
-        "--osd-color=#00FF00"
-        "--osd-border-size=2"
+        # OSD Configuration: Bottom-left, white semi-translucent, large font
+        "--osd-level=3"                    # Show all OSD messages
+        "--osd-msg1=⏳ Buffering..."       # Initial message with icon
+        "--osd-font-size=72"               # Large, readable font
+        "--osd-color=#CCFFFFFF"            # White with ~80% opacity (AARRGGBB)
+        "--osd-border-color=#80000000"     # Semi-transparent black border
+        "--osd-border-size=3"              # Thicker border for readability
+        "--osd-shadow-offset=2"            # Subtle shadow
+        "--osd-shadow-color=#80000000"     # Shadow color
+        "--osd-align-x=left"               # Horizontal: left
+        "--osd-align-y=bottom"             # Vertical: bottom
+        "--osd-margin-x=30"                # Left margin (pixels)
+        "--osd-margin-y=50"                # Bottom margin (pixels)
+        "--osd-font=Avenir Next Heavy"    # Cinematic, bold font
         "--keep-open=yes"  # Don't close when image ends
-        "--fullscreen"  # Display fullscreen
-        "--panscan=1.0"  # Zoom to fill screen
+        # WINDOWED MODE: Keep terminal visible so FZF buffer UI updates are seen
+        # Using 1280x720 window positioned top-right, terminal can stay on left
+        "--geometry=1280x720+100+100"  # 720p window with slight offset
+        "--autofit-larger=80%"         # Don't exceed 80% of screen
+        "--no-fullscreen"              # Explicitly disable fullscreen
+        "--ontop"                      # Keep MPV on top so it's visible
+        "--border"                     # Show window decorations
         # Pre-configure cache for video transition (essential for seamless playback)
         "--cache=yes"
         "--cache-secs=300"           # 5 minutes
         "--demuxer-max-bytes=512M"   # 512MB
-        "--demuxer-max-back-bytes=256M" 
+        "--demuxer-max-back-bytes=256M"
         "$image_path"
     )
     
     local mpv_error_log="${TMPDIR:-/tmp}/termflix_mpv_splash_error.log"
-    mpv "${mpv_args[@]}" >"$mpv_error_log" 2>&1 &
+    # Launch MPV in background with stdin from /dev/null to prevent terminal interaction
+    # disown removes from bash job control so it doesn't block FZF refresh
+    mpv "${mpv_args[@]}" </dev/null >"$mpv_error_log" 2>&1 &
     local splash_pid=$!
+    disown "$splash_pid" 2>/dev/null || true
     [[ "$TORRENT_DEBUG" == "true" ]] && echo "DEBUG [launch_splash_screen]: MPV PID=$splash_pid, errors in: $mpv_error_log" >&2
     
     # Wait for socket to be created (up to 2 seconds)
@@ -128,6 +145,26 @@ launch_splash_screen() {
         [[ -S "$ipc_socket" ]] && rm -f "$ipc_socket"
         return 1
     fi
+}
+
+# Update logo opacity via MPV IPC (for fade-in effect)
+# Args: $1 = IPC socket path, $2 = opacity (0.0 to 1.0), $3 = logo path
+# Called periodically as buffer fills: opacity = 0.1 + (buffer_pct/100) * 0.9
+update_logo_opacity() {
+    local ipc_socket="$1"
+    local opacity="${2:-1.0}"
+    local logo_path="${3:-$TERMFLIX_LOGO_PATH}"
+    
+    if [[ ! -S "$ipc_socket" || -z "$logo_path" || ! -f "$logo_path" ]]; then
+        return 1
+    fi
+    
+    # Build new filter with updated opacity
+    local logo_filter="movie='${logo_path}',format=rgba,colorchannelmixer=aa=${opacity}[logo];[vid1][logo]overlay=(W-w)/2:H*0.15:format=auto[out]"
+    
+    # Send command to MPV via IPC
+    echo "{\"command\": [\"vf\", \"set\", \"lavfi-complex=$logo_filter\"]}" | \
+        socat - "$ipc_socket" 2>/dev/null || true
 }
 
 # Launch player with video source and optional subtitle
@@ -348,5 +385,5 @@ monitor_player_process() {
 }
 
 # Export functions
-export -f detect_players get_active_player launch_player launch_splash_screen is_player_running
+export -f detect_players get_active_player launch_player launch_splash_screen update_logo_opacity is_player_running
 export -f monitor_player_process

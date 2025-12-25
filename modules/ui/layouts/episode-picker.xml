@@ -1,25 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Episode Picker Layout
-  Shows episodes with preview on left
+  Full screen picker with preview for episode selection
+  Variables: CLEAN_TITLE, SEASON_NUM, SCRIPT_DIR
 -->
 <fzf-layout id="episode-picker" name="Episode Picker">
   <layout direction="reverse" height="100%" margin="1" padding="1" info="default"/>
-  <preview position="left" size="55%" wrap="true" border="border-right"
-            script="${UI_DIR:-}/pickers/preview_episode.sh ${ep_no:-}"
-            delimiter="|" with-nth="2"/>
-  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1} →</header>
   <border style="rounded" label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " label-pos="bottom"/>
-  <prompt pointer="➤">&gt;</prompt>
-  <colors theme="catppuccin">
-    <color name="fg" value="#cdd6f4"/>
-    <color name="bg" value="-1"/>
-    <color name="hl" value="#f5c2e7"/>
-    <color name="fg+" value="#cdd6f4"/>
-    <color name="bg+" value="#5865f2"/>
-    <color name="hl+" value="#f5c2e7"/>
-    <color name="pointer" value="#f5c2e7"/>
-    <color name="prompt" value="#cba6f7"/>
-  </colors>
-  <bindings expect="enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc"/>
+  <prompt pointer="➤">&gt; </prompt>
+  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1} →</header>
+  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <colors theme="dynamic"/>
+  <bindings delimiter="|" with-nth="2" expect="enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc">
+  </bindings>
 </fzf-layout>

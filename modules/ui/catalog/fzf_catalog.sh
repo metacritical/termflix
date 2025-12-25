@@ -79,24 +79,9 @@ show_fzf_catalog() {
          IFS='|' read -r source name rest <<< "$result"
          name="${name%|}"  # Strip any trailing |
          
-         # Check watch history - extract magnet hash from rest data
-         local watched_icon=""
-         local magnet_hash=""
-         if [[ "$rest" =~ btih:([a-fA-F0-9]+) ]]; then
-             magnet_hash="${BASH_REMATCH[1]}"
-             magnet_hash=$(echo "$magnet_hash" | tr '[:upper:]' '[:lower:]')
-             # Check if this hash exists in watch history
-             if [[ -f "${HOME}/.config/termflix/watch_history.json" ]]; then
-                 if command -v jq &>/dev/null; then
-                     local pct=$(jq -r --arg h "$magnet_hash" '.[$h].percentage // 0' "${HOME}/.config/termflix/watch_history.json" 2>/dev/null)
-                     [[ "$pct" =~ ^[0-9]+$ ]] && [[ "$pct" -gt 0 ]] && watched_icon="➤ "
-                 fi
-             fi
-         fi
-         
-         # Display line with watched indicator
+         # Display line (no watched indicator in Stage 1 - only shown in Stage 2)
          local display_line
-         display_line=$(printf "%3d. %s%s" "$i" "$watched_icon" "$name")
+         display_line=$(printf "%3d. %s" "$i" "$name")
          
          # Store full data for preview snapshot (use tab as separator for FZF to hide)
          fzf_display+="${display_line}"$'\t'"${i}|${result}"$'\n'
@@ -161,13 +146,14 @@ show_fzf_catalog() {
         local shortcut="$3"
         local suffix="$4"
         local H_BG_ACTIVE=$'\e[48;2;88;101;242m'  # Discord blue bg
+        local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
         local H_WHITE=$'\e[97m'                    # Bright white fg
         if [[ "$state" == "o" ]]; then
             # Active: pill with colored background
             echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${prefix}${shortcut}${suffix} ${H_RESET}"
         else
-            # Inactive: just text with underlined shortcut
-            echo -ne " ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} "
+            # Inactive: subtle pill with underlined shortcut
+            echo -ne "${H_BG_INACTIVE} ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${suffix} ${H_RESET}"
         fi
     }
 
@@ -178,17 +164,19 @@ show_fzf_catalog() {
         local shortcut="$3"
         local suffix="$4"
         local H_BG_ACTIVE=$'\e[48;2;139;92;246m'  # Purple bg for dropdowns
+        local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
         local H_WHITE=$'\e[97m'
         if [[ "$state" == "o" ]]; then
             echo -ne "${H_BG_ACTIVE}${H_WHITE} ${prefix}${shortcut}${suffix} ▾ ${H_RESET}"
         else
-            echo -ne " ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${suffix} ▾ "
+            echo -ne "${H_BG_INACTIVE} ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${suffix} ▾ ${H_RESET}"
         fi
     }
     
     local menu_header
     # Build header with LOGO + underlined shortcuts: o=Movies, S=Shows, W=Watchlist, T=Type, V=Sort, G=Genre
-    menu_header="${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "Sort [" "V" "]") $(fmt_drop "$hl_genre" "" "G" "enre")"
+    # Add padding before and after for better spacing
+    menu_header=$'\\n'"${logo}  $(fmt_btn \"$hl_movies\" \"M\" \"o\" \"vies\") $(fmt_btn \"$hl_shows\" \"\" \"S\" \"hows\") $(fmt_btn \"$hl_watchlist\" \"\" \"W\" \"atchlist\") $(fmt_drop \"$hl_type\" \"\" \"T\" \"ype\") $(fmt_drop \"$hl_sort\" \"Sort [\" \"V\" \"]\") $(fmt_drop \"$hl_genre\" \"\" \"G\" \"enre\")"$'\\n'
     
     # Get FZF colors from theme (if theme loader available)
     # Charm-style: blue selection bar, muted gray text, dark background
@@ -212,30 +200,23 @@ show_fzf_catalog() {
         page_suffix="+"  # More pages might exist
     fi
     
-    export FZF_DEFAULT_OPTS="
-      --ansi
-      --color=${fzf_colors}
-      --layout=reverse
-
-      --border=rounded
-      --margin=1
-      --padding=1
-      --info=hidden
-      --prompt=\"< Page ${current_page}/${total_pages}${page_suffix} > \"
-      --pointer='➤'
-      --color=pointer:#ff79c6:bold
-      --header=\"$menu_header\"
-      --header-first
-      --preview-window=right:50%:wrap:border-left
-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season \"
-      --border-label-pos=bottom
-      --bind='ctrl-/:toggle-preview'
-      --bind='ctrl-d:preview-down,ctrl-u:preview-up'
-    "
-
-
+    # ════════════════════════════════════════════════════════════════
+    # TML Parser Integration (Main Catalog)
+    # ════════════════════════════════════════════════════════════════
+    export menu_header current_page total_pages page_suffix
+    export TML_VAR_category="${CURRENT_CATEGORY:-movies}"
+    source "${UI_DIR}/tml/parser/tml_parser.sh"
+    tml_parse "${UI_DIR}/layouts/main-catalog.tml"
+    local tml_fzf_args=$(tml_get_fzf_args)
+    # Paginator prompt - left-aligned below header
+    local dynamic_prompt="< Page ${current_page}/${total_pages}${page_suffix} > "
+    local dynamic_header
+    dynamic_header=$(tml_render_header)
+    [[ -z "$dynamic_header" ]] && dynamic_header="$menu_header"
     
-    
+    export FZF_DEFAULT_OPTS="--ansi --color=${fzf_colors} ${tml_fzf_args} --prompt=\"${dynamic_prompt}\" --header=\"${dynamic_header}\" --info=right --border-label-pos=bottom --border-label=' Enter:Select   Ctrl+L/K:Nav   </\>:Page   Ctrl+F:Search   Ctrl+E:Season   ?:Help '"
+    # OLD: export FZF_DEFAULT_OPTS="--ansi --color=... --layout=reverse ..."
+
     # Debug: show what we're sending to FZF
     if [[ "$TORRENT_DEBUG" == "true" ]]; then
         echo "=== fzf_display content (first 200 chars) ===" >&2
@@ -268,23 +249,30 @@ show_fzf_catalog() {
     # Important: Use printf instead of echo -ne for better handling
     local selection
     local fzf_exit_code=0
+    
+    # Async reload script for Ctrl+R
+    local async_loader="${FZF_CATALOG_DIR}/async_catalog_loader.sh"
+    local reload_cmd="$async_loader ${CURRENT_CATEGORY:-movies} 1 53 true"
+    
     selection=$(printf "%s" "$fzf_display" | fzf \
         --delimiter=$'\t' \
         --with-nth=1 \
         --preview "$preview_script {2..}" \
-        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
+        --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
         --bind "ctrl-e:execute(${UI_DIR}/pickers/season_picker.sh {2..})+reload(printf '%s' \"$fzf_display\")" \
+        --bind "ctrl-r:reload($reload_cmd)+first" \
         $pos_bind \
-        --exit-0 2>/dev/null)
+        2>/dev/null)
     fzf_exit_code=$?
         
-    # 5. Handle Result
-    echo "$(date): FZF selection captured: '$selection'" >> /tmp/fzf_debug.log
-    echo "$(date): FZF command exit code: $fzf_exit_code" >> /tmp/fzf_debug.log
-
     # Check if FZF was cancelled (exit code 130) or had no selection
-    if [[ $fzf_exit_code -eq 130 ]] || [[ -z "$selection" ]]; then
-        return 1
+    if [[ $fzf_exit_code -eq 130 ]]; then
+         return 1
+    fi
+     
+    if [[ -z "$selection" ]]; then
+         # Only treat as error if exit code suggests so, or strictly empty
+         return 1
     fi
 
     # Parse output: first line is key, second is selection
@@ -294,7 +282,8 @@ show_fzf_catalog() {
     echo "$(date): Key: '$key', Selection: '$selected_line'" >> /tmp/fzf_debug.log
 
     # Handle category switching shortcuts - return exit codes for main loop
-    # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^R=Refresh, ^G=Genre
+    # Keybindings: ^O=mOvies, ^S=Shows, ^W=Watchlist, ^T=Type, ^V=Sort, ^G=Genre
+    # Note: ^R (Refresh) is now handled by FZF's async reload binding
     case "$key" in
         ctrl-o) return 101 ;;  # mOvies
         ctrl-s) return 102 ;;  # Shows
@@ -303,8 +292,7 @@ show_fzf_catalog() {
         ctrl-v) return 105 ;;  # Sort dropdown
         ctrl-g) return 106 ;;  # Genre dropdown
         ctrl-f) return 110 ;;  # Search
-        # ctrl-e is now handled internally via --bind execute
-        ctrl-r) return 109 ;;  # Refresh
+        # ctrl-e and ctrl-r are now handled internally via --bind
         ">"|ctrl-right) return 107 ;;  # Next page
         "<"|ctrl-left) return 108 ;;   # Previous page
     esac
@@ -323,7 +311,10 @@ show_fzf_catalog() {
 handle_fzf_selection() {
     local selection_line="$1"
     
-    [[ -z "$selection_line" ]] && return 1
+    # Debug logging to file
+    echo "$(date): handle_fzf_selection called with: ${selection_line:0:100}..." >> /tmp/termflix_stage2_debug.log
+    
+    [[ -z "$selection_line" ]] && { echo "$(date): Empty selection, returning 1" >> /tmp/termflix_stage2_debug.log; return 1; }
 
     # First extract key, index and the actual result data
     # selection_line format: "key|index|result_data..."
@@ -622,21 +613,32 @@ handle_fzf_selection() {
                         
                         local preview_script="${UI_DIR}/previews/preview_stage2.sh"
                         
-                        # Use theme colors for consistency with Movies Stage 2
-                        local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
+                        # ════════════════════════════════════════════════════════════════
+                        # TML Parser Integration (Episode Version Picker)
+                        # ════════════════════════════════════════════════════════════════
+                        export ep_title
+                        source "${UI_DIR}/tml/parser/tml_parser.sh"
+                        tml_parse "${UI_DIR}/layouts/episode-version-picker.xml"
+                        local fzf_args=$(tml_get_fzf_args)
                         
-                        local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
-                            --margin=1 --padding=1 \
-                            --pointer='➤' \
-                            --prompt="> " \
-                            --header="Episode: ${ep_title}" \
-                            --header-first \
-                            --border-label=" ⌨ Enter:Stream  Ctrl+H:Back " \
-                            --border-label-pos=bottom \
-                            --color="$fzf_colors" \
-                            --preview "$preview_script" --preview-window=left:55%:wrap:border-right \
-                            --delimiter='|' --with-nth=2 \
-                            --expect=ctrl-h,esc)
+                        local v_pick=$(printf '%s' "$options" | eval "fzf --ansi $fzf_args --preview \"$preview_script\"")
+                        
+                        # ════════════════════════════════════════════════════════════════
+                        # OLD HARDCODED FZF CONFIG (commented for reference)
+                        # ════════════════════════════════════════════════════════════════
+                        # local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
+                        # local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
+                        #     --margin=1 --padding=1 \
+                        #     --pointer='➤' \
+                        #     --prompt="> " \
+                        #     --header="Episode: ${ep_title}" \
+                        #     --header-first \
+                        #     --border-label=" ⌨ Enter:Stream  Ctrl+H:Back " \
+                        #     --border-label-pos=bottom \
+                        #     --color="$fzf_colors" \
+                        #     --preview "$preview_script" --preview-window=left:55%:wrap:border-right \
+                        #     --delimiter='|' --with-nth=2 \
+                        #     --expect=ctrl-h,esc)
                             
                         local key_press=$(echo "$v_pick" | head -1)
                         local sel_line=$(echo "$v_pick" | tail -1)
@@ -831,6 +833,7 @@ handle_fzf_selection() {
          # Launch "Right Pane" Version Picker (Stage 2)
          # Only if multiple magnets OR user explicitly navigated
          if [[ ${#magnets_arr[@]} -ge 1 ]]; then
+             echo "$(date): Stage 2 reached! magnets_arr has ${#magnets_arr[@]} items" >> /tmp/termflix_stage2_debug.log
              while true; do
              local ver_pick
              local stage2_preview
@@ -936,31 +939,70 @@ handle_fzf_selection() {
                   # Must pass env vars explicitly since FZF subprocess doesn't inherit them
                   local stage2_preview="${UI_DIR}/previews/preview_stage2.sh"
                   
-                  ver_pick=$(STAGE2_POSTER="$poster_file" \
-                             STAGE2_TITLE="$c_name" \
-                             STAGE2_SOURCES="$s_badges" \
-                             STAGE2_AVAIL="$q_disp" \
-                             STAGE2_GENRE="$c_genre" \
-                             STAGE2_IMDB="$c_imdb" \
-                              printf "%s" "$options" | fzf \
+                  # ════════════════════════════════════════════════════════════════
+                  # TML Parser Integration (Movie Version Picker)
+                  # ════════════════════════════════════════════════════════════════
+                  source "${UI_DIR}/tml/parser/tml_parser.sh"
+                  tml_parse "${UI_DIR}/layouts/movie-version-picker.xml"
+                  local fzf_args=$(tml_get_fzf_args)
+                  
+                  # Debug log the options and fzf args
+                  echo "$(date): Stage 2 FZF - options has $(echo "$options" | wc -l) lines" >> /tmp/termflix_stage2_debug.log
+                  
+                  # NOTE: Avoid eval for FZF - it causes syntax errors with parentheses in movie titles
+                  # Instead, call fzf directly with the TML-generated args expanded inline
+                  ver_pick=$(printf "%s" "$options" | fzf \
                       --ansi \
-                      --delimiter='|' \
-                      --with-nth=2 \
-                      --height=100% \
-                      --layout=reverse \
-                      --border=rounded \
-                      --margin=1 \
-                      --padding=1 \
-                      --prompt="➤ Pick Version: " \
-                      --header="🎬 Available Versions: (Ctrl+H to back)" \
-                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
-                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_GENRE=\"${c_genre//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
-                       --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
-                       --border-label-pos=bottom \
-                      --preview-window=left:55%:wrap \
-                      --bind='ctrl-h:abort,ctrl-o:abort' \
+                      --layout reverse \
+                      --margin 1 \
+                      --padding 1 \
+                      --border rounded \
+                      --border-label " ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+                      --border-label-pos bottom \
+                      --prompt "➤ Pick Version: " \
+                      --pointer "➤" \
+                      --header "🎬 Available Versions: (Ctrl+H to back)" \
+                      --header-first \
+                      --preview-window "left:55%:wrap" \
+                      --color "$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8')" \
+                      --delimiter "|" \
+                      --with-nth 2 \
+                      --bind "ctrl-h:abort" \
+                      --bind "ctrl-o:abort" \
                       --no-select-1 \
+                      --preview "$stage2_preview" \
                       2>/dev/null)
+                  
+                  echo "$(date): Stage 2 FZF returned, ver_pick='${ver_pick:0:50}'" >> /tmp/termflix_stage2_debug.log
+                  
+                  # ════════════════════════════════════════════════════════════════
+                  # OLD HARDCODED FZF CONFIG (commented for reference)
+                  # ════════════════════════════════════════════════════════════════
+                  # ver_pick=$(STAGE2_POSTER="$poster_file" \
+                  #            STAGE2_TITLE="$c_name" \
+                  #            STAGE2_SOURCES="$s_badges" \
+                  #            STAGE2_AVAIL="$q_disp" \
+                  #            STAGE2_GENRE="$c_genre" \
+                  #            STAGE2_IMDB="$c_imdb" \
+                  #             printf "%s" "$options" | fzf \
+                  #     --ansi \
+                  #     --delimiter='|' \
+                  #     --with-nth=2 \
+                  #     --height=100% \
+                  #     --layout=reverse \
+                  #     --border=rounded \
+                  #     --margin=1 \
+                  #     --padding=1 \
+                  #     --prompt="➤ Pick Version: " \
+                  #     --header="🎬 Available Versions: (Ctrl+H to back)" \
+                  #      --color="$(get_fzf_colors 2>/dev/null || echo '...')" \
+                  #     --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" ... $stage2_preview" \
+                  #      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+                  #      --border-label-pos=bottom \
+                  #     --preview-window=left:55%:wrap \
+                  #     --bind='ctrl-h:abort,ctrl-o:abort' \
+                  #     --no-select-1 \
+                  #     2>/dev/null)
               fi
              
              if [[ -z "$ver_pick" ]]; then

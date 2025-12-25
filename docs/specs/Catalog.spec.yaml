@@ -1,0 +1,62 @@
+# Machine-Readable Specification for Termflix Catalog
+# defined_in: 
+#   - modules/catalog.sh
+#   - modules/ui/catalog/fzf_catalog.sh
+
+feature:
+  name: Catalog & Navigation
+  version: 1.0.0
+  purpose: "Display aggregated torrent results, handle pagination, and manage navigation interactions."
+
+pipeline:
+  stages:
+    - fetch: "Retrieve data via `catalog.sh` (wraps fetching modules)"
+    - cache: "Store results in `~/.config/termflix/cache`"
+    - paginate: "Slice results for current view (default 50 items/page)"
+    - display: "Render UI using FZF (via `fzf_catalog.sh`)"
+    - interact: "Handle user keybindings (Nav, Search, Sort)"
+
+ui_components:
+  - component: "Main Catalog"
+    file: "modules/ui/catalog/fzf_catalog.sh"
+    function: "show_fzf_catalog"
+    description: "Primary FZF interface showing list of titles."
+    keybindings:
+      "Ctrl+F": "Search Mode"
+      "Ctrl+O": "Category: Movies"
+      "Ctrl+S": "Category: Shows"
+      "Ctrl+L": "Next Page"
+      "Ctrl+H": "Previous Page"
+      "Enter": "Select Item"
+
+  - component: "Version Picker (Stage 2)"
+    file: "modules/ui/catalog/fzf_catalog.sh"
+    function: "handle_fzf_selection"
+    description: "Secondary FZF interface for selecting specific qualities/sources for a title."
+    trigger: "Selecting a COMBINED entry from Main Catalog"
+
+data_flow:
+  fetching_strategy:
+    description: "Hybrid synchronous/asynchronous fetching."
+    sync: "Pages 1-5 loaded immediately for responsiveness."
+    async: "Pages 6-15+ fetched in background (`TERMFLIX_PREFETCH_PID`)."
+    caching: "Results deduped and cached by title."
+
+  state_management:
+    env_vars:
+      CURRENT_CATEGORY: "movies | shows | all"
+      CURRENT_PAGE: "Integer"
+      TERMFLIX_PREFETCH_PID: "PID of background fetcher"
+      TERMFLIX_STAGE1_CONTEXT: "catalog | search"
+
+error_handling:
+  - situation: "Empty Selection"
+    behavior: "Loop breaks only if explicitly cancelled. Empty strings without cancel code are ignored/logged."
+  - situation: "Fetch Failure"
+    behavior: "Fallback to cache if available, else show error message."
+
+resilience:
+  - issue: "Stage 1 to Stage 2 transition crash (--exit-0 flag)"
+    solution: "Removed --exit-0 from FZF command to prevent silent exits on empty selection"
+  - issue: "Single quotes in movie titles breaking eval"
+    solution: "TML parser uses tml_shell_escape for double-quote safe embedding"

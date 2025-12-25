@@ -95,22 +95,39 @@ echo "[$(date)] season_list generated: $total_seasons items" >> /tmp/season_pick
 # Override inherited FZF_DEFAULT_OPTS to avoid catalog shortcuts
 export FZF_DEFAULT_OPTS=""
 
-SELECTED=$(printf "$season_list" | fzf \
-    --height=70% \
-    --margin=15%,20% \
-    --layout=reverse \
-    --border=rounded \
-    --padding=1 \
-    --info=inline \
-    --prompt="Select Season ➜ " \
-    --header="Series: $CLEAN_TITLE (${total_seasons} seasons)" \
-    --border-label=" [ Enter:Select | Esc:Back ] " \
-    --border-label-pos=bottom \
-    --pointer="➜" \
-    --color="fg:#ffffff,fg+:#ffffff,hl:${THEME_HEX_GLOW:-#e879f9},hl+:${THEME_HEX_GLOW:-#e879f9},pointer:${THEME_HEX_GLOW:-#e879f9},border:${THEME_HEX_GLOW:-#e879f9},prompt:${THEME_HEX_GLOW:-#e879f9},info:${THEME_HEX_GLOW:-#e879f9},bg+:${THEME_HEX_BG_SELECTION:-#374151}" \
-    --bind "esc:abort" \
-    --header-first \
-    2>>/tmp/season_picker.log)
+# ════════════════════════════════════════════════════════════════
+# TML Parser Integration
+# ════════════════════════════════════════════════════════════════
+# Export variables for TML expression evaluation
+export CLEAN_TITLE
+export total_seasons
+
+# Source TML parser and generate FZF args from layout
+source "${UI_DIR}/tml/parser/tml_parser.sh"
+tml_parse "${UI_DIR}/layouts/season-picker.xml"
+FZF_ARGS=$(tml_get_fzf_args)
+
+SELECTED=$(printf "$season_list" | eval "fzf $FZF_ARGS" 2>>/tmp/season_picker.log)
+
+# ════════════════════════════════════════════════════════════════
+# OLD HARDCODED FZF CONFIG (preserved for reference)
+# ════════════════════════════════════════════════════════════════
+# SELECTED=$(printf "$season_list" | fzf \
+#     --height=70% \
+#     --margin=15%,20% \
+#     --layout=reverse \
+#     --border=rounded \
+#     --padding=1 \
+#     --info=inline \
+#     --prompt="Select Season ➜ " \
+#     --header="Series: $CLEAN_TITLE (${total_seasons} seasons)" \
+#     --border-label=" [ Enter:Select | Esc:Back ] " \
+#     --border-label-pos=bottom \
+#     --pointer="➜" \
+#     --color="fg:#ffffff,fg+:#ffffff,hl:${THEME_HEX_GLOW:-#e879f9},hl+:${THEME_HEX_GLOW:-#e879f9},pointer:${THEME_HEX_GLOW:-#e879f9},border:${THEME_HEX_GLOW:-#e879f9},prompt:${THEME_HEX_GLOW:-#e879f9},info:${THEME_HEX_GLOW:-#e879f9},bg+:${THEME_HEX_BG_SELECTION:-#374151}" \
+#     --bind "esc:abort" \
+#     --header-first \
+#     2>>/tmp/season_picker.log)
 
 echo "[$(date)] FZF returned, SELECTED='$SELECTED'" >> /tmp/season_picker.log 2>/dev/null
 

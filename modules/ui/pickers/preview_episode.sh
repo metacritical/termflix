@@ -137,7 +137,7 @@ fi
 if [[ -n "$s_genres" && "$s_genres" != "null" ]]; then
     if command -v style_genres &>/dev/null; then
         styled_genre=$(style_genres "$s_genres" 2>/dev/null || echo "$s_genres")
-        echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+        echo -e "${BOLD}Genre:${RESET} ${styled_genre}\033[K"
     else
         echo -e "${BOLD}Genre:${RESET} ${s_genres}"
     fi

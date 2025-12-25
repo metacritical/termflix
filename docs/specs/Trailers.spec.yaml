@@ -1,0 +1,68 @@
+---
+# AgentSpec: Trailer Fetcher Module
+# Version: 1.0
+# Last Updated: 2025-12-25
+
+feature:
+  name: "YouTube Trailer Fetcher"
+  description: "Searches YouTube for movie/show trailers and returns video links for display in Stage 3 buffering UI."
+  version: "1.0"
+
+files:
+  - scripts/python/fetch_trailers.py
+
+usage:
+  cli: "python3 fetch_trailers.py 'Movie Name (Year)' [--limit N]"
+  output_format: "title|url (one per line)"
+  example:
+    input: "Now You See Me Now You Don'T (2025)"
+    output:
+      - "Now You See Me: Now You Don't (2025) Official Trailer|https://www.youtube.com/watch?v=-E3lMRx7HRQ"
+      - "Now You See Me: Now You Don't (2025) - Final Trailer|https://www.youtube.com/watch?v=uogrgIasYcA"
+
+pipeline:
+  - stage: query_construction
+    description: "Build YouTube search query from movie title"
+    logic: "Remove year parentheses, append 'official trailer'"
+    example: "'Movie (2025)' -> 'Movie 2025 official trailer'"
+
+  - stage: youtube_search
+    description: "Fetch YouTube search results page"
+    method: "GET request to youtube.com/results"
+    timeout: "10 seconds"
+    user_agent: "Safari/macOS"
+
+  - stage: video_extraction
+    description: "Parse HTML to extract video IDs and titles"
+    patterns:
+      - "videoId extraction from JSON data"
+      - "title extraction from runs array"
+    filters:
+      - "Skip YouTube Shorts"
+      - "Skip duplicate video IDs"
+
+  - stage: result_formatting
+    description: "Format results as pipe-delimited output"
+    format: "title|https://www.youtube.com/watch?v=video_id"
+
+data_flow:
+  inputs:
+    title: "Movie or show title with optional year"
+    limit: "Maximum number of trailers (default: 3)"
+  outputs:
+    stdout: "Pipe-delimited trailer entries"
+    stderr: "Error messages"
+  exit_codes:
+    0: "Success (trailers found)"
+    1: "No trailers found or error"
+
+resilience:
+  - issue: "Network timeout"
+    solution: "10 second timeout on HTTP request"
+  - issue: "No video URLs found"
+    solution: "Fallback to simpler regex pattern"
+
+integration:
+  used_by:
+    - modules/streaming/buffer_ui.sh (Stage 3 preview)
+  timeout_wrapper: "timeout 5 python3 fetch_trailers.py ..."

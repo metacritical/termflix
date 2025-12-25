@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Season Picker Layout
-  Centered popup modal for season selection
-  Variables: CLEAN_TITLE, total_seasons, THEME_HEX_GLOW, THEME_HEX_BG_SELECTION
+  Type Selector Layout
+  Centered popup modal for content mode selection
+  Matches season-picker styling with glow colors
 -->
-<fzf-layout id="season-picker" name="Season Picker">
-  <layout direction="reverse" height="70%" margin="15%,20%" padding="1" info="inline"/>
+<fzf-layout id="type-selector" name="Type Selector">
+  <layout direction="reverse" height="50%" margin="20%,25%" padding="1" info="inline"/>
   <border style="rounded" label=" [ Enter:Select | Esc:Back ] " label-pos="bottom"/>
-  <prompt pointer="➜">Select Season ➜ </prompt>
-  <header first="true">Series: ${CLEAN_TITLE:-Series Name} (${total_seasons:-1} seasons)</header>
+  <prompt pointer="➜">Select Mode ➜ </prompt>
+  <header first="true">🎬 Select Content Mode</header>
   <colors theme="dynamic">
     <color name="fg" value="#ffffff"/>
     <color name="fg+" value="#ffffff"/>

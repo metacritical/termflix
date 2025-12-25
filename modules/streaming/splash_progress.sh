@@ -43,9 +43,7 @@ monitor_splash_progress() {
         update_splash_progress "$ipc_socket" "$status_file" "$movie_title"
         sleep 0.5
         
-        
         # Stop if READY/PLAYING status (video starting)
-        # We look for "READY" or "PLAYING" in the status file
         if grep -qE "READY|PLAYING" "$status_file" 2>/dev/null; then
             # Clear text one last time and exit
             echo "{\"command\":[\"show-text\",\"\",0]}" | socat - "$ipc_socket" 2>/dev/null

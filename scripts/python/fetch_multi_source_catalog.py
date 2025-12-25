@@ -10,6 +10,7 @@ import urllib.request
 import urllib.parse
 import ssl
 import time
+from datetime import datetime
 import hashlib
 import re
 from pathlib import Path
@@ -673,6 +674,10 @@ def group_movies_by_title(items: List[Dict], limit: int) -> List[str]:
             group_key = f"{clean_name} ({year_match.group(0)})" if year_match else clean_name
         else:
             group_key = name
+
+        cleaned = clean_display_title(group_key)
+        if cleaned:
+            group_key = cleaned
             
         movie_groups[group_key].append(item)
     
@@ -694,9 +699,10 @@ def group_movies_by_title(items: List[Dict], limit: int) -> List[str]:
         
         magnets = [f"magnet:?xt=urn:btih:{t.get('info_hash')}" for t in torrents]
         imdb = torrents[0].get('imdb', 'N/A')
+        display_title = clean_display_title(movie_title) or movie_title
         
         combined = (
-            f"COMBINED|{movie_title}|"
+            f"COMBINED|{display_title}|"
             f"{'^'.join(sources)}|"
             f"{'^'.join(qualities)}|"
             f"{'^'.join(seeds)}|"
@@ -712,19 +718,253 @@ def group_movies_by_title(items: List[Dict], limit: int) -> List[str]:
     return results
 
 # ═══════════════════════════════════════════════════════════════
-# MULTI-SOURCE AGGREGATION
+# NEW ENRICHED CATALOG ALGORITHM
 # ═══════════════════════════════════════════════════════════════
+
+def normalize_movie_title(name: str) -> str:
+    """Normalize movie title for deduplication (lowercase, stripped, no punctuation).
+    
+    Key normalizations:
+    - Remove quality markers, release groups, bracketed content
+    - Remove punctuation (colons, apostrophes, etc.) for cross-source matching
+    - Extract and append year at the end for consistency
+    """
+    # Extract year first (for consistent comparison)
+    year_match = re.search(r'\(?((19|20)\d{2})\)?', name)
+    year = year_match.group(1) if year_match else ''
+    
+    # Remove quality markers, release groups, etc.
+    name = re.sub(r'[\.\s]+(1080p|720p|480p|2160p|4K|HDRip|BRRip|BluRay|WEB-DL|WEBRip|HDTV|x264|x265|HEVC|AAC|DTS)', '', name, flags=re.IGNORECASE)
+    name = re.sub(r'-[A-Za-z0-9]+$', '', name)  # Release group
+    name = re.sub(r'\[.*?\]', '', name)  # Bracketed content
+    name = re.sub(r'\((?:19|20)\d{2}\)', '', name)  # Remove year in parens (we add back normalized)
+    name = re.sub(r'\([^)]*\)', '', name)  # Other parentheses  
+    
+    # Remove punctuation that differs between sources (colons, apostrophes, etc.)
+    name = re.sub(r'[:\'"''""`]', '', name)  # Remove quotes and colons
+    
+    name = name.replace('.', ' ').replace('_', ' ')
+    name = re.sub(r'\s+', ' ', name).strip()
+    
+    # Normalize to lowercase and append year for consistent matching
+    normalized = name.lower()
+    if year:
+        normalized = f"{normalized} {year}"
+    
+    return normalized
+
+
+def clean_display_title(name: str) -> str:
+    """
+    Clean TPB torrent name for display and API lookups.
+    
+    TPB naming pattern: [TITLE] [SEP] [YEAR] [SEP] [TECH_SPECS] [-RELEASE_GROUP]
+    
+    Strategy: Extract everything BEFORE the year as the title, then format as "Title (Year)"
+    This is far more reliable than pattern-matching tech specs.
+    
+    Examples:
+        "Predator Badlands 2025 1080p HDRip HEVC x265 BONE" -> "Predator Badlands (2025)"
+        "Wake.Up.Dead.Man.A.Knives.Out.Mystery.2025.1080p.NF.WEB-DL" -> "Wake Up Dead Man A Knives Out Mystery (2025)"
+        "Predator Badlands (2025) [1080p] [WEBRip]" -> "Predator Badlands (2025)"
+        "Home Alone (1990) 1080p BrRip x264 - YIFY" -> "Home Alone (1990)"
+    """
+    original = name
+    
+    # Step 1: Remove bracketed content like [1080p], [WEBRip], [5.1], [YTS.MX]
+    name = re.sub(r'\s*\[.*?\]', '', name)
+    
+    # Step 2: Replace dots and underscores with spaces
+    name = name.replace('.', ' ').replace('_', ' ')
+    
+    # Step 3: Try to find year and extract title before it
+    # Pattern: look for year (1920-2029) that's followed by tech specs or end
+    year_match = re.search(r'[\s\(]+((?:19[2-9]\d|20[0-2]\d))(?:[\s\)\]]|$)', name)
+    
+    if year_match:
+        year = year_match.group(1)
+        title = name[:year_match.start()].strip()
+        
+        # Clean up title - remove residual tech specs that may be in already-processed names
+        # (e.g., "Nuremberg 5 1" from "Nuremberg 5.1" where dots were already replaced)
+        residual_patterns = [
+            r'\s+5\s*1(?:\s|$)',       # 5.1 audio -> " 5 1"
+            r'\s+7\s*1(?:\s|$)',       # 7.1 audio
+            r'\s+2\s*0(?:\s|$)',       # 2.0 audio
+            r'\s+H\s*26\d?(?:\s|$)',   # H.264/H.265 -> "H 264" or "H 26"
+            r'\s+Dd5?\s*1?(?:\s|$)',   # DD5.1 -> "Dd5 1" or "Dd 5 1"
+            r'\s+Ddp\d?\s*1?(?:\s|$)', # DDP5.1 -> "Ddp5 1"
+            r'\s+Nf(?:\s|$)',          # Netflix marker
+            r'\s+Ma(?:\s|$)',          # MA marker
+            r'\s+Hc(?:\s|$)',          # HC (hardcoded) marker
+            r'\s+\d+Bits?(?:\s|$)',    # 10Bits, 8Bits
+            r'\s+Chinese(?:\s|$)',     # Language marker
+            r'\s+Korean(?:\s|$)',      # Language marker
+            r'\s+En(?:\s|$)',          # English marker
+        ]
+        for pattern in residual_patterns:
+            title = re.sub(pattern, ' ', title, flags=re.IGNORECASE)
+        
+        # Clean up title
+        title = re.sub(r'\s+', ' ', title).strip()
+        title = re.sub(r'[\s\-:]+$', '', title)  # Remove trailing punctuation
+        
+        if title:
+            # Title case and format
+            title = title.title()
+            
+            # Fix common title case issues
+            title = re.sub(r'\bOf\b', 'of', title)
+            title = re.sub(r'\bThe\b', 'The', title)
+            title = re.sub(r'\bA\b', 'a', title)
+            title = re.sub(r'\bAn\b', 'an', title)
+            title = re.sub(r'\bAnd\b', 'and', title)
+            title = re.sub(r'\bIn\b', 'in', title)
+            title = re.sub(r'\bOn\b', 'on', title)
+            title = re.sub(r'\bTo\b', 'to', title)
+            title = re.sub(r'\bFor\b', 'for', title)
+            title = re.sub(r'\bAt\b', 'at', title)
+            
+            # Capitalize first letter
+            if title:
+                title = title[0].upper() + title[1:]
+            
+            return f"{title} ({year})"
+    
+    # Fallback: If no year found, try to extract title before common tech markers
+    tech_markers = [
+        r'\b1080p\b', r'\b720p\b', r'\b2160p\b', r'\b480p\b', r'\b4K\b',
+        r'\bHDRip\b', r'\bWEBRip\b', r'\bWEB-DL\b', r'\bBluRay\b', r'\bBRRip\b',
+        r'\bHDTV\b', r'\bCAM\b', r'\bTS\b', r'\bTC\b',
+        r'\bx264\b', r'\bx265\b', r'\bHEVC\b', r'\bH\s*264\b', r'\bH\s*265\b',
+    ]
+    
+    for marker in tech_markers:
+        match = re.search(marker, name, re.IGNORECASE)
+        if match and match.start() > 5:  # Ensure we have some title
+            title = name[:match.start()].strip()
+            title = re.sub(r'[\s\-:]+$', '', title)
+            
+            if title:
+                title = title.title()
+                if title:
+                    title = title[0].upper() + title[1:]
+                return title
+    
+    # Last resort: just clean up and return
+    name = re.sub(r'\s+', ' ', name).strip()
+    name = name.title()
+    if name:
+        name = name[0].upper() + name[1:]
+    return name
+
+
+
+def fetch_tpb_top100_movies() -> List[Dict]:
+    """
+    Fetch TPB top 100 HD movies (precompiled).
+    Returns list of dicts with normalized fields.
+    """
+    TPB_TOP100_URL = 'https://apibay.org/precompiled/data_top100_207.json'
+    response = fetch_url(TPB_TOP100_URL, timeout=10)
+    if not response:
+        return []
+    
+    try:
+        data = json.loads(response)
+        movies = []
+        
+        # Regex to detect TV Shows
+        tv_pattern = re.compile(r'(S\d{1,2}E\d{1,2}|Season\s*\d+|Complete\s*Series|\d+x\d+)', re.IGNORECASE)
+        
+        for item in data[:100]:
+            info_hash = item.get('info_hash', '')
+            if not info_hash or info_hash == '0' * 40:
+                continue
+            
+            name = item.get('name', 'Unknown')
+            
+            # Skip TV shows
+            if tv_pattern.search(name):
+                continue
+            
+            # Extract year from name
+            year_match = re.search(r'(19|20)\d{2}', name)
+            year = year_match.group(0) if year_match else ''
+            
+            # Generate clean search title for YTS/API lookups
+            cleaned = clean_display_title(name)
+            # Extract just the title part (without year) for searching
+            search_title = re.sub(r'\s*\(\d{4}\)\s*$', '', cleaned).strip()
+            
+            movies.append({
+                'name': name,
+                'clean_title': search_title.lower(),  # For deduplication
+                'search_title': search_title,          # For YTS/TPB search
+                'display_name': cleaned,               # For display (with year)
+                'year': year,
+                'info_hash': info_hash.lower(),
+                'seeders': int(item.get('seeders', 0)),
+                'size': int(item.get('size', 0)),
+                'imdb': item.get('imdb', ''),
+                'source': 'TPB'
+            })
+        
+        return movies
+    except Exception:
+        return []
+
+
+def enrich_movie_with_sources(movie: Dict) -> Dict:
+    """
+    Enrich a movie with additional sources from TPB search and YTS search.
+    Returns movie dict with 'torrents' list containing all sources.
+    """
+    # Use search_title if available (from TPB), otherwise clean_title
+    title = movie.get('search_title', movie.get('clean_title', movie.get('name', '')))
+    year = movie.get('year', '')
+    search_query = f"{title} {year}".strip()
+    
+    torrents = []
+    
+    # Add original TPB torrent if present
+    if movie.get('info_hash'):
+        size_bytes = int(movie.get('size', 0))
+        size_mb = size_bytes // (1024 * 1024)
+        torrents.append({
+            'source': 'TPB',
+            'hash': movie['info_hash'],
+            'quality': extract_quality(movie.get('name', '')),
+            'size': f"{size_mb}MB" if size_mb < 1024 else f"{size_mb/1024:.1f}GB",
+            'seeds': movie.get('seeders', 0),
+            'magnet': f"magnet:?xt=urn:btih:{movie['info_hash']}"
+        })
+    
+    # Search TPB for more sources
+    tpb_results = search_tpb(search_query, category=207)
+    for t in tpb_results:
+        if t.get('hash') and t['hash'] not in [x['hash'] for x in torrents]:
+            torrents.append(t)
+    
+    # Search YTS for sources
+    yts_results = search_yts(search_query)
+    for t in yts_results:
+        if t.get('hash') and t['hash'] not in [x['hash'] for x in torrents]:
+            torrents.append(t)
+    
+    movie['torrents'] = torrents
+    return movie
+
 
 def aggregate_movie(movie: Dict) -> Optional[str]:
     """
-    Aggregate torrents from YTS and TPB for a single movie.
+    Aggregate torrents from YTS and TPB for a single movie (for search).
     Returns COMBINED format string.
     """
     title = movie.get('title', '')
     year = movie.get('year', '')
     poster = movie.get('medium_cover_image', 'N/A')
-    imdb_id = movie.get('imdb_code', '')
-    rating = movie.get('rating', 0)  # Use rating instead of IMDB ID
+    rating = movie.get('rating', 0)
     
     if not title:
         return None
@@ -738,19 +978,11 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
     # Search TPB for additional torrents
     tpb_torrents = search_tpb(search_query)
     
-    # Also search YTS for more quality options
-    yts_search_torrents = search_yts(search_query)
-    
     # Deduplicate by hash
     seen_hashes = {t['hash'] for t in all_torrents}
     
     for t in tpb_torrents:
-        if t['hash'] not in seen_hashes and t.get('source'):
-            all_torrents.append(t)
-            seen_hashes.add(t['hash'])
-    
-    for t in yts_search_torrents:
-        if t['hash'] not in seen_hashes and t.get('source'):
+        if t.get('hash') and t['hash'] not in seen_hashes and t.get('source'):
             all_torrents.append(t)
             seen_hashes.add(t['hash'])
     
@@ -764,28 +996,23 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
         return None
     
     # Sort by seeds (descending)
-    all_torrents.sort(key=lambda x: x['seeds'], reverse=True)
+    all_torrents.sort(key=lambda x: x.get('seeds', 0), reverse=True)
     
-    # Format arrays for COMBINED output - PER-TORRENT data (not unique sources!)
-    # Each array must have the same length as torrents
-    per_torrent_sources = [t['source'] for t in all_torrents]  # Per-torrent source
-    qualities = [t['quality'] for t in all_torrents]
-    seeds = [str(t['seeds']) for t in all_torrents]
-    sizes = [t['size'] for t in all_torrents]
-    magnets = [t['magnet'] for t in all_torrents]
+    # Format arrays for COMBINED output
+    per_torrent_sources = [t['source'] for t in all_torrents]
+    qualities = [t.get('quality', 'Unknown') for t in all_torrents]
+    seeds = [str(t.get('seeds', 0)) for t in all_torrents]
+    sizes = [t.get('size', 'N/A') for t in all_torrents]
+    magnets = [t.get('magnet', '') for t in all_torrents]
     
-    # Format rating for display
     rating_str = f"{rating}/10" if rating else 'N/A'
-    
-    # Extract Genres
     genres = movie.get('genres', [])
     genre_str = ', '.join(genres) if genres else 'Unknown'
     
-    # Build COMBINED line
     display_title = f"{title} ({year})"
     combined = (
         f"COMBINED|{display_title}|"
-        f"{'^'.join(per_torrent_sources)}|"  # Per-torrent sources
+        f"{'^'.join(per_torrent_sources)}|"
         f"{'^'.join(qualities)}|"
         f"{'^'.join(seeds)}|"
         f"{'^'.join(sizes)}|"
@@ -798,126 +1025,223 @@ def aggregate_movie(movie: Dict) -> Optional[str]:
     
     return combined
 
-def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = True, sort_by: str = 'date_added',
-                               query_term: str = None, genre: str = None, min_rating: int = 0,
-                               order_by: str = 'desc', category_mode: str = 'movies') -> List[str]:
+
+def fetch_enriched_catalog(limit: int = 50, page: int = 1, sort_by: str = 'date_added',
+                           query_term: str = None, genre: str = None, min_rating: int = 0,
+                           order_by: str = 'desc', category_mode: str = 'movies',
+                           yts_pages: int = 10, start_page: int = 1, skip_tpb: bool = False) -> List[str]:
     """
-    Fetch movies from YTS and enrich each with TPB torrents.
+    NEW ALGORITHM:
+    1. Fetch TPB top 100 HD movies (popular/trending base)
+    2. For each: search TPB + YTS for all sources
+    3. Fetch YTS pages 1-10 (or custom) for latest content
+    4. Combine, dedupe by normalized title, sort
+    5. Return COMBINED format strings
     
     Args:
-        limit: Movies per page
-        page: Page number
-        parallel: Use parallel fetching
-        sort_by: Sort method ('date_added', 'download_count', 'rating', 'seeds', 'peers', 'year')
-        query_term: Search query
-        genre: Genre filter
-        min_rating: Minimum rating filter
-        order_by: Sort order ('desc' or 'asc')
-        category_mode: 'movies' or 'shows'
-    
-    Returns list of COMBINED format strings.
+        limit: Items per page for display
+        page: Page number for display
+        yts_pages: Number of YTS pages to fetch (default 10)
     """
-    # If query is provided, perform a targeted search instead of fetching newest
+    # Handle search queries separately
     if query_term:
         if category_mode == 'movies':
-            # Movies: Search YTS first
-            movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
+            movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by,
                                       query_term=query_term, genre=genre, min_rating=min_rating,
                                       order_by=order_by)
             if not movies:
-                # Fallback: Search TPB Movies
-                tpb_cat = 207 # HD Movies
-                items = search_tpb(query_term, category=tpb_cat)
-                return group_movies_by_title(items, limit)
+                items = search_tpb(query_term, category=207)
+                return group_movies_by_title([{'source': 'TPB', **i} for i in items], limit)
+            
+            results = []
+            for movie in movies:
+                result = aggregate_movie(movie)
+                if result:
+                    results.append(result)
+            return results
         else:
-            # Shows: Search TPB Shows - return INDIVIDUAL torrents for version picker
-            tpb_cat = 208  # HD TV Shows
+            # Shows search
+            tpb_cat = 208
             items = search_tpb(query_term, category=tpb_cat)
-            # For episode search, return each torrent as a separate COMBINED entry (like movies)
-            # This allows the version picker to list individual quality options
             results = []
             for item in items[:limit]:
                 name = item.get('name', 'Unknown')
                 quality = item.get('quality', extract_quality(name))
-                seeds = str(item.get('seeds', 0))
-                size = item.get('size', 'N/A')
-                magnet = item.get('magnet', '')
-                
                 combined = (
                     f"COMBINED|{name}|"
-                    f"TPB|"
-                    f"{quality}|"
-                    f"{seeds}|"
-                    f"{size}|"
-                    f"{magnet}|"
-                    f"N/A|"
-                    f"N/A|"
-                    f"Shows|"
-                    f"1"
+                    f"TPB|{quality}|{item.get('seeds', 0)}|{item.get('size', 'N/A')}|"
+                    f"{item.get('magnet', '')}|N/A|N/A|Shows|1"
                 )
                 results.append(combined)
             return results
-
-    # NO QUERY: Fetch Latest/Trending Catalog
-    movies = []
-    if category_mode == 'movies':
-        movies = fetch_yts_movies(limit=limit, page=page, sort_by=sort_by, 
-                                  query_term=query_term, genre=genre, min_rating=min_rating,
-                                  order_by=order_by)
     
-    # FALLBACK: If YTS fails or we want SHOWS, use TPB precompiled (Newest)
-    if not movies:
-        # Determine TPB Category
-        tpb_cat = 207  # Default HD Movies
-        if category_mode == 'shows':
-            tpb_cat = 208 # HD TV Shows
-        
-        return fetch_tpb_fallback_catalog(limit, category=tpb_cat)
+    # Handle TV Shows separately (use existing logic)
+    if category_mode == 'shows':
+        return fetch_tpb_fallback_catalog(limit * 2, category=208)
     
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE 1: Fetch TPB Top 100 Movies (skip if start_page > 1 for incremental fetch)
+    # ═══════════════════════════════════════════════════════════════
+    all_movies = {}  # Keyed by normalized title for deduplication
+    
+    # Only fetch TPB on initial load (start_page == 1), not on incremental prefetch
+    tpb_top100 = [] if skip_tpb or start_page > 1 else fetch_tpb_top100_movies()
+    
+    # Enrich TPB movies with additional sources (parallel)
+    with ThreadPoolExecutor(max_workers=15) as executor:
+        futures = {executor.submit(enrich_movie_with_sources, m): m for m in tpb_top100}
+        for future in as_completed(futures, timeout=30):
+            try:
+                enriched = future.result(timeout=5)
+                if enriched and enriched.get('torrents'):
+                    key = normalize_movie_title(enriched.get('name', ''))
+                    if key not in all_movies:
+                        all_movies[key] = enriched
+                    else:
+                        # Merge torrents
+                        existing_hashes = {t['hash'] for t in all_movies[key].get('torrents', [])}
+                        for t in enriched.get('torrents', []):
+                            if t['hash'] not in existing_hashes:
+                                all_movies[key]['torrents'].append(t)
+            except Exception:
+                pass
+    
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE 2: Fetch YTS Latest Pages 1-N
+    # ═══════════════════════════════════════════════════════════════
+    def fetch_and_enrich_yts_page(p: int) -> List[Dict]:
+        """Fetch a YTS page and enrich each movie."""
+        movies = fetch_yts_movies(limit=50, page=p, sort_by=sort_by, 
+                                  genre=genre, min_rating=min_rating, order_by=order_by)
+        enriched = []
+        for movie in movies:
+            title = movie.get('title', '')
+            year = movie.get('year', '')
+            
+            # Parse YTS torrents
+            torrents = parse_yts_torrents(movie)
+            
+            # Search TPB for additional sources
+            tpb_results = search_tpb(f"{title} {year}", category=207)
+            seen_hashes = {t['hash'] for t in torrents}
+            for t in tpb_results:
+                if t.get('hash') and t['hash'] not in seen_hashes:
+                    torrents.append(t)
+                    seen_hashes.add(t['hash'])
+            
+            enriched.append({
+                'name': f"{title} ({year})",
+                'clean_title': title.lower(),
+                'year': str(year),
+                'torrents': torrents,
+                'poster': movie.get('medium_cover_image', 'N/A'),
+                'rating': movie.get('rating', 0),
+                'genres': movie.get('genres', []),
+                'imdb': movie.get('imdb_code', '')
+            })
+        return enriched
+    
+    # Parallel fetch YTS pages (from start_page to yts_pages inclusive)
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(fetch_and_enrich_yts_page, p): p for p in range(start_page, yts_pages + 1)}
+        for future in as_completed(futures, timeout=60):
+            try:
+                page_movies = future.result(timeout=15)
+                for movie in page_movies:
+                    key = normalize_movie_title(movie.get('name', ''))
+                    if key not in all_movies:
+                        all_movies[key] = movie
+                    else:
+                        # Merge torrents and prefer YTS metadata (has poster, rating, etc.)
+                        existing = all_movies[key]
+                        existing_hashes = {t['hash'] for t in existing.get('torrents', [])}
+                        for t in movie.get('torrents', []):
+                            if t['hash'] not in existing_hashes:
+                                existing['torrents'].append(t)
+                        # Update metadata if YTS has better info
+                        if movie.get('poster') and movie['poster'] != 'N/A':
+                            existing['poster'] = movie['poster']
+                        if movie.get('rating'):
+                            existing['rating'] = movie['rating']
+                        if movie.get('genres'):
+                            existing['genres'] = movie['genres']
+            except Exception:
+                pass
+    
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE 3: Convert to COMBINED format
+    # ═══════════════════════════════════════════════════════════════
     results = []
     
-    if parallel:
-        # Parallel aggregation (faster)
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = {executor.submit(aggregate_movie, m): m for m in movies}
-            for future in as_completed(futures):
-                try:
-                    result = future.result()
-                    if result:
-                        results.append(result)
-                except Exception:
-                    pass
-    else:
-        # Sequential (slower but simpler)
-        for movie in movies:
-            result = aggregate_movie(movie)
-            if result:
-                results.append(result)
+    for key, movie in all_movies.items():
+        torrents = movie.get('torrents', [])
+        if not torrents:
+            continue
+        
+        # Sort torrents by seeds
+        torrents.sort(key=lambda x: int(x.get('seeds', 0)), reverse=True)
+        
+        # Build COMBINED arrays
+        sources = [t['source'] for t in torrents]
+        qualities = [t.get('quality', 'Unknown') for t in torrents]
+        seeds = [str(t.get('seeds', 0)) for t in torrents]
+        sizes = [t.get('size', 'N/A') for t in torrents]
+        magnets = [t.get('magnet', '') for t in torrents]
+        
+        # Get metadata
+        poster = movie.get('poster', 'N/A')
+        rating = movie.get('rating', 0)
+        rating_str = f"{rating}/10" if rating else 'N/A'
+        genres = movie.get('genres', [])
+        genre_str = ', '.join(genres) if genres else 'Unknown'
+        
+        # Clean the display title (removes [1080p] [WEBRip] etc.)
+        raw_title = movie.get('name', key)
+        display_title = clean_display_title(raw_title)
+        
+        combined = (
+            f"COMBINED|{display_title}|"
+            f"{'^'.join(sources)}|"
+            f"{'^'.join(qualities)}|"
+            f"{'^'.join(seeds)}|"
+            f"{'^'.join(sizes)}|"
+            f"{'^'.join(magnets)}|"
+            f"{poster}|"
+            f"{rating_str}|"
+            f"{genre_str}|"
+            f"{len(torrents)}"
+        )
+        results.append(combined)
     
-    # Feature 8: Year-Based Sorting
-    
+    # ═══════════════════════════════════════════════════════════════
+    # PHASE 4: Sort by year (newest first), then by max seeds
+    # ═══════════════════════════════════════════════════════════════
     def extract_year_from_combined(entry):
-        # Format: COMBINED|Title (YYYY)|...
         try:
-            # Extract title part (2nd field)
             parts = entry.split('|')
             if len(parts) > 1:
-                title_part = parts[1]
-                # Regex for (YYYY)
-                match = re.search(r'\((\d{4})\)', title_part)
+                match = re.search(r'\((\d{4})\)', parts[1])
                 if match:
                     return int(match.group(1))
         except:
             pass
         return 0
-
-    # Sort by Year DESC, keeping original sort order for same-year items
-    # Python sort is stable, so secondary sort (date_added/rating) is preserved
-    # Sort by Year DESC, keeping original sort order for same-year items
-    # Python sort is stable, so secondary sort (date_added/rating) is preserved
-    results.sort(key=extract_year_from_combined, reverse=True)
+    
+    def extract_max_seeds(entry):
+        try:
+            parts = entry.split('|')
+            if len(parts) > 4:
+                seeds = parts[4].split('^')
+                return max(int(s) for s in seeds if s.isdigit())
+        except:
+            pass
+        return 0
+    
+    # Sort by year desc, then by seeds desc
+    results.sort(key=lambda x: (extract_year_from_combined(x), extract_max_seeds(x)), reverse=True)
     
     return results
+
 
 # ═══════════════════════════════════════════════════════════════
 # MAIN
@@ -926,19 +1250,22 @@ def fetch_multi_source_catalog(limit: int = 50, page: int = 1, parallel: bool = 
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description='Multi-source catalog fetcher')
-    parser.add_argument('--limit', type=int, default=50, help='Movies per page')
-    parser.add_argument('--page', type=int, default=1, help='Page number')
+    parser = argparse.ArgumentParser(description='Multi-source catalog fetcher (New Algorithm)')
+    parser.add_argument('--limit', type=int, default=50, help='Movies per display page')
+    parser.add_argument('--page', type=int, default=1, help='Display page number')
     parser.add_argument('--sort', type=str, default='date_added', 
                         choices=['date_added', 'download_count', 'rating', 'seeds', 'peers', 'year'],
                         help='Sort method')
-    parser.add_argument('--query', type=str, default=None, help='Search query (or Year)')
+    parser.add_argument('--query', type=str, default=None, help='Search query')
     parser.add_argument('--genre', type=str, default=None, help='Filter by genre')
     parser.add_argument('--min-rating', type=int, default=0, help='Minimum rating (0-9)')
     parser.add_argument('--order-by', type=str, default='desc', help='Sort order (desc/asc)')
     parser.add_argument('--category', type=str, default='movies', help='Category mode (movies/shows)')
-    parser.add_argument('--sequential', action='store_true', help='Disable parallel fetch')
+    parser.add_argument('--yts-pages', type=int, default=10, help='Number of YTS pages to fetch (default 10)')
+    parser.add_argument('--start-page', type=int, default=1, help='Start page for YTS (for incremental fetch, default 1)')
+    parser.add_argument('--skip-tpb', action='store_true', help='Skip TPB fetch (for incremental updates)')
     parser.add_argument('--refresh', action='store_true', help='Force refresh cache (ignore cached data)')
+    parser.add_argument('--json-export', type=str, default=None, help='Export all fetched data to JSON file for analysis')
     
     args = parser.parse_args()
     
@@ -946,21 +1273,59 @@ def main():
     global REFRESH_CACHE
     REFRESH_CACHE = args.refresh
     
-    # 2. Fetch Catalog
-    catalog = fetch_multi_source_catalog(
+    # Fetch Catalog using NEW enriched algorithm
+    catalog = fetch_enriched_catalog(
         limit=args.limit,
         page=args.page,
-        parallel=not args.sequential,
         sort_by=args.sort,
         query_term=args.query,
         genre=args.genre,
         min_rating=args.min_rating,
         order_by=args.order_by,
-        category_mode=args.category
+        category_mode=args.category,
+        yts_pages=args.yts_pages,
+        start_page=args.start_page,
+        skip_tpb=args.skip_tpb
     )
     
-    for line in catalog:
-        print(line, flush=True)
+    # Export to JSON if requested
+    if args.json_export:
+        import json
+        export_data = []
+        for line in catalog:
+            parts = line.split('|')
+            if len(parts) >= 10 and parts[0] == 'COMBINED':
+                export_data.append({
+                    'type': parts[0],
+                    'title': parts[1],
+                    'sources': parts[2].split('^') if parts[2] else [],
+                    'qualities': parts[3].split('^') if parts[3] else [],
+                    'seeds': parts[4].split('^') if parts[4] else [],
+                    'sizes': parts[5].split('^') if parts[5] else [],
+                    'magnets': parts[6].split('^') if parts[6] else [],
+                    'poster': parts[7],
+                    'rating': parts[8],
+                    'genres': parts[9],
+                    'torrent_count': parts[10] if len(parts) > 10 else '0',
+                    'raw_line': line
+                })
+        
+        with open(args.json_export, 'w') as f:
+            json.dump({
+                'total_movies': len(export_data),
+                'export_time': str(datetime.now()),
+                'args': {
+                    'yts_pages': args.yts_pages,
+                    'category': args.category,
+                    'sort': args.sort
+                },
+                'movies': export_data
+            }, f, indent=2)
+        
+        print(f"Exported {len(export_data)} movies to {args.json_export}", file=sys.stderr)
+    else:
+        for line in catalog:
+            print(line, flush=True)
 
 if __name__ == '__main__':
     main()

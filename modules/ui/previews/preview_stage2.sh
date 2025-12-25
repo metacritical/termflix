@@ -198,7 +198,7 @@ else
         # Genre with pill button styling
         if [[ -n "$genre" && "$genre" != "N/A" ]]; then
             styled_genre=$(style_genres "$genre" 2>/dev/null || echo "$genre")
-            echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+            echo -e "${BOLD}Genre:${RESET} ${styled_genre}\033[0m\033[49m\033[K"
         fi
         echo
     fi
@@ -225,7 +225,7 @@ if [[ "$IS_KITTY_MODE" == "true" ]]; then
     # Genre with pill button styling
     if [[ -n "$genre" && "$genre" != "N/A" ]]; then
         styled_genre=$(style_genres "$genre" 2>/dev/null || echo "$genre")
-        echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+        echo -e "${BOLD}Genre:${RESET} ${styled_genre}\033[0m\033[49m\033[K"
     fi
     echo
     

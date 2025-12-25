@@ -54,13 +54,14 @@ display_catalog() {
          rm -f "$cache_file"
     fi
 
-    if is_cache_valid "$cache_file" 1200; then
+    if is_cache_valid "$cache_file" 604800; then  # 1 week = 604800 seconds
         echo -e "${CYAN}Loading from cache...${RESET}"
         # Read results from cache
         local result_count=0
         if [ -f "$cache_file" ] && [ -s "$cache_file" ]; then
             while IFS= read -r line || [ -n "$line" ]; do
-                if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                # Fast bash check instead of grep
+                if [[ -n "$line" && "$line" == *"|"* ]]; then
                     all_results+=("$line")
                     result_count=$((result_count + 1))
                 fi
@@ -104,12 +105,66 @@ display_catalog() {
     if [ "$goto_pagination" != "true" ]; then
         echo -e "${CYAN}Fetching data from sources...${RESET}"
         
+        # Check if we're using the new enriched catalog (single call)
+        local first_func="${args_copy[0]}"
+        local use_enriched=false
+        
+        # More robust check: function name contains "enriched" OR env var is true
+        if [[ "$first_func" == *"enriched"* ]] || [[ "${TERMFLIX_USE_ENRICHED:-}" == "true" ]]; then
+            use_enriched=true
+        fi
+        
+        if [ "$use_enriched" = true ]; then
+            # ═══════════════════════════════════════════════════════════════
+            # NEW ENRICHED ALGORITHM: Single call fetches TPB top 100 + YTS pages
+            # ═══════════════════════════════════════════════════════════════
+            local yts_pages="${TERMFLIX_INITIAL_YTS_PAGES:-10}"
+            local category="${CURRENT_CATEGORY:-movies}"
+            
+            echo -e "${MAGENTA}📦 Loading TPB Top 100 + YTS pages 1-${yts_pages}...${RESET}"
+            
+            # Single call fetches everything
+            get_enriched_catalog "$yts_pages" "$category" > "$temp_file" 2>/dev/null
+            local fetch_status=$?
+            
+            if [ $fetch_status -eq 0 ] && [ -s "$temp_file" ]; then
+                printf "\r${GREEN}✓ Fetched enriched catalog (TPB top 100 + YTS 1-${yts_pages})${RESET}                    \n"
+            else
+                printf "\r${YELLOW}⚠ Enriched fetch failed, falling back to legacy...${RESET}\n"
+                use_enriched=false
+            fi
+            
+            # Background prefetch YTS pages 11-20
+            local prefetch_start=$((yts_pages + 1))
+            local prefetch_end=$((yts_pages + 10))
+            echo ""
+            echo -e "${GRAY}📥 Prefetching YTS pages ${prefetch_start}-${prefetch_end} in background...${RESET}"
+            
+            (
+                # Incrementally fetch additional YTS pages (start from page 11, not 1)
+                local script_path="${TERMFLIX_SCRIPTS_DIR:-$(dirname "${BASH_SOURCE[0]}")/../scripts/python}/fetch_multi_source_catalog.py"
+                if [[ -f "$script_path" ]]; then
+                    python3 "$script_path" --yts-pages "$prefetch_end" --start-page "$prefetch_start" --skip-tpb --category "$category" 2>/dev/null >> "$temp_file"
+                fi
+            ) &
+            local prefetch_pid=$!
+            
+            export TERMFLIX_PREFETCH_PID=$prefetch_pid
+            export TERMFLIX_BATCH_END=$prefetch_end
+            export TERMFLIX_SOURCE_NAME="enriched"
+            export TERMFLIX_TEMP_FILE="$temp_file"
+            export TERMFLIX_INITIAL_PAGES=$yts_pages
+        fi
+        
+        # Fall back to legacy per-page fetching if not enriched
+        if [ "$use_enriched" = false ]; then
+        
         # SMART PREFETCH STRATEGY:
         # Phase 1: Load pages 1-5 synchronously (fast startup ~5 sec)
         # Phase 2: Background fetch pages 6-15 (10 more pages)
         # Midpoint triggers: At page 10→fetch 16-25, page 20→fetch 26-35, etc.
         
-        local initial_pages=10          # Load 5 pages upfront (250 results)
+        local initial_pages=10          # Load 10 pages upfront (500 results)
         local batch_size=10
         local page_pids=()
         local page_files=()
@@ -159,12 +214,12 @@ display_catalog() {
                     fi
                 done
                 [ "$any_running" = false ] && break
-                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Loading ${PINK}${source_name}${RESET} (pages 1-5)..."
+                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Loading ${PINK}${source_name}${RESET} (pages 1-${initial_pages})..."
                 spinner_idx1=$(( (spinner_idx1 - 1 + ${#spinner_chars[@]}) % ${#spinner_chars[@]} ))
                 spinner_idx2=$(( (spinner_idx2 + 1) % ${#spinner_chars[@]} ))
                 sleep 0.1
             done
-            printf "\r${GREEN}✓${RESET} Loaded ${PINK}${source_name}${RESET} (pages 1-5)                    \n"
+            printf "\r${GREEN}✓${RESET} Loaded ${PINK}${source_name}${RESET} (pages 1-${initial_pages})                    \n"
         ) &
         local spinner_pid=$!
         
@@ -177,7 +232,8 @@ display_catalog() {
         
         # === PHASE 2: Background Prefetch Pages 6-15 ===
         local batch_end=$((initial_pages + batch_size))
-        echo -e "${GRAY}📥 Prefetching pages 11-${batch_end} in background...${RESET}"
+        echo ""  # Newline before prefetch message
+        echo -e "${GRAY}📥 Prefetching pages $((initial_pages + 1))-${batch_end} in background...${RESET}"
         
         (
             for p in $(seq $((initial_pages + 1)) $batch_end); do
@@ -211,6 +267,8 @@ display_catalog() {
         
         printf "\r${GREEN}✓ Fetched all pages${RESET}                    \n"
         
+        fi  # End legacy per-page fetch
+        
         
         echo -e "${CYAN}Parsing results...${RESET}"
         
@@ -218,7 +276,8 @@ display_catalog() {
         local result_count=0
         if [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
             while IFS= read -r line || [ -n "$line" ]; do
-                if [ -n "$line" ] && echo "$line" | grep -q '|'; then
+                # Fast bash check instead of grep
+                if [[ -n "$line" && "$line" == *"|"* ]]; then
                     all_results+=("$line")
                     result_count=$((result_count + 1))
                     # Show progress while parsing
@@ -339,7 +398,7 @@ display_catalog() {
     
     local total_pages_loaded=10  # Initial pages loaded
     local current_page=1
-    local items_per_page=50
+    local items_per_page=53
     
     # Check for saved cursor position (from season picker return)
     local last_selected_index=1
@@ -362,9 +421,8 @@ display_catalog() {
                 if [[ -f "$temp_combined" ]]; then
                     all_results=()
                     while IFS= read -r line || [ -n "$line" ]; do
-                        if [ -n "$line" ] && echo "$line" | grep -q '|'; then
-                            all_results+=("$line")
-                        fi
+                        # Fast bash check instead of grep (much faster for 10K+ lines)
+                        [[ -n "$line" && "$line" == *"|"* ]] && all_results+=("$line")
                     done < "$temp_combined"
                     
                     # Trigger next batch
@@ -453,6 +511,8 @@ display_catalog() {
                 ;;
         esac
         
+        # Debug logging
+        
         # Extract selection index for cursor restoration
         if [ -n "$selection_line" ]; then
             local sel_idx
@@ -490,9 +550,8 @@ display_catalog() {
                 if [[ -f "$temp_combined" ]]; then
                     all_results=()
                     while IFS= read -r line || [ -n "$line" ]; do
-                        if [ -n "$line" ] && echo "$line" | grep -q '|'; then
-                            all_results+=("$line")
-                        fi
+                        # Fast bash check instead of grep
+                        [[ -n "$line" && "$line" == *"|"* ]] && all_results+=("$line")
                     done < "$temp_combined"
                     
                     # Update loaded page count

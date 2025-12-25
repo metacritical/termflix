@@ -1,0 +1,2079 @@
+fzf(1)                 fzf - a command-line fuzzy finder                fzf(1)
+
+
+
+NNAAMMEE
+       fzf - a command-line fuzzy finder
+
+
+SSYYNNOOPPSSIISS
+       fzf [_o_p_t_i_o_n_s]
+
+
+DDEESSCCRRIIPPTTIIOONN
+       fzf is an interactive filter program for any kind of list.
+
+       It implements a "fuzzy" matching algorithm, so you can quickly type in
+       patterns with omitted characters and still get the results you want.
+
+
+OOPPTTIIOONNSS
+   NNOOTTEE
+       Most long options have the opposite version with ----nnoo-- prefix.
+
+
+   SSEEAARRCCHH
+       --xx,, ----eexxtteennddeedd
+              Extended-search mode. Enabled by default. You can disable it
+              with ++xx or ----nnoo--eexxtteennddeedd.
+
+       --ee,, ----eexxaacctt
+              Enable exact-match
+
+       --ii,, ----iiggnnoorree--ccaassee
+              Case-insensitive match (default: smart-case match)
+
+       ++ii,, ----nnoo--iiggnnoorree--ccaassee
+              Case-sensitive match
+
+       ----ssmmaarrtt--ccaassee
+              Smart-case match (default). In this mode, the search is case-
+              insensitive by default, but it becomes case-sensitive if the
+              query contains any uppercase letters.
+
+       ----lliitteerraall
+              Do not normalize latin script letters for matching.
+
+       ----sscchheemmee==_S_C_H_E_M_E
+              Choose scoring scheme tailored for different types of input.
+
+              ddeeffaauulltt
+                     Generic scoring scheme designed to work well with any
+                     type of input.
+
+              ppaatthh
+                     Additional bonus point is only given to the characters
+                     after path separator.  You might want to choose this
+                     scheme over ddeeffaauulltt if you have many files with spaces in
+                     their paths. This also sets ----ttiieebbrreeaakk==ppaatthhnnaammee,,lleennggtthh,
+                     to prioritize matches occurring in the tail element of a
+                     file path.
+
+              hhiissttoorryy
+                     Scoring scheme well suited for command history or any
+                     input where chronological ordering is important. No
+                     additional bonus points are given so that we give more
+                     weight to the chronological ordering. This also sets
+                     ----ttiieebbrreeaakk==iinnddeexx.
+
+              fzf chooses ppaatthh scheme when the input is a TTY device, where
+              fzf would start its built-in walker or run $$FFZZFF__DDEEFFAAUULLTT__CCOOMMMMAANNDD,
+              and there is no rreellooaadd or ttrraannssffoorrmm action bound to ssttaarrtt event.
+              Otherwise, it chooses ddeeffaauulltt scheme.
+
+
+       ----aallggoo==_T_Y_P_E
+              Fuzzy matching algorithm (default: v2)
+
+              vv22     Optimal scoring algorithm (quality)
+              vv11     Faster but not guaranteed to find the optimal result
+              (performance)
+
+
+       --nn,, ----nntthh==_N_[_,_._._]
+              Comma-separated list of field index expressions for limiting
+              search scope.  See FFIIEELLDD IINNDDEEXX EEXXPPRREESSSSIIOONN for the details. When
+              you use this option with ----wwiitthh--nntthh, the field index expressions
+              are calculated against the transformed lines (unlike in
+              ----pprreevviieeww where fields are extracted from the original lines)
+              because fzf doesn't allow searching against the hidden fields.
+
+       ----wwiitthh--nntthh==_N_[_,_._._] _o_r _T_E_M_P_L_A_T_E
+              Transform the presentation of each line using the field index
+              expressions.  For advanced transformation, you can provide a
+              template containing field index expressions in curly braces.
+              When you use a template, the trailing delimiter is stripped from
+              each expression, giving you more control over the output.  {{nn}}
+              in template evaluates to the zero-based ordinal index of the
+              line.
+
+              e.g.
+                   # Single expression: drop the first field
+                   echo foo bar baz | fzf --with-nth 2..
+
+                   # Use template to rearrange fields
+                   echo foo,bar,baz | fzf --delimiter , --with-nth
+              '{n},{1},{3},{2},{1..2}'
+
+       ----aacccceepptt--nntthh==_N_[_,_._._] _o_r _T_E_M_P_L_A_T_E
+              Define which fields to print on accept. The last delimiter is
+              stripped from the output. For advanced transformation, you can
+              provide a template containing field index expressions in curly
+              braces. When you use a template, the trailing delimiter is
+              stripped from each expression, giving you more control over the
+              output. {{nn}} in template evaluates to the zero-based ordinal
+              index of the line.
+
+              e.g.
+                   # Single expression
+                   echo foo bar baz | fzf --accept-nth 2
+
+                   # Template
+                   echo foo bar baz | fzf --accept-nth 'Index: {n}, 1st: {1},
+              2nd: {2}, 3rd: {3}'
+
+       ++ss,, ----nnoo--ssoorrtt
+              Do not sort the result
+
+       --dd,, ----ddeelliimmiitteerr==_S_T_R
+              Field delimiter regex for ----nntthh, ----wwiitthh--nntthh, and field index
+              expressions (default: AWK-style)
+
+       ----ttaaiill==NNUUMM
+              Maximum number of items to keep in memory. This is useful when
+              you want to browse an endless stream of data (e.g. log stream)
+              with fzf while limiting memory usage.
+
+              e.g.
+                   ## IInntteerraaccttiivvee ffiilltteerriinngg ooff aa lloogg ssttrreeaamm
+                   ttaaiill --ff **..lloogg || ffzzff ----ttaaiill 110000000000 ----ttaacc ----nnoo--ssoorrtt ----eexxaacctt
+
+       ----ddiissaabblleedd
+              Do not perform search. With this option, fzf becomes a simple
+              selector interface rather than a "fuzzy finder". You can later
+              enable the search using eennaabbllee--sseeaarrcchh or ttooggggllee--sseeaarrcchh action.
+
+       ----ttiieebbrreeaakk==_C_R_I_[_,_._._]
+              Comma-separated list of sort criteria to apply when the scores
+              are tied.
+
+              lleennggtthh   Prefers line with shorter length
+              cchhuunnkk    Prefers line with shorter matched chunk (delimited by
+              whitespaces)
+              ppaatthhnnaammee Prefers line with matched substring in the file name of
+              the path
+              bbeeggiinn    Prefers line with matched substring closer to the
+              beginning
+              eenndd      Prefers line with matched substring closer to the end
+              iinnddeexx    Prefers line that appeared earlier in the input stream
+
+              - Each criterion should appear only once in the list
+              - iinnddeexx is only allowed at the end of the list
+              - iinnddeexx is implicitly appended to the list when not specified
+              - Default is lleennggtthh (or equivalently lleennggtthh,index)
+              - If eenndd is found in the list, fzf will scan each line backwards
+
+   IINNPPUUTT//OOUUTTPPUUTT
+       ----rreeaadd00
+              Read input delimited by ASCII NUL characters instead of newline
+              characters
+
+       ----pprriinntt00
+              Print output delimited by ASCII NUL characters instead of
+              newline characters
+
+       ----aannssii Enable processing of ANSI color codes
+
+       ----ssyynncc Synchronous search for multi-staged filtering. If specified, fzf
+              will launch the finder only after the input stream is complete
+              and the initial filtering and the associated actions (bound to
+              any of ssttaarrtt, llooaadd, rreessuulltt, or ffooccuuss) are complete.
+
+              e.g. ## AAvvooiidd rreennddeerriinngg bbootthh ffzzff iinnssttaanncceess aatt tthhee ssaammee ttiimmee
+                   ffzzff ----mmuullttii || ffzzff ----ssyynncc
+
+                   ## ffzzff wwiillll nnoott rreennddeerr iinntteerrmmeeddiiaattee ssttaatteess
+                   ((sslleeeepp 11;; sseeqq 11000000000000;; sslleeeepp 11)) ||
+                     ffzzff ----ssyynncc ----qquueerryy 55 ----lliisstteenn ----bbiinndd
+              ssttaarrtt::uupp,,llooaadd::uupp,,rreessuulltt::uupp,,ffooccuuss::cchhaannggee--hheeaaddeerr::RReeaaddyy
+
+       ----nnoo--ttttyy--ddeeffaauulltt
+              Make fzf search for the current TTY device via standard error
+              instead of defaulting to //ddeevv//ttttyy. This option avoids issues
+              when launching emacsclient from within fzf. Alternatively, you
+              can change the default TTY device by setting ----ttttyy--
+              ddeeffaauulltt==DDEEVVIICCEE__NNAAMMEE.
+
+
+   GGLLOOBBAALL SSTTYYLLEE
+       ----ssttyyllee==_P_R_E_S_E_T
+              Apply a style preset [default|minimal|full[:BORDER_STYLE]]
+
+       ----ccoolloorr==_[_B_A_S_E___S_C_H_E_M_E_]_[_,_C_O_L_O_R___N_A_M_E_[_:_A_N_S_I___C_O_L_O_R_]_[_:_A_N_S_I___A_T_T_R_I_B_U_T_E_S_]_]_._._.
+              Color configuration. The name of the base color scheme is
+              followed by custom color mappings. Each entry is separated by a
+              comma and/or whitespaces.
+
+              BBAASSEE SSCCHHEEMMEE::
+                  (default: ddaarrkk on 256-color terminal, otherwise bbaassee1166; If
+              NNOO__CCOOLLOORR is set, bbww)
+
+                  ddaarrkk    Color scheme for dark terminal
+                  lliigghhtt   Color scheme for light terminal
+                  bbaassee1166  Color scheme using base 16 colors (alias: 1166)
+                  bbww      No colors (equivalent to ----nnoo--ccoolloorr)
+
+              CCOOLLOORR NNAAMMEESS::
+                  ffgg                    Text
+                    lliisstt--ffgg             Text in the list section
+                      sseelleecctteedd--ffgg       Selected line text
+                    pprreevviieeww--ffgg          Preview window text
+                  bbgg                    Background
+                    lliisstt--bbgg             List section background
+                      sseelleecctteedd--bbgg       Selected line background
+                    pprreevviieeww--bbgg          Preview window background
+                    iinnppuutt--bbgg            Input window background
+                    hheeaaddeerr--bbgg           Header window background
+                    ffooootteerr--bbgg           Footer window background
+                  hhll                    Highlighted substrings
+                    sseelleecctteedd--hhll         Highlighted substrings in the selected
+              line
+                  ccuurrrreenntt--ffgg ((ffgg++))      Text (current line)
+                  ccuurrrreenntt--bbgg ((bbgg++))      Background (current line)
+                    gguutttteerr              Gutter on the left
+                  ccuurrrreenntt--hhll ((hhll++))      Highlighted substrings (current line)
+                  aalltt--bbgg                Alternate background color to create
+              striped lines
+                  qquueerryy ((iinnppuutt--ffgg))      Query string
+                    gghhoosstt               Ghost text (----gghhoosstt, ddiimm applied by
+              default)
+                    ddiissaabblleedd            Query string when search is disabled
+              (----ddiissaabblleedd)
+                  iinnffoo                  Info line (match counters)
+                  bboorrddeerr                Border around the window (----bboorrddeerr and
+              ----pprreevviieeww)
+                    lliisstt--bboorrddeerr         Border around the list section
+              (----lliisstt--bboorrddeerr)
+                      ssccrroollllbbaarr         Scrollbar
+                      sseeppaarraattoorr         Horizontal separator on info line
+                      ggaapp--lliinnee          Horizontal line on each gap
+                    pprreevviieeww--bboorrddeerr      Border around the preview window
+              (----pprreevviieeww)
+                      pprreevviieeww--ssccrroollllbbaarr Scrollbar
+                    iinnppuutt--bboorrddeerr        Border around the input window
+              (----iinnppuutt--bboorrddeerr)
+                    hheeaaddeerr--bboorrddeerr       Border around the header window
+              (----hheeaaddeerr--bboorrddeerr)
+                    ffooootteerr--bboorrddeerr       Border around the footer window
+              (----ffooootteerr--bboorrddeerr)
+                  llaabbeell                 Border label (----bboorrddeerr--llaabbeell,
+              ----lliisstt--llaabbeell, ----iinnppuutt--llaabbeell, and ----pprreevviieeww--llaabbeell)
+                    lliisstt--llaabbeell          Border label of the list section
+              (----lliisstt--llaabbeell)
+                    pprreevviieeww--llaabbeell       Border label of the preview window
+              (----pprreevviieeww--llaabbeell)
+                    iinnppuutt--llaabbeell         Border label of the input window
+              (----iinnppuutt--llaabbeell)
+                    hheeaaddeerr--llaabbeell        Border label of the header window
+              (----hheeaaddeerr--llaabbeell)
+                    ffooootteerr--llaabbeell        Border label of the footer window
+              (----ffooootteerr--llaabbeell)
+                  pprroommpptt                Prompt
+                  ppooiinntteerr               Pointer to the current line
+                  mmaarrkkeerr                Multi-select marker
+                  ssppiinnnneerr               Streaming input indicator
+                  hheeaaddeerr ((hheeaaddeerr--ffgg))   Header
+                  ffooootteerr ((ffooootteerr--ffgg))   Footer
+                  nntthh                   Parts of the line specified by ----nntthh
+              (only supports attributes)
+                  nnoommaattcchh               Non-matching items in raw mode
+              (default: ddiimm)
+
+              AANNSSII CCOOLLOORRSS::
+                  --11         Default terminal foreground/background color
+                             (or the original color of the text)
+                  00 ~~ 1155     16 base colors
+                    bbllaacckk
+                    rreedd
+                    ggrreeeenn
+                    yyeellllooww
+                    bblluuee
+                    mmaaggeennttaa
+                    ccyyaann
+                    wwhhiittee
+                    bbrriigghhtt--bbllaacckk (gray | grey)
+                    bbrriigghhtt--rreedd
+                    bbrriigghhtt--ggrreeeenn
+                    bbrriigghhtt--yyeellllooww
+                    bbrriigghhtt--bblluuee
+                    bbrriigghhtt--mmaaggeennttaa
+                    bbrriigghhtt--ccyyaann
+                    bbrriigghhtt--wwhhiittee
+                  1166 ~~ 225555   ANSI 256 colors
+                  ##rrrrggggbbbb    24-bit colors
+
+              AANNSSII AATTTTRRIIBBUUTTEESS:: ((OOnnllyy aapppplliieess ttoo ffoorreeggrroouunndd ccoolloorrss))
+                  rreegguullaarr        Clear previously set attributes; should
+              precede the other ones
+                  ssttrriipp          Remove colors
+                  bboolldd
+                  uunnddeerrlliinnee
+                  rreevveerrssee
+                  ddiimm
+                  iittaalliicc
+                  ssttrriikkeetthhrroouugghh
+
+              EEXXAAMMPPLLEESS::
+
+                   ## SSeeoouull225566 tthheemmee wwiitthh 88--bbiitt ccoolloorrss
+                   ## ((hhttttppss::////ggiitthhuubb..ccoomm//jjuunneegguunnnn//sseeoouull225566..vviimm))
+                   ffzzff
+              ----ccoolloorr==''bbgg::223377,,bbgg++::223366,,iinnffoo::114433,,bboorrddeerr::224400,,ssppiinnnneerr::110088'' \\
+                       ----ccoolloorr==''hhll::6655,,ffgg::225522,,hheeaaddeerr::6655,,ffgg++::225522'' \\
+                       ----ccoolloorr==''ppooiinntteerr::116611,,mmaarrkkeerr::116688,,pprroommpptt::111100,,hhll++::110088''
+
+                   ## SSeeoouull225566 tthheemmee wwiitthh 2244--bbiitt ccoolloorrss
+                   ffzzff
+              ----ccoolloorr==''bbgg::##44BB44BB44BB,,bbgg++::##33FF33FF33FF,,iinnffoo::##BBDDBBBB7722,,bboorrddeerr::##66BB66BB66BB,,ssppiinnnneerr::##9988BBCC9999''
+              \\
+                       ----ccoolloorr==''hhll::##771199887722,,ffgg::##DD99DD99DD99,,hheeaaddeerr::##771199887722,,ffgg++::##DD99DD99DD99''
+              \\
+                       ----ccoolloorr==''ppooiinntteerr::##EE1122667722,,mmaarrkkeerr::##EE1177889999,,pprroommpptt::##9988BBEEDDEE,,hhll++::##9988BBCC9999''
+
+                   ## SSeeoouull225566 lliigghhtt tthheemmee wwiitthh 2244--bbiitt ccoolloorrss,, eeaacchh eennttrryy
+              sseeppaarraatteedd bbyy wwhhiitteessppaacceess
+                   ffzzff ----ssttyyllee ffuullll ----ccoolloorr==''
+                     ffgg::##661166116611 ffgg++::##661166116611
+                     bbgg::##ffffffffffff bbgg++::##ee99ee99ee99 aalltt--bbgg::##ff11ff11ff11
+                     hhll::##771199887722 hhll++::##771199889999
+                     ppooiinntteerr::##ee1122667722 mmaarrkkeerr::##ee1177889999
+                     hheeaaddeerr::##771199887722
+                     ssppiinnnneerr::##771199889999 iinnffoo::##772277110000
+                     pprroommpptt::##00009999bbdd qquueerryy::##661166116611
+                     bboorrddeerr::##ee11ee11ee11
+                   ''
+
+       ----nnoo--ccoolloorr
+              Disable colors
+
+       ----nnoo--bboolldd
+              Do not use bold text
+
+       ----bbllaacckk
+              Use black background
+
+
+   DDIISSPPLLAAYY MMOODDEE
+       ----hheeiigghhtt==_[_~_]_H_E_I_G_H_T_[_%_]
+              Display fzf window below the cursor with the given height
+              instead of using the full screen.
+
+              If a negative value is specified, the height is calculated as
+              the terminal height minus the given value.
+
+                fzf --height=-1
+
+              When prefixed with ~~, fzf will automatically determine the
+              height in the range according to the input size.
+
+                # Will not take up 100% of the screen
+                seq 5 | fzf --height=~100%
+
+              Adaptive height has the following limitations:
+              * Cannot be used with top/bottom margin and padding given in
+              percent size
+              * Negative value is not allowed
+              * It will not find the right size when there are multi-line
+              items
+
+
+       ----mmiinn--hheeiigghhtt==_H_E_I_G_H_T_[_+_]
+              Minimum height when ----hheeiigghhtt is given as a percentage.  Add ++ to
+              automatically increase the value according to the other layout
+              options so that the specified number of items are visible in the
+              list section (default: 1100++).  Ignored when ----hheeiigghhtt is not
+              specified or set as an absolute value.
+
+       ----ttmmuuxx_[_=_[_c_e_n_t_e_r_|_t_o_p_|_b_o_t_t_o_m_|_l_e_f_t_|_r_i_g_h_t_]_[_,_S_I_Z_E_[_%_]_]_[_,_S_I_Z_E_[_%_]_]_[_,_b_o_r_d_e_r_-_n_a_t_i_v_e_]_]
+              Start fzf in a tmux popup (default cceenntteerr,,5500%%). Requires tmux
+              3.3 or later. This option is ignored if you are not running fzf
+              inside tmux.
+
+              e.g.
+                ## PPooppuupp iinn tthhee cceenntteerr wwiitthh 7700%% wwiiddtthh aanndd hheeiigghhtt
+                ffzzff ----ttmmuuxx 7700%%
+
+                ## PPooppuupp oonn tthhee lleefftt wwiitthh 4400%% wwiiddtthh aanndd 110000%% hheeiigghhtt
+                ffzzff ----ttmmuuxx rriigghhtt,,4400%%
+
+                ## PPooppuupp oonn tthhee bboottttoomm wwiitthh 110000%% wwiiddtthh aanndd 3300%% hheeiigghhtt
+                ffzzff ----ttmmuuxx bboottttoomm,,3300%%
+
+                ## PPooppuupp oonn tthhee ttoopp wwiitthh 8800%% wwiiddtthh aanndd 4400%% hheeiigghhtt
+                ffzzff ----ttmmuuxx ttoopp,,8800%%,,4400%%
+
+                ## PPooppuupp wwiitthh aa nnaattiivvee ttmmuuxx bboorrddeerr iinn tthhee cceenntteerr wwiitthh 8800%% wwiiddtthh
+              aanndd hheeiigghhtt
+                ffzzff ----ttmmuuxx cceenntteerr,,8800%%,,bboorrddeerr--nnaattiivvee
+
+
+   LLAAYYOOUUTT
+       ----llaayyoouutt==_L_A_Y_O_U_T
+              Choose the layout (default: default)
+
+              ddeeffaauulltt       Display from the bottom of the screen
+              rreevveerrssee       Display from the top of the screen
+              rreevveerrssee--lliisstt  Display from the top of the screen, prompt at the
+              bottom
+
+
+       ----rreevveerrssee
+              A synonym for ----llaayyoouutt==rreevveerrssee
+
+
+       ----mmaarrggiinn==_M_A_R_G_I_N
+              Comma-separated expression for margins around the finder.
+
+              TTRRBBLL     Same margin for top, right, bottom, and left
+              TTBB,,RRLL    Vertical, horizontal margin
+              TT,,RRLL,,BB   Top, horizontal, bottom margin
+              TT,,RR,,BB,,LL  Top, right, bottom, left margin
+
+              Each part can be given in absolute number or in percentage
+              relative to the terminal size with %% suffix.
+
+              e.g.
+                   ffzzff ----mmaarrggiinn 1100%%
+                   ffzzff ----mmaarrggiinn 11,,55%%
+
+       ----ppaaddddiinngg==_P_A_D_D_I_N_G
+              Comma-separated expression for padding inside the border.
+              Padding is distinguishable from margin only when ----bboorrddeerr option
+              is used.
+
+              e.g.
+                   ffzzff ----mmaarrggiinn 55%% ----ppaaddddiinngg 55%% ----bboorrddeerr ----pprreevviieeww ''ccaatt {{}}'' \\
+                       ----ccoolloorr bbgg::##222222222222,,pprreevviieeww--bbgg::##333333333333
+
+              TTRRBBLL     Same padding for top, right, bottom, and left
+              TTBB,,RRLL    Vertical, horizontal padding
+              TT,,RRLL,,BB   Top, horizontal, bottom padding
+              TT,,RR,,BB,,LL  Top, right, bottom, left padding
+
+
+       ----bboorrddeerr_[_=_S_T_Y_L_E_]
+              Draw border around the finder
+
+              rroouunnddeedd       Border with rounded corners (default)
+              sshhaarrpp         Border with sharp corners
+              bboolldd          Border with bold lines
+              ddoouubbllee        Border with double lines
+              bblloocckk         Border using block elements; suitable when using
+              different background colors
+              tthhiinnbblloocckk     Border using legacy computing symbols; may not be
+              displayed on some terminals
+              hhoorriizzoonnttaall    Horizontal lines above and below the finder
+              vveerrttiiccaall      Vertical lines on each side of the finder
+              lliinnee          Single line border (position automatically
+              determined)
+              ttoopp (up)
+              bboottttoomm (down)
+              lleefftt
+              rriigghhtt
+              nnoonnee
+
+              If you use a terminal emulator where each box-drawing character
+              takes 2 columns, try setting ----aammbbiiddoouubbllee. If the border is
+              still not properly rendered, set ----nnoo--uunniiccooddee.
+
+              lliinnee style draws a single separator line at the top when
+              ----hheeiigghhtt is used.
+
+
+       ----bboorrddeerr--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the horizontal border line. Should be used
+              with one of the following ----bboorrddeerr options.
+
+              ** rroouunnddeedd
+              ** sshhaarrpp
+              ** bboolldd
+              ** ddoouubbllee
+              ** hhoorriizzoonnttaall
+              ** ttoopp (up)
+              ** bboottttoomm (down)
+
+              e.g.
+                ## AANNSSII ccoolloorr ccooddeess aarree ssuuppppoorrtteedd
+                ## ((wwiitthh hhttttppss::////ggiitthhuubb..ccoomm//bbuussyylloooopp//lloollccaatt))
+                llaabbeell==$$((ccuurrll --ss hhttttpp::////mmeettaapphhoorrppssuumm..ccoomm//sseenntteenncceess//11 || lloollccaatt
+              --ff))
+
+                ## BBoorrddeerr llaabbeell aatt tthhee cceenntteerr
+                ffzzff ----hheeiigghhtt==1100 ----bboorrddeerr ----bboorrddeerr--llaabbeell==""╢╢ $$llaabbeell ╟╟""
+              ----ccoolloorr==llaabbeell::iittaalliicc::bbllaacckk
+
+                ## LLeefftt--aalliiggnneedd ((ppoossiittiivvee iinntteeggeerr))
+                ffzzff ----hheeiigghhtt==1100 ----bboorrddeerr ----bboorrddeerr--llaabbeell==""╢╢ $$llaabbeell ╟╟""
+              ----bboorrddeerr--llaabbeell--ppooss==33 ----ccoolloorr==llaabbeell::iittaalliicc::bbllaacckk
+
+                ## RRiigghhtt--aalliiggnneedd ((nneeggaattiivvee iinntteeggeerr)) oonn tthhee bboottttoomm lliinnee
+              ((::bboottttoomm))
+                ffzzff ----hheeiigghhtt==1100 ----bboorrddeerr ----bboorrddeerr--llaabbeell==""╢╢ $$llaabbeell ╟╟""
+              ----bboorrddeerr--llaabbeell--ppooss==--33::bboottttoomm ----ccoolloorr==llaabbeell::iittaalliicc::bbllaacckk
+
+
+       ----bboorrddeerr--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the border label on the border line. Specify a
+              positive integer as the column position from the left. Specify a
+              negative integer to right-align the label. Label is printed on
+              the top border line by default, add ::bboottttoomm to put it on the
+              border line on the bottom. The default value 00 ((oorr cceenntteerr) will
+              put the label at the center of the border line.
+
+
+   LLIISSTT SSEECCTTIIOONN
+       --mm,, ----mmuullttii_[_=_M_A_X_]
+              Enable multi-select with tab/shift-tab. It optionally takes an
+              integer argument which denotes the maximum number of items that
+              can be selected.
+
+       ++mm,, ----nnoo--mmuullttii
+              Disable multi-select
+
+       ----hhiigghhlliigghhtt--lliinnee
+              Highlight the whole current line
+
+       ----ccyyccllee
+              Enable cyclic scroll
+
+       ----wwrraapp Enable line wrap
+
+       ----wwrraapp--ssiiggnn_=_I_N_D_I_C_A_T_O_R
+              Indicator for wrapped lines. The default is '↳ ' or '> '
+              depending on ----nnoo--uunniiccooddee.
+
+       ----nnoo--mmuullttii--lliinnee
+              Disable multi-line display of items when using ----rreeaadd00
+
+       ----rraaww  Enable raw mode where non-matching items are also displayed in a
+              dimmed color.
+
+       ----ttrraacckk
+              Make fzf track the current selection when the result list is
+              updated.  This can be useful when browsing logs using fzf with
+              sorting disabled. It is not recommended to use this option with
+              ----ttaacc as the resulting behavior can be confusing. Also, consider
+              using ttrraacckk action instead of this option.
+
+              e.g.
+                   ggiitt lloogg ----oonneelliinnee ----ggrraapphh ----ccoolloorr==aallwwaayyss || nnll ||
+                       ffzzff ----aannssii ----ttrraacckk ----nnoo--ssoorrtt ----llaayyoouutt==rreevveerrssee--lliisstt
+
+       ----ttaacc  Reverse the order of the input
+
+              e.g.
+                   hhiissttoorryy || ffzzff ----ttaacc ----nnoo--ssoorrtt
+
+       ----ggaapp_[_=_N_]
+              Render empty lines between each item
+
+       ----ggaapp--lliinnee_[_=_S_T_R_]
+              The given string will be repeated to draw a horizontal line on
+              each gap (default: '┈' or '-' depending on ----nnoo--uunniiccooddee).
+
+       ----ffrreeeezzee--lleefftt==_N
+              Number of fields to freeze on the left.
+
+       ----ffrreeeezzee--rriigghhtt==_N
+              Number of fields to freeze on the right.
+
+       ----kkeeeepp--rriigghhtt
+              Keep the right end of the line visible when it's too long.
+              Effective only when the query string is empty. Use
+              ----ffrreeeezzee--rriigghhtt==11 instead if you want the last field to be always
+              visible even with a non-empty query.
+
+       ----ssccrroollll--ooffff==_L_I_N_E_S
+              Number of screen lines to keep above or below when scrolling to
+              the top or to the bottom (default: 3).
+
+       ----nnoo--hhssccrroollll
+              Disable horizontal scroll
+
+       ----hhssccrroollll--ooffff==_C_O_L_S
+              Number of screen columns to keep to the right of the highlighted
+              substring (default: 10). Setting it to a large value will cause
+              the text to be positioned on the center of the screen.
+
+       ----jjuummpp--llaabbeellss==_C_H_A_R_S
+              Label characters for jjuummpp mode.
+
+       ----gguutttteerr==_C_H_A_R
+              Character used for the gutter column (default: '▌' unless
+              ----nnoo--uunniiccooddee is given)
+
+       ----gguutttteerr--rraaww==_C_H_A_R
+              Character used for the gutter column in raw mode (default: '▖'
+              unless ----nnoo--uunniiccooddee is given)
+
+       ----ppooiinntteerr==_S_T_R
+              Pointer to the current line (default: '▌' or '>' depending on
+              ----nnoo--uunniiccooddee)
+
+       ----mmaarrkkeerr==_S_T_R
+              Multi-select marker (default: '┃' or '>' depending on
+              ----nnoo--uunniiccooddee)
+
+       ----mmaarrkkeerr--mmuullttii--lliinnee==_S_T_R
+              Multi-select marker for multi-line entries. 3 elements for top,
+              middle, and bottom.  (default: '╻┃╹' or '.|'' depending on
+              ----nnoo--uunniiccooddee)
+
+       ----eelllliippssiiss==_S_T_R
+              Ellipsis to show when line is truncated (default: '··')
+
+       ----ttaabbssttoopp==_S_P_A_C_E_S
+              Number of spaces for a tab character (default: 8)
+
+       ----ssccrroollllbbaarr==_C_H_A_R_1_[_C_H_A_R_2_]
+              Use the given character to render scrollbar. (default: '│' or
+              ':' depending on ----nnoo--uunniiccooddee). The optional CCHHAARR22 is used to
+              render scrollbar of the preview window.
+
+
+       ----nnoo--ssccrroollllbbaarr
+              Do not display scrollbar. A synonym for ----ssccrroollllbbaarr==''''
+
+
+       ----lliisstt--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Draw border around the list section. lliinnee style is not supported
+              for this border.
+
+
+       ----lliisstt--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the list border
+
+
+       ----lliisstt--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the list label
+
+
+   IINNPPUUTT SSEECCTTIIOONN
+       ----nnoo--iinnppuutt
+              Disable and hide the input section. You can no longer type in
+              queries. To trigger a search, use sseeaarrcchh action. You can later
+              show the input section using sshhooww--iinnppuutt or ttooggggllee--iinnppuutt action,
+              and hide it again using hhiiddee--iinnppuutt, or ttooggggllee--iinnppuutt.
+
+
+       ----pprroommpptt==_S_T_R
+              Input prompt (default: '> ')
+
+       ----iinnffoo==_S_T_Y_L_E
+              Determines the display style of the finder info. (e.g. match
+              counter, loading indicator, etc.)
+
+              ddeeffaauulltt              On the left end of the horizontal separator
+              rriigghhtt                On the right end of the horizontal
+              separator
+              hhiiddddeenn               Do not display finder info
+              iinnlliinnee               After the prompt with the default prefix '
+              < '
+              iinnlliinnee::PPRREEFFIIXX        After the prompt with a non-default prefix
+              iinnlliinnee--rriigghhtt         On the right end of the prompt line
+              iinnlliinnee--rriigghhtt::PPRREEFFIIXX  On the right end of the prompt line with a
+              custom prefix
+
+
+       ----iinnffoo--ccoommmmaanndd==_C_O_M_M_A_N_D
+              Command to generate the finder info line. The command runs
+              synchronously and blocks the UI until completion, so make sure
+              that it's fast. ANSI color codes are supported. $$FFZZFF__IINNFFOO
+              variable is set to the original info text.  For additional
+              environment variables available to the command, see the section
+              ENVIRONMENT VARIABLES EXPORTED TO CHILD PROCESSES.
+
+              e.g.
+                   ## PPrreeppeenndd tthhee ccuurrrreenntt ccuurrssoorr ppoossiittiioonn iinn yyeellllooww
+                   ffzzff ----iinnffoo--ccoommmmaanndd==''eecchhoo --ee
+              ""\\xx11bb[[3333;;11mm$$FFZZFF__PPOOSS\\xx11bb[[mm//$$FFZZFF__IINNFFOO 💛💛""''
+
+
+       ----nnoo--iinnffoo
+              A synonym for ----iinnffoo==hhiiddddeenn
+
+
+       ----sseeppaarraattoorr==_S_T_R
+              The given string will be repeated to form the horizontal
+              separator on the info line (default: '─' or '-' depending on
+              ----nnoo--uunniiccooddee).
+
+              ANSI color codes are supported.
+
+
+       ----nnoo--sseeppaarraattoorr
+              Do not display horizontal separator on the info line. A synonym
+              for ----sseeppaarraattoorr==''''
+
+
+       ----gghhoosstt==_T_E_X_T
+              Ghost text to display when the input is empty
+
+
+       ----ffiilleeppaatthh--wwoorrdd
+              Make word-wise movements and actions respect path separators.
+              The following actions are affected:
+
+              bbaacckkwwaarrdd--kkiillll--wwoorrdd
+              bbaacckkwwaarrdd--wwoorrdd
+              ffoorrwwaarrdd--wwoorrdd
+              kkiillll--wwoorrdd
+
+       ----iinnppuutt--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Draw border around the input section. lliinnee style draws a single
+              separator line between the input section and the list section.
+
+
+       ----iinnppuutt--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the input border
+
+
+       ----iinnppuutt--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the input label
+
+
+   PPRREEVVIIEEWW WWIINNDDOOWW
+       ----pprreevviieeww==_C_O_M_M_A_N_D
+              Execute the given command for the current line and display the
+              result on the preview window. {{}} in the command is the
+              placeholder that is replaced to the single-quoted string of the
+              current line. To transform the replacement string, specify field
+              index expressions between the braces (See FFIIEELLDD IINNDDEEXX EEXXPPRREESSSSIIOONN
+              for the details).
+
+              e.g.
+                   ffzzff ----pprreevviieeww==''hheeaadd --$$LLIINNEESS {{}}''
+                   llss --ll || ffzzff ----pprreevviieeww==""eecchhoo uusseerr=={{33}} wwhheenn=={{--44....--22}};; ccaatt
+              {{--11}}"" ----hheeaaddeerr--lliinneess==11
+
+              fzf exports $$FFZZFF__PPRREEVVIIEEWW__LLIINNEESS and $$FFZZFF__PPRREEVVIIEEWW__CCOOLLUUMMNNSS so that
+              they represent the exact size of the preview window. (It also
+              overrides $$LLIINNEESS and $$CCOOLLUUMMNNSS with the same values but they can
+              be reset by the default shell, so prefer to refer to the ones
+              with FFZZFF__PPRREEVVIIEEWW__ prefix.)
+
+              fzf also exports $$FFZZFF__PPRREEVVIIEEWW__TTOOPP and $$FFZZFF__PPRREEVVIIEEWW__LLEEFFTT so that
+              the preview command can determine the position of the preview
+              window.
+
+              A placeholder expression starting with ++ flag will be replaced
+              to the space-separated list of the selected items (or the
+              current item if no selection was made) individually quoted.
+
+              e.g.
+                   ffzzff ----mmuullttii ----pprreevviieeww==''hheeaadd --1100 {{++}}''
+                   ggiitt lloogg ----oonneelliinnee || ffzzff ----mmuullttii ----pprreevviieeww ''ggiitt sshhooww {{++11}}''
+
+              Similarly, a placeholder expression starting with ** flag will be
+              replaced to the space-separated list of all matched items
+              individually quoted.
+
+              Each expression expands to a quoted string, so that it's safe to
+              pass it as an argument to an external command. So you should not
+              manually add quotes around the curly braces. But if you don't
+              want this behavior, you can put rr flag (raw) in the expression
+              (e.g. {{rr}}, {{rr11}}, etc).  Use it with caution as unquoted output
+              can lead to broken commands.
+
+              When using a field index expression, leading and trailing
+              whitespace is stripped from the replacement string. To preserve
+              the whitespace, use the ss flag.
+
+              A placeholder expression with ff flag is replaced to the path of
+              a temporary file that holds the evaluated list. This is useful
+              when you pass a large number of items and the length of the
+              evaluated string may exceed AARRGG__MMAAXX.
+
+              e.g.
+                   ## SSeeee tthhee ssuumm ooff aallll tthhee mmaattcchheedd nnuummbbeerrss
+                   ## TThhiiss wwoonn''tt wwoorrkk pprrooppeerrllyy wwiitthhoouutt ''ff'' ffllaagg dduuee ttoo AARRGG__MMAAXX
+              lliimmiitt..
+                   sseeqq 110000000000 || ffzzff ----pprreevviieeww ""aawwkk ''{{ssuumm++==\\$$11}} EENNDD {{pprriinntt
+              ssuumm}}'' {{**ff}}""
+
+              Also,
+
+              * {{qq}} is replaced to the current query string
+              * {{qq}} can contain field index expressions. e.g. {{qq::11}}, {{qq::22....}},
+              etc.
+              * {{nn}} is replaced to the zero-based ordinal index of the current
+              item.
+                Use {{++nn}} if you want all index numbers when multiple lines are
+              selected.
+
+              Note that you can escape a placeholder pattern by prepending a
+              backslash.
+
+              Preview window will be updated even when there is no match for
+              the current query if any of the placeholder expressions
+              evaluates to a non-empty string or {{qq}} is in the command
+              template.
+
+              Since 0.24.0, fzf can render partial preview content before the
+              preview command completes. ANSI escape sequence for clearing the
+              display (CCSSII 22 JJ) is supported, so you can use it to implement
+              preview window that is constantly updating.
+
+              e.g.
+                    ffzzff ----pprreevviieeww ''ffoorr ii iinn $$((sseeqq 110000000000));; ddoo
+                      (((( ii %% 220000 ==== 00 )))) &&&& pprriinnttff ""\\003333[[22JJ""
+                      eecchhoo ""$$ii""
+                      sslleeeepp 00..0011
+                    ddoonnee''
+
+              fzf has experimental support for Kitty graphics protocol and
+              Sixel graphics.  The following example uses
+              https://github.com/junegunn/fzf/blob/master/bin/fzf-preview.sh
+              script to render an image using either of the protocols inside
+              the preview window.
+
+              e.g.
+                    ffzzff ----pprreevviieeww==''ffzzff--pprreevviieeww..sshh {{}}''
+
+
+
+       ----pprreevviieeww--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Short for ----pprreevviieeww--wwiinnddooww==bboorrddeerr--SSTTYYLLEE. lliinnee style draws a
+              single separator line between the preview window and the rest of
+              the interface.
+
+
+       ----pprreevviieeww--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the horizontal border line of the preview
+              window.  Should be used with one of the following
+              ----pprreevviieeww--wwiinnddooww options.
+
+              ** bboorrddeerr--rroouunnddeedd ((ddeeffaauulltt oonn nnoonn--WWiinnddoowwss ppllaattffoorrmmss))
+              ** bboorrddeerr--sshhaarrpp ((ddeeffaauulltt oonn WWiinnddoowwss))
+              ** bboorrddeerr--bboolldd
+              ** bboorrddeerr--ddoouubbllee
+              ** bboorrddeerr--bblloocckk
+              ** bboorrddeerr--tthhiinnbblloocckk
+              ** bboorrddeerr--hhoorriizzoonnttaall
+              ** bboorrddeerr--ttoopp
+              ** bboorrddeerr--bboottttoomm
+
+
+       ----pprreevviieeww--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the border label on the border line of the preview
+              window. Specify a positive integer as the column position from
+              the left. Specify a negative integer to right-align the label.
+              Label is printed on the top border line by default, add ::bboottttoomm
+              to put it on the border line on the bottom. The default value 0
+              (or cceenntteerr) will put the label at the center of the border line.
+
+
+       ----pprreevviieeww--wwiinnddooww==_[_P_O_S_I_T_I_O_N_]_[_,_S_I_Z_E_[_%_]_]_[_,_b_o_r_d_e_r_-_S_T_Y_L_E_]_[_,_[_n_o_]_w_r_a_p_]_[_,_[_n_o_]_f_o_l_l_o_w_]_[_,_[_n_o_]_c_y_c_l_e_]_[_,_[_n_o_]_i_n_f_o_]_[_,_[_n_o_]_h_i_d_d_e_n_]_[_,_+_S_C_R_O_L_L_[_O_F_F_S_E_T_S_]_[_/_D_E_N_O_M_]_]_[_,_~_H_E_A_D_E_R___L_I_N_E_S_]_[_,_d_e_f_a_u_l_t_]_[_,_<_S_I_Z_E___T_H_R_E_S_H_O_L_D_(_A_L_T_E_R_N_A_T_I_V_E___L_A_Y_O_U_T_)_]
+
+              PPOOSSIITTIIOONN:: ((ddeeffaauulltt:: rriigghhtt))
+                  uupp
+                  ddoowwnn
+                  lleefftt
+                  rriigghhtt
+
+              Determines the layout of the preview window.
+
+              * If the argument contains ::hhiiddddeenn, the preview window will be
+              hidden by default until ttooggggllee--pprreevviieeww action is triggered.
+
+              * If size is given as 0, preview window will not be visible, but
+              fzf will still execute the command in the background.
+
+              * Long lines are truncated by default. Line wrap can be enabled
+              with wwrraapp flag.
+
+              * Preview window will automatically scroll to the bottom when
+              ffoollllooww flag is set, similarly to how ttaaiill --ff works.
+
+                     e.g.
+                           ffzzff ----pprreevviieeww--wwiinnddooww ffoollllooww ----pprreevviieeww ''ffoorr ii iinn
+                     $$((sseeqq 110000000000));; ddoo
+                             eecchhoo ""$$ii""
+                             sslleeeepp 00..0011
+                             (((( ii %% 330000 ==== 00 )))) &&&& pprriinnttff ""\\003333[[22JJ""
+                           ddoonnee''
+
+              * Cyclic scrolling is enabled with ccyyccllee flag.
+
+              * To hide the scroll offset information on the top right corner,
+              specify nnooiinnffoo.
+
+              * To change the style of the border of the preview window,
+              specify one of the options for ----bboorrddeerr with bboorrddeerr-- prefix.
+              e.g. bboorrddeerr--rroouunnddeedd (border with rounded edges, default),
+              bboorrddeerr--sshhaarrpp (border with sharp edges), bboorrddeerr--lleefftt,
+              bboorrddeerr--nnoonnee, etc.
+
+              * In addition to the other border styles, bboorrddeerr--lliinnee style is
+              also supported, which draws a single separator line between the
+              preview window and the rest of the interface.
+
+              * [[::++SSCCRROOLLLL[[OOFFFFSSEETTSS]][[//DDEENNOOMM]]]] determines the initial scroll
+              offset of the preview window.
+
+                - SSCCRROOLLLL can be either a numeric integer or a single-field
+              index expression that refers to a numeric integer or {n} to
+              refer to the zero-based ordinal index of the current item.
+
+                - The optional OOFFFFSSEETTSS part is for adjusting the base offset.
+              It should be given as a series of signed integers (--IINNTTEEGGEERR or
+              ++IINNTTEEGGEERR).
+
+                - The final //DDEENNOOMM part is for specifying a fraction of the
+              preview window height.
+
+              * ~~HHEEAADDEERR__LLIINNEESS keeps the top N lines as the fixed header so
+              that they are always visible.
+
+              * ddeeffaauulltt resets all options previously set to the default.
+
+                     e.g.
+                          ## NNoonn--ddeeffaauulltt ssccrroollll wwiinnddooww ppoossiittiioonnss aanndd ssiizzeess
+                          ffzzff ----pprreevviieeww==""hheeaadd {{}}"" ----pprreevviieeww--wwiinnddooww==uupp,,3300%%
+                          ffzzff ----pprreevviieeww==""ffiillee {{}}"" ----pprreevviieeww--wwiinnddooww==ddoowwnn,,11
+
+                          ## IInniittiiaall ssccrroollll ooffffsseett iiss sseett ttoo tthhee lliinnee nnuummbbeerr ooff
+                     eeaacchh lliinnee ooff
+                          ## ggiitt ggrreepp oouuttppuutt **mmiinnuuss** 55 lliinneess ((--55))
+                          ggiitt ggrreepp ----lliinnee--nnuummbbeerr '''' ||
+                            ffzzff ----ddeelliimmiitteerr :: ----pprreevviieeww ''nnll {{11}}''
+                     ----pprreevviieeww--wwiinnddooww ''++{{22}}--55''
+
+                          ## PPrreevviieeww wwiitthh bbaatt,, mmaattcchhiinngg lliinnee iinn tthhee mmiiddddllee ooff
+                     tthhee wwiinnddooww bbeellooww
+                          ## tthhee ffiixxeedd hheeaaddeerr ooff tthhee ttoopp 33 lliinneess
+                          ##
+                          ##   ~~33    TToopp 33 lliinneess aass tthhee ffiixxeedd hheeaaddeerr
+                          ##   ++{{22}}  BBaassee ssccrroollll ooffffsseett eexxttrraacctteedd ffrroomm tthhee
+                     sseeccoonndd ffiieelldd
+                          ##   ++33    EExxttrraa ooffffsseett ttoo ccoommppeennssaattee ffoorr tthhee 33--lliinnee
+                     hheeaaddeerr
+                          ##   //22    PPuutt iinn tthhee mmiiddddllee ooff tthhee pprreevviieeww aarreeaa
+                          ##
+                          ggiitt ggrreepp ----lliinnee--nnuummbbeerr '''' ||
+                            ffzzff ----ddeelliimmiitteerr :: \\
+                                ----pprreevviieeww ''bbaatt ----ssttyyllee==ffuullll ----ccoolloorr==aallwwaayyss
+                     ----hhiigghhlliigghhtt--lliinnee {{22}} {{11}}'' \\
+                                ----pprreevviieeww--wwiinnddooww ''~~33,,++{{22}}++33//22''
+
+                          ## DDiissppllaayy ttoopp 33 lliinneess aass tthhee ffiixxeedd hheeaaddeerr
+                          ffzzff ----pprreevviieeww ''bbaatt ----ssttyyllee==ffuullll ----ccoolloorr==aallwwaayyss {{}}''
+                     ----pprreevviieeww--wwiinnddooww ''~~33''
+
+              * You can specify an alternative set of options that are used
+              only when the size
+                of the preview window is below a certain threshold. Note that
+              only one
+                alternative layout is allowed.
+
+                     e.g.
+                           ffzzff ----pprreevviieeww ''ccaatt {{}}'' ----pprreevviieeww--wwiinnddooww
+                     ''rriigghhtt,,bboorrddeerr--lleefftt,,<<3300((uupp,,3300%%,,bboorrddeerr--bboottttoomm))''
+
+
+   HHEEAADDEERR
+       ----hheeaaddeerr==_S_T_R
+              The given string will be printed as the sticky header. The lines
+              are displayed in the given order from top to bottom regardless
+              of ----llaayyoouutt option, and are not affected by ----wwiitthh--nntthh. ANSI
+              color codes are processed even when ----aannssii is not set.
+
+       ----hheeaaddeerr--lliinneess==_N
+              The first N lines of the input are treated as the sticky header.
+              When ----wwiitthh--nntthh is set, the lines are transformed just like the
+              other lines that follow.
+
+       ----hheeaaddeerr--ffiirrsstt
+              Print header before the prompt line. When both normal header and
+              header lines (----hheeaaddeerr--lliinneess) are present, this applies only to
+              the normal header.
+
+       ----hheeaaddeerr--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Draw border around the header section. lliinnee style draws a single
+              separator line between the header window and the list section.
+
+
+       ----hheeaaddeerr--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the header border
+
+
+       ----hheeaaddeerr--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the header label
+
+
+       ----hheeaaddeerr--lliinneess--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Display header from ----hheeaaddeerr--lliinneess with a separate border. Pass
+              nnoonnee to still separate the header lines but without a border. To
+              combine two headers, use ----nnoo--hheeaaddeerr--lliinneess--bboorrddeerr. lliinnee style
+              draws a single separator line between the header lines and the
+              list section.
+
+
+   FFOOOOTTEERR
+       ----ffooootteerr==_S_T_R
+              The given string will be printed as the sticky footer. The lines
+              are displayed in the given order from top to bottom regardless
+              of ----llaayyoouutt option, and are not affected by ----wwiitthh--nntthh. ANSI
+              color codes are processed even when ----aannssii is not set.
+
+
+       ----ffooootteerr--bboorrddeerr_[_=_S_T_Y_L_E_]
+              Draw border around the footer section. lliinnee style draws a single
+              separator line between the footer and the list section.
+
+
+       ----ffooootteerr--llaabbeell_[_=_L_A_B_E_L_]
+              Label to print on the footer border
+
+
+       ----ffooootteerr--llaabbeell--ppooss_[_=_N_[_:_t_o_p_|_b_o_t_t_o_m_]_]
+              Position of the footer label
+
+
+   SSCCRRIIPPTTIINNGG
+       --qq,, ----qquueerryy==_S_T_R
+              Start the finder with the given query
+
+       --11,, ----sseelleecctt--11
+              If there is only one match for the initial query (----qquueerryy), do
+              not start interactive finder and automatically select the only
+              match
+
+       --00,, ----eexxiitt--00
+              If there is no match for the initial query (----qquueerryy), do not
+              start interactive finder and exit immediately
+
+       --ff,, ----ffiilltteerr==_S_T_R
+              Filter mode. Do not start interactive finder. When used with
+              ----nnoo--ssoorrtt, fzf becomes a fuzzy-version of grep.
+
+       ----pprriinntt--qquueerryy
+              Print query as the first line
+
+       ----eexxppeecctt==_K_E_Y_[_,_._._]
+              Comma-separated list of keys that can be used to complete fzf in
+              addition to the default enter key. When this option is set, fzf
+              will print the name of the key pressed as the first line of its
+              output (or as the second line if ----pprriinntt--qquueerryy is also used).
+              The line will be empty if fzf is completed with the default
+              enter key. If ----eexxppeecctt option is specified multiple times, fzf
+              will expect the union of the keys. ----nnoo--eexxppeecctt will clear the
+              list.
+
+              e.g.
+                   ffzzff ----eexxppeecctt==ccttrrll--vv,,ccttrrll--tt,,aalltt--ss ----eexxppeecctt==ff11,,ff22,,~~,,@@
+
+              This option is not compatible with ----bbiinndd on the same key and
+              will take precedence over it. To combine the two, use pprriinntt
+              action.
+
+              e.g.
+                   ffzzff ----mmuullttii \\
+                       ----bbiinndd
+              ''eenntteerr::pprriinntt(())++aacccceepptt,,ccttrrll--yy::sseelleecctt--aallll++pprriinntt((ccttrrll--yy))++aacccceepptt''
+
+       ----nnoo--cclleeaarr
+              Do not clear finder interface on exit. If fzf was started in
+              full screen mode, it will not switch back to the original
+              screen, so you'll have to manually run ttppuutt rrmmccuupp to return.
+              This option can be used to avoid flickering of the screen when
+              your application needs to start fzf multiple times in order.
+              (Note that in most cases, it is preferable to use rreellooaadd action
+              instead.)
+
+              e.g.
+                   ffoooo==$$((sseeqq 110000 || ffzzff ----nnoo--cclleeaarr)) |||| ((
+                     ## NNeeeedd ttoo mmaannuuaallllyy sswwiittcchh bbaacckk ttoo tthhee mmaaiinn ssccrreeeenn wwhheenn
+              ccaanncceelllleedd
+                     ttppuutt rrmmccuupp
+                     eexxiitt 11
+                   )) &&&& sseeqq ""$$ffoooo"" 110000 || ffzzff
+
+
+   KKEEYY//EEVVEENNTT BBIINNDDIINNGG
+       ----bbiinndd==_B_I_N_D_I_N_G_S
+              Comma-separated list of custom key/event bindings. See KKEEYY//EEVVEENNTT
+              BBIINNDDIINNGGSS for the details.
+
+
+   AADDVVAANNCCEEDD
+       ----wwiitthh--sshheellll==SSTTRR
+              Shell command and flags to start child processes with. On *nix
+              Systems, the default value is $$SSHHEELLLL --cc if $$SSHHEELLLL is set,
+              otherwise sshh --cc.  On Windows, the default value is ccmmdd //ss//cc when
+              $$SSHHEELLLL is not set.
+
+
+       ----lliisstteenn[[==SSOOCCKKEETT__PPAATTHH||[[AADDDDRR::]]PPOORRTT]] ----lliisstteenn--uunnssaaffee[[==[[AADDDDRR::]]PPOORRTT]]
+              Start HTTP server and listen on the given address or Unix
+              socket. It allows external processes to send actions to perform
+              via POST method and query the program state via GET method. For
+              the argument to be recognized as a socket path, it must have
+              ..ssoocckk extension.
+
+              - If the port number is omitted or given as 0, fzf will
+              automatically choose a port and export it as FFZZFF__PPOORRTT
+              environment variable to the child processes.
+
+              - If a Unix socket path is given, fzf will create a Unix domain
+              socket at the
+                given path. The existing file will be removed. The path to the
+              socket file
+                is exported as FFZZFF__SSOOCCKK environment variable.
+
+              - If FFZZFF__AAPPII__KKEEYY environment variable is set, the server would
+              require
+                sending an API key with the same value in the xx--aappii--kkeeyy HTTP
+              header.
+
+              - FFZZFF__AAPPII__KKEEYY is required for a non-localhost listen address.
+
+              - To allow remote process execution, use ----lliisstteenn--uunnssaaffee.
+
+              e.g.
+                   ## SSttaarrtt HHTTTTPP sseerrvveerr oonn ppoorrtt 66226666
+                   ffzzff ----lliisstteenn 66226666
+
+                   ## SSeenndd aaccttiioonn ttoo tthhee sseerrvveerr
+                   ccuurrll --XXPPOOSSTT llooccaallhhoosstt::66226666 --dd ''rreellooaadd((sseeqq
+              110000))++cchhaannggee--pprroommpptt((hhuunnddrreedd>> ))''
+
+                   ## SSttaarrtt HHTTTTPP sseerrvveerr oonn ppoorrtt 66226666 wwiitthh rreemmoottee ccoonnnneeccttiioonnss
+              aalllloowweedd
+                   ## ** LLiisstteenniinngg oonn nnoonn--llooccaallhhoosstt aaddddrreessss rreeqquuiirreess uussiinngg aann
+              AAPPII kkeeyy
+                   eexxppoorrtt FFZZFF__AAPPII__KKEEYY==""$$((hheeaadd --cc 3322 //ddeevv//uurraannddoomm || bbaassee6644))""
+                   ffzzff ----lliisstteenn 00..00..00..00::66226666
+
+                   ## SSeenndd aann aauutthheennttiiccaatteedd aaccttiioonn
+                   ccuurrll --XXPPOOSSTT llooccaallhhoosstt::66226666 --HH ""xx--aappii--kkeeyy:: $$FFZZFF__AAPPII__KKEEYY"" --dd
+              ''cchhaannggee--qquueerryy((yyoo))''
+
+                   ## CChhoooossee ppoorrtt aauuttoommaattiiccaallllyy aanndd eexxppoorrtt iitt aass $$FFZZFF__PPOORRTT ttoo
+              tthhee cchhiilldd pprroocceessss
+                   ffzzff ----lliisstteenn ----bbiinndd ''ssttaarrtt::eexxeeccuuttee--ssiilleenntt::eecchhoo $$FFZZFF__PPOORRTT >>
+              //ttmmpp//ffzzff--ppoorrtt''
+
+                   ## GGeett pprrooggrraamm ssttaattee iinn JJSSOONN ffoorrmmaatt ((eexxppeerriimmeennttaall))
+                   ## -- GGEETT PPaarraammeetteerrss::
+                   ##    -- lliimmiitt:: nnuummbbeerr ooff iitteemmss ttoo rreettuurrnn ((ddeeffaauulltt:: 110000))
+                   ##    -- ooffffsseett:: nnuummbbeerr ooff iitteemmss ttoo sskkiipp ((ddeeffaauulltt:: 00))
+                   ccuurrll llooccaallhhoosstt::66226666
+
+                   ## AAuuttoommaattiiccaallllyy sseelleecctt iitteemmss wwiitthh ..ttxxtt eexxtteennssiioonn
+                   ffzzff ----mmuullttii ----ssyynncc ----lliisstteenn ----bbiinndd ''llooaadd::ttrraannssffoorrmm::
+                     ppooss==11
+                     ccuurrll --ss llooccaallhhoosstt::$$FFZZFF__PPOORRTT??lliimmiitt==11000000 || jjqq --rr
+              ..mmaattcchheess[[]]..tteexxtt || wwhhiillee rreeaadd --rr tteexxtt;; ddoo
+                       iiff [[[[ $$tteexxtt ==~~ \\..ttxxtt$$ ]]]];; tthheenn
+                         eecchhoo --nn ""++ppooss(($$ppooss))++sseelleecctt""
+                       ffii
+                       ppooss==$$((((ppooss ++ 11))))
+                     ddoonnee
+                     eecchhoo ++ffiirrsstt
+                   ''
+
+
+              Here is an example script that uses a Unix socket instead of a
+              TCP port.
+
+
+                  ffzzff ----lliisstteenn==//ttmmpp//ffzzff..ssoocckk
+
+                  ## GGEETT
+                  ccuurrll ----uunniixx--ssoocckkeett //ttmmpp//ffzzff..ssoocckk hhttttpp
+
+                  ## PPOOSSTT
+                  ccuurrll ----uunniixx--ssoocckkeett //ttmmpp//ffzzff..ssoocckk hhttttpp --dd uupp
+
+
+
+   DDIIRREECCTTOORRYY TTRRAAVVEERRSSAALL
+       ----wwaallkkeerr==[[ffiillee]][[,,ddiirr]][[,,ffoollllooww]][[,,hhiiddddeenn]]
+              Determines the behavior of the built-in directory walker that is
+              used when $$FFZZFF__DDEEFFAAUULLTT__CCOOMMMMAANNDD is not set. The default value is
+              ffiillee,,ffoollllooww,,hhiiddddeenn.
+
+              * ffiillee: Include files in the search result
+              * ddiirr: Include directories in the search result
+              * hhiiddddeenn: Include and follow hidden directories
+              * ffoollllooww: Follow symbolic links
+
+
+       ----wwaallkkeerr--rroooott==DDIIRR [[......]]
+              List of directory names to start the built-in directory walker.
+              The default value is the current working directory.
+
+
+       ----wwaallkkeerr--sskkiipp==DDIIRRSS
+              Comma-separated list of directory names to skip during the
+              directory walk.  The default value is ..ggiitt,,nnooddee__mmoodduulleess.
+
+
+   HHIISSTTOORRYY
+       ----hhiissttoorryy==_H_I_S_T_O_R_Y___F_I_L_E
+              Load search history from the specified file and update the file
+              on completion.  When enabled, CCTTRRLL--NN and CCTTRRLL--PP are
+              automatically remapped to nneexxtt--hhiissttoorryy and pprreevv--hhiissttoorryy.
+
+       ----hhiissttoorryy--ssiizzee==_N
+              Maximum number of entries in the history file (default: 1000).
+              The file is automatically truncated when the number of the lines
+              exceeds the value.
+
+              e.g. ggeemm lliisstt || ffzzff ----wwiitthh--sshheellll ''rruubbyy --ee'' ----pprreevviieeww ''pppp
+              GGeemm::::SSppeecciiffiiccaattiioonn..ffiinndd__bbyy__nnaammee(({{11}}))''
+
+
+   SSHHEELLLL IINNTTEEGGRRAATTIIOONN
+       ----bbaasshh Print script to set up Bash shell integration
+
+              e.g. eevvaall ""$$((ffzzff ----bbaasshh))""
+
+
+       ----zzsshh  Print script to set up Zsh shell integration
+
+              e.g. ssoouurrccee <<((ffzzff ----zzsshh))
+
+
+       ----ffiisshh Print script to set up Fish shell integration
+
+              e.g. ffzzff ----ffiisshh || ssoouurrccee
+
+
+   OOTTHHEERRSS
+       ----nnoo--mmoouussee
+              Disable mouse
+
+       ----nnoo--uunniiccooddee
+              Use ASCII characters instead of Unicode drawing characters to
+              draw borders, the spinner and the horizontal separator.
+
+
+       ----aammbbiiddoouubbllee
+              Set this option if your terminal displays ambiguous width
+              characters (e.g.  box-drawing characters for borders) as 2
+              columns.
+
+
+   HHEELLPP
+       ----vveerrssiioonn
+              Display version information and exit
+
+       ----hheellpp Show help message
+
+       ----mmaann  Show man page
+
+
+EENNVVIIRROONNMMEENNTT VVAARRIIAABBLLEESS
+       FFZZFF__DDEEFFAAUULLTT__CCOOMMMMAANNDD
+              Default command to use when input is a TTY device. On *nix
+              systems, fzf runs the command with $$SSHHEELLLL --cc if SSHHEELLLL is set,
+              otherwise with sshh --cc, so in this case make sure that the command
+              is POSIX-compliant.
+
+       FFZZFF__DDEEFFAAUULLTT__OOPPTTSS
+              Default options.
+              e.g. eexxppoorrtt FFZZFF__DDEEFFAAUULLTT__OOPPTTSS==""----llaayyoouutt==rreevveerrssee ----bboorrddeerr ----ccyyccllee""
+
+       FFZZFF__DDEEFFAAUULLTT__OOPPTTSS__FFIILLEE
+              The location of the file that contains the default options.
+              e.g. eexxppoorrtt FFZZFF__DDEEFFAAUULLTT__OOPPTTSS__FFIILLEE==~~//..ffzzffrrcc
+
+       FFZZFF__AAPPII__KKEEYY
+              Can be used to require an API key when using ----lliisstteenn option. If
+              not set, no authentication will be required by the server. You
+              can set this value if you need to protect against DNS rebinding
+              and privilege escalation attacks.
+
+
+EEXXIITT SSTTAATTUUSS
+       00      Normal exit
+       11      No match
+       22      Error
+       112266    Permission denied error from bbeeccoommee action
+       112277    Invalid shell command for bbeeccoommee action
+       113300    Interrupted with CCTTRRLL--CC or EESSCC
+
+
+FFIIEELLDD IINNDDEEXX EEXXPPRREESSSSIIOONN
+       A field index expression can be a non-zero integer or a range
+       expression ([BEGIN]..[END]). ----nntthh and ----wwiitthh--nntthh take a comma-
+       separated list of field index expressions.
+
+
+   EExxaammpplleess
+       11      The 1st field
+       22      The 2nd field
+       --11     The last field
+       --22     The 2nd to last field
+       33....55   From the 3rd field to the 5th field
+       22....    From the 2nd field to the last field
+       ....--33   From the 1st field to the 3rd to the last field
+       ....     All the fields
+
+
+EENNVVIIRROONNMMEENNTT VVAARRIIAABBLLEESS EEXXPPOORRTTEEDD TTOO CCHHIILLDD PPRROOCCEESSSSEESS
+       fzf exports the following environment variables to its child processes.
+
+       FFZZFF__LLIINNEESS           Number of lines fzf takes up excluding padding and
+       margin
+       FFZZFF__CCOOLLUUMMNNSS         Number of columns fzf takes up excluding padding
+       and margin
+       FFZZFF__DDIIRREECCTTIIOONN       Direction of the list (uupp or ddoowwnn)
+       FFZZFF__TTOOTTAALL__CCOOUUNNTT     Total number of items
+       FFZZFF__MMAATTCCHH__CCOOUUNNTT     Number of matched items
+       FFZZFF__SSEELLEECCTT__CCOOUUNNTT    Number of selected items
+       FFZZFF__PPOOSS             Vertical position of the cursor in the list
+       starting from 1
+       FFZZFF__QQUUEERRYY           Current query string
+       FFZZFF__IINNPPUUTT__SSTTAATTEE     Current input state (enabled, disabled, hidden)
+       FFZZFF__NNTTHH             Current --nth option
+       FFZZFF__PPRROOMMPPTT          Prompt string
+       FFZZFF__GGHHOOSSTT           Ghost string
+       FFZZFF__PPOOIINNTTEERR         Pointer string
+       FFZZFF__PPRREEVVIIEEWW__LLAABBEELL   Preview label string
+       FFZZFF__BBOORRDDEERR__LLAABBEELL    Border label string
+       FFZZFF__LLIISSTT__LLAABBEELL      List label string
+       FFZZFF__IINNPPUUTT__LLAABBEELL     Input label string
+       FFZZFF__HHEEAADDEERR__LLAABBEELL    Header label string
+       FFZZFF__AACCTTIIOONN          The name of the last action performed
+       FFZZFF__KKEEYY             The name of the last key pressed
+       FFZZFF__PPOORRTT            Port number when --listen option is used
+       FFZZFF__SSOOCCKK            Unix socket path when --listen option is used
+       FFZZFF__PPRREEVVIIEEWW__TTOOPP     Top position of the preview window
+       FFZZFF__PPRREEVVIIEEWW__LLEEFFTT    Left position of the preview window
+       FFZZFF__PPRREEVVIIEEWW__LLIINNEESS   Number of lines in the preview window
+       FFZZFF__PPRREEVVIIEEWW__CCOOLLUUMMNNSS Number of columns in the preview window
+       FFZZFF__RRAAWW             Only in raw mode. 1 if the current item matches, 0
+       otherwise
+
+
+EEXXTTEENNDDEEDD SSEEAARRCCHH MMOODDEE
+       Unless specified otherwise, fzf will start in "extended-search mode".
+       In this mode, you can specify multiple patterns delimited by spaces,
+       such as: ''wwiilldd ^^mmuussiicc ..mmpp33$$ ssbbttrrkktt !!rrmmxx
+
+       You can prepend a backslash to a space (\\ ) to match a literal space
+       character.
+
+
+   EExxaacctt--mmaattcchh ((qquuootteedd))
+       A term that is prefixed by a single-quote character ('') is interpreted
+       as an "exact-match" (or "non-fuzzy") term. fzf will search for the
+       exact occurrences of the string.
+
+
+   AAnncchhoorreedd--mmaattcchh
+       A term can be prefixed by ^^, or suffixed by $$ to become an anchored-
+       match term. Then fzf will search for the lines that start with or end
+       with the given string. An anchored-match term is also an exact-match
+       term.
+
+
+   EExxaacctt--bboouunnddaarryy--mmaattcchh ((qquuootteedd bbootthh eennddss))
+       A single-quoted term is interpreted as an "exact-boundary-match". fzf
+       will search for the exact occurrences of the string with both ends at
+       the word boundaries. Unlike in regular expressions, this also sees an
+       underscore as a word boundary. But the words around underscores are
+       ranked lower and appear later in the result than the other words around
+       the other types of word boundaries.
+
+       1. xxx foo xxx (highest score)
+       2. xxx foo_xxx
+       3. xxx_foo xxx
+       4. xxx_foo_xxx (lowest score)
+
+
+   NNeeggaattiioonn
+       If a term is prefixed by !!, fzf will exclude the lines that satisfy the
+       term from the result. In this case, fzf performs exact match by
+       default.
+
+
+   EExxaacctt--mmaattcchh bbyy ddeeffaauulltt
+       If you don't prefer fuzzy matching and do not wish to "quote"
+       (prefixing with '') every word, start fzf with --ee or ----eexxaacctt option.
+       Note that when ----eexxaacctt is set, ''-prefix "unquotes" the term.
+
+
+   OORR ooppeerraattoorr
+       A single bar character term acts as an OR operator. For example, the
+       following query matches entries that start with ccoorree and end with
+       either ggoo, rrbb, or ppyy.
+
+       e.g. ^^ccoorree ggoo$$ || rrbb$$ || ppyy$$
+
+
+KKEEYY//EEVVEENNTT BBIINNDDIINNGGSS
+       ----bbiinndd option allows you to bind aa kkeeyy or aann eevveenntt to one or more
+       aaccttiioonnss. You can use it to customize key bindings or implement dynamic
+       behaviors.
+
+       ----bbiinndd takes a comma-separated list of binding expressions. Each
+       binding expression is KKEEYY::AACCTTIIOONN or EEVVEENNTT::AACCTTIIOONN. You can bind actions
+       to multiple keys and events by writing comma-separated list of keys and
+       events before the colon. e.g. KKEEYY11,,KKEEYY22,,EEVVEENNTT11,,EEVVEENNTT22::AACCTTIIOONN.
+
+       e.g.
+            ffzzff ----bbiinndd==ccttrrll--jj::aacccceepptt,,ccttrrll--kk::kkiillll--lliinnee
+
+            ## LLooaadd ''ppss --eeff'' oouuttppuutt oonn ssttaarrtt aanndd rreellooaadd iitt oonn CCTTRRLL--RR
+            ffzzff ----bbiinndd ''ssttaarrtt,,ccttrrll--rr::rreellooaadd::ppss --eeff''
+
+
+   AAVVAAIILLAABBLLEE KKEEYYSS:: ((SSYYNNOONNYYMMSS))
+       _c_t_r_l_-_[_a_-_z_]
+       _c_t_r_l_-_s_p_a_c_e
+       _c_t_r_l_-_d_e_l_e_t_e
+       _c_t_r_l_-_\
+       _c_t_r_l_-_]
+       _c_t_r_l_-_^         (_c_t_r_l_-_6)
+       _c_t_r_l_-_/         (_c_t_r_l_-__)
+       _c_t_r_l_-_a_l_t_-_[_a_-_z_] (_c_t_r_l_-_a_l_t_-_h is _c_t_r_l_-_a_l_t_-_b_a_c_k_s_p_a_c_e on non-Windows)
+       _a_l_t_-_[_*_]        (Any case-sensitive single character is allowed)
+       _f_[_1_-_1_2_]
+       _e_n_t_e_r          (_r_e_t_u_r_n _c_t_r_l_-_m)
+       _s_p_a_c_e
+       _b_a_c_k_s_p_a_c_e      (_b_s_p_a_c_e _b_s)
+       _a_l_t_-_u_p
+       _a_l_t_-_d_o_w_n
+       _a_l_t_-_l_e_f_t
+       _a_l_t_-_r_i_g_h_t
+       _a_l_t_-_h_o_m_e
+       _a_l_t_-_e_n_d
+       _a_l_t_-_b_a_c_k_s_p_a_c_e  (_a_l_t_-_b_s_p_a_c_e _a_l_t_-_b_s)
+       _a_l_t_-_d_e_l_e_t_e
+       _a_l_t_-_p_a_g_e_-_u_p
+       _a_l_t_-_p_a_g_e_-_d_o_w_n
+       _a_l_t_-_e_n_t_e_r
+       _a_l_t_-_s_p_a_c_e
+       _t_a_b
+       _s_h_i_f_t_-_t_a_b      (_b_t_a_b)
+       _e_s_c
+       _d_e_l_e_t_e         (_d_e_l)
+       _u_p
+       _d_o_w_n
+       _l_e_f_t
+       _r_i_g_h_t
+       _h_o_m_e
+       _e_n_d
+       _i_n_s_e_r_t
+       _p_a_g_e_-_u_p        (_p_g_u_p)
+       _p_a_g_e_-_d_o_w_n      (_p_g_d_n)
+       _c_t_r_l_-_u_p
+       _c_t_r_l_-_d_o_w_n
+       _c_t_r_l_-_l_e_f_t
+       _c_t_r_l_-_r_i_g_h_t
+       _c_t_r_l_-_h_o_m_e
+       _c_t_r_l_-_e_n_d
+       _c_t_r_l_-_b_a_c_k_s_p_a_c_e  (_c_t_r_l_-_b_s_p_a_c_e _c_t_r_l_-_b_s)
+       _c_t_r_l_-_d_e_l_e_t_e
+       _c_t_r_l_-_p_a_g_e_-_u_p
+       _c_t_r_l_-_p_a_g_e_-_d_o_w_n
+       _s_h_i_f_t_-_u_p
+       _s_h_i_f_t_-_d_o_w_n
+       _s_h_i_f_t_-_l_e_f_t
+       _s_h_i_f_t_-_r_i_g_h_t
+       _s_h_i_f_t_-_h_o_m_e
+       _s_h_i_f_t_-_e_n_d
+       _s_h_i_f_t_-_d_e_l_e_t_e
+       _s_h_i_f_t_-_p_a_g_e_-_u_p
+       _s_h_i_f_t_-_p_a_g_e_-_d_o_w_n
+       _a_l_t_-_s_h_i_f_t_-_u_p
+       _a_l_t_-_s_h_i_f_t_-_d_o_w_n
+       _a_l_t_-_s_h_i_f_t_-_l_e_f_t
+       _a_l_t_-_s_h_i_f_t_-_r_i_g_h_t
+       _a_l_t_-_s_h_i_f_t_-_h_o_m_e
+       _a_l_t_-_s_h_i_f_t_-_e_n_d
+       _a_l_t_-_s_h_i_f_t_-_d_e_l_e_t_e
+       _a_l_t_-_s_h_i_f_t_-_p_a_g_e_-_u_p
+       _a_l_t_-_s_h_i_f_t_-_p_a_g_e_-_d_o_w_n
+       _c_t_r_l_-_a_l_t_-_u_p
+       _c_t_r_l_-_a_l_t_-_d_o_w_n
+       _c_t_r_l_-_a_l_t_-_l_e_f_t
+       _c_t_r_l_-_a_l_t_-_r_i_g_h_t
+       _c_t_r_l_-_a_l_t_-_h_o_m_e
+       _c_t_r_l_-_a_l_t_-_e_n_d
+       _c_t_r_l_-_a_l_t_-_b_a_c_k_s_p_a_c_e  (_c_t_r_l_-_a_l_t_-_b_s_p_a_c_e _c_t_r_l_-_a_l_t_-_b_s) (_c_t_r_l_-_a_l_t_-_h (non-
+       Windows))
+       _c_t_r_l_-_a_l_t_-_d_e_l_e_t_e
+       _c_t_r_l_-_a_l_t_-_p_a_g_e_-_u_p
+       _c_t_r_l_-_a_l_t_-_p_a_g_e_-_d_o_w_n
+       _c_t_r_l_-_s_h_i_f_t_-_u_p
+       _c_t_r_l_-_s_h_i_f_t_-_d_o_w_n
+       _c_t_r_l_-_s_h_i_f_t_-_l_e_f_t
+       _c_t_r_l_-_s_h_i_f_t_-_r_i_g_h_t
+       _c_t_r_l_-_s_h_i_f_t_-_h_o_m_e
+       _c_t_r_l_-_s_h_i_f_t_-_e_n_d
+       _c_t_r_l_-_s_h_i_f_t_-_d_e_l_e_t_e
+       _c_t_r_l_-_s_h_i_f_t_-_p_a_g_e_-_u_p
+       _c_t_r_l_-_s_h_i_f_t_-_p_a_g_e_-_d_o_w_n
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_u_p
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_d_o_w_n
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_l_e_f_t
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_r_i_g_h_t
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_h_o_m_e
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_e_n_d
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_d_e_l_e_t_e
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_p_a_g_e_-_u_p
+       _c_t_r_l_-_a_l_t_-_s_h_i_f_t_-_p_a_g_e_-_d_o_w_n
+       _l_e_f_t_-_c_l_i_c_k
+       _r_i_g_h_t_-_c_l_i_c_k
+       _d_o_u_b_l_e_-_c_l_i_c_k
+       _s_c_r_o_l_l_-_u_p
+       _s_c_r_o_l_l_-_d_o_w_n
+       _p_r_e_v_i_e_w_-_s_c_r_o_l_l_-_u_p
+       _p_r_e_v_i_e_w_-_s_c_r_o_l_l_-_d_o_w_n
+       _s_h_i_f_t_-_l_e_f_t_-_c_l_i_c_k
+       _s_h_i_f_t_-_r_i_g_h_t_-_c_l_i_c_k
+       _s_h_i_f_t_-_s_c_r_o_l_l_-_u_p
+       _s_h_i_f_t_-_s_c_r_o_l_l_-_d_o_w_n
+       or any single character
+
+       Note that some terminal emulators may not support _c_t_r_l_-_* bindings.
+
+
+   AAVVAAIILLAABBLLEE EEVVEENNTTSS::
+       _s_t_a_r_t
+              Triggered only once when fzf finder starts. Since fzf consumes
+              the input stream asynchronously, the input list is not available
+              unless you use _-_-_s_y_n_c.
+
+              e.g.
+                   ## MMoovvee ccuurrssoorr ttoo tthhee llaasstt iitteemm aanndd sseelleecctt aallll iitteemmss
+                   sseeqq 11000000 || ffzzff ----mmuullttii ----ssyynncc ----bbiinndd ssttaarrtt::llaasstt++sseelleecctt--aallll
+
+       _l_o_a_d
+              Triggered when the input stream is complete and the initial
+              processing of the list is complete.
+
+              e.g.
+                   ## CChhaannggee tthhee pprroommpptt ttoo ""llooaaddeedd"" wwhheenn tthhee iinnppuutt ssttrreeaamm iiss
+              ccoommpplleettee
+                   ((sseeqq 1100;; sslleeeepp 11;; sseeqq 1111 2200)) || ffzzff ----pprroommpptt ''LLooaaddiinngg>> ''
+              ----bbiinndd ''llooaadd::cchhaannggee--pprroommpptt::LLooaaddeedd>> ''
+
+       _r_e_s_i_z_e
+              Triggered when the terminal size is changed.
+
+              e.g.
+                   ffzzff ----bbiinndd ''rreessiizzee::ttrraannssffoorrmm--hheeaaddeerr::eecchhoo RReessiizzeedd::
+              $${{FFZZFF__CCOOLLUUMMNNSS}}xx$${{FFZZFF__LLIINNEESS}}''
+
+       _r_e_s_u_l_t
+              Triggered when the filtering for the current query is complete
+              and the result list is ready.
+
+              e.g.
+                   ## PPuutt tthhee ccuurrssoorr oonn tthhee sseeccoonndd iitteemm wwhheenn tthhee qquueerryy ssttrriinngg
+              iiss eemmppttyy
+                   ## ** NNoottee tthhaatt yyoouu ccaann''tt uussee ''cchhaannggee'' eevveenntt iinn tthhiiss ccaassee
+              bbeeccaauussee tthhee sseeccoonndd ppoossiittiioonn mmaayy nnoott bbee aavvaaiillaabbllee
+                   ffzzff ----ssyynncc ----bbiinndd ''rreessuulltt::ttrraannssffoorrmm::[[[[ --zz {{qq}} ]]]] &&&& eecchhoo
+              ""ppooss((22))""''
+       _c_h_a_n_g_e
+              Triggered whenever the query string is changed
+
+              e.g.
+                   ## MMoovvee ccuurrssoorr ttoo tthhee ffiirrsstt eennttrryy wwhheenneevveerr tthhee qquueerryy iiss
+              cchhaannggeedd
+                   ffzzff ----bbiinndd cchhaannggee::ffiirrsstt
+       _f_o_c_u_s
+              Triggered when the focus changes due to a vertical cursor
+              movement or a search result update.
+
+              e.g.
+                   ffzzff ----bbiinndd ''ffooccuuss::ttrraannssffoorrmm--pprreevviieeww--llaabbeell::eecchhoo [[ {{}} ]]''
+              ----pprreevviieeww ''ccaatt {{}}''
+
+                   ## AAnnyy aaccttiioonn bboouunndd ttoo tthhee eevveenntt rruunnss ssyynncchhrroonnoouussllyy aanndd tthhuuss
+              ccaann mmaakkee tthhee iinntteerrffaaccee sslluuggggiisshh
+                   ## ee..gg.. lloollccaatt iissnn''tt oonnee ooff tthhee ffaasstteesstt pprrooggrraammss,, aanndd eevveerryy
+              ccuurrssoorr mmoovveemmeenntt iinn
+                   ##      ffzzff wwiillll bbee nnoottiicceeaabbllyy aaffffeecctteedd bbyy iittss eexxeeccuuttiioonn
+              ttiimmee
+                   ffzzff ----bbiinndd ''ffooccuuss::ttrraannssffoorrmm--pprreevviieeww--llaabbeell::eecchhoo [[ {{}} ]] ||
+              lloollccaatt --ff'' ----pprreevviieeww ''ccaatt {{}}''
+
+                   ## BBeewwaarree nnoott ttoo iinnttrroodduuccee aann iinnffiinniittee lloooopp
+                   sseeqq 1100 || ffzzff ----bbiinndd ''ffooccuuss::uupp'' ----ccyyccllee
+       _m_u_l_t_i
+              Triggered when the multi-selection has changed.
+
+       _o_n_e
+              Triggered when there's only one match. oonnee::aacccceepptt binding is
+              comparable to ----sseelleecctt--11 option, but the difference is that
+              ----sseelleecctt--11 is only effective before the interactive finder
+              starts but oonnee event is triggered by the interactive finder.
+
+              e.g.
+                   ## AAuuttoommaattiiccaallllyy sseelleecctt tthhee oonnllyy mmaattcchh
+                   sseeqq 1100 || ffzzff ----bbiinndd oonnee::aacccceepptt
+
+       _z_e_r_o
+              Triggered when there's no match. zzeerroo::aabboorrtt binding is
+              comparable to ----eexxiitt--00 option, but the difference is that
+              ----eexxiitt--00 is only effective before the interactive finder starts
+              but zzeerroo event is triggered by the interactive finder.
+
+              e.g.
+                   ## RReellooaadd tthhee ccaannddiiddaattee lliisstt wwhheenn tthheerree''ss nnoo mmaattcchh
+                   eecchhoo $$RRAANNDDOOMM || ffzzff ----bbiinndd ''zzeerroo::rreellooaadd((eecchhoo
+              $$RRAANNDDOOMM))++cclleeaarr--qquueerryy'' ----hheeiigghhtt 33
+
+       _b_a_c_k_w_a_r_d_-_e_o_f
+              Triggered when the query string is already empty and you try to
+              delete it backward.
+
+              e.g.
+                   ffzzff ----bbiinndd bbaacckkwwaarrdd--eeooff::aabboorrtt
+
+       _j_u_m_p
+              Triggered when successfully jumped to the target item in jjuummpp
+              mode.
+
+              e.g.
+                   ffzzff ----bbiinndd ssppaaccee::jjuummpp,,jjuummpp::aacccceepptt
+
+       _j_u_m_p_-_c_a_n_c_e_l
+              Triggered when jjuummpp mode is cancelled.
+
+              e.g.
+                   ffzzff ----bbiinndd ssppaaccee::jjuummpp,,jjuummpp::aacccceepptt,,jjuummpp--ccaanncceell::aabboorrtt
+
+       _c_l_i_c_k_-_h_e_a_d_e_r
+              Triggered when a mouse click occurs within the header. Sets
+              FFZZFF__CCLLIICCKK__HHEEAADDEERR__LLIINNEE and FFZZFF__CCLLIICCKK__HHEEAADDEERR__CCOOLLUUMMNN environment
+              variables starting from 1. It optionally sets
+              FFZZFF__CCLLIICCKK__HHEEAADDEERR__WWOORRDD and FFZZFF__CCLLIICCKK__HHEEAADDEERR__NNTTHH if clicked on a
+              word.
+
+              e.g.
+                   ## CClliicckk oonn tthhee hheeaaddeerr lliinnee ttoo lliimmiitt sseeaarrcchh ssccooppee
+                   ppss --eeff || ffzzff ----ssttyyllee ffuullll ----llaayyoouutt rreevveerrssee ----hheeaaddeerr--lliinneess 11
+              \\
+                                ----hheeaaddeerr--lliinneess--bboorrddeerr bboottttoomm ----nnoo--lliisstt--bboorrddeerr
+              \\
+                                ----ccoolloorr ffgg::ddiimm,,nntthh::rreegguullaarr \\
+                                ----bbiinndd ''cclliicckk--hheeaaddeerr::ttrraannssffoorrmm--nntthh((
+                                          eecchhoo $$FFZZFF__CCLLIICCKK__HHEEAADDEERR__NNTTHH
+                                        ))++ttrraannssffoorrmm--pprroommpptt((
+                                          eecchhoo ""$$FFZZFF__CCLLIICCKK__HHEEAADDEERR__WWOORRDD>> ""
+                                        ))''
+
+       _c_l_i_c_k_-_f_o_o_t_e_r
+              Triggered when a mouse click occurs within the footer. Sets
+              FFZZFF__CCLLIICCKK__FFOOOOTTEERR__LLIINNEE and FFZZFF__CCLLIICCKK__FFOOOOTTEERR__CCOOLLUUMMNN environment
+              variables starting from 1. It optionally sets
+              FFZZFF__CCLLIICCKK__FFOOOOTTEERR__WWOORRDD if clicked on a word.
+
+
+   AAVVAAIILLAABBLLEE AACCTTIIOONNSS::
+       A key or an event can be bound to one or more of the following actions.
+
+         AACCTTIIOONN::                      DDEEFFAAUULLTT BBIINNDDIINNGGSS ((NNOOTTEESS))::
+           aabboorrtt                        _c_t_r_l_-_c  _c_t_r_l_-_g  _c_t_r_l_-_q  _e_s_c
+           aacccceepptt                       _e_n_t_e_r   _d_o_u_b_l_e_-_c_l_i_c_k
+           aacccceepptt--nnoonn--eemmppttyy             (same as aacccceepptt except that it
+       prevents fzf from exiting without selection)
+           aacccceepptt--oorr--pprriinntt--qquueerryy        (same as aacccceepptt except that it prints
+       the query when there's no match)
+           bbaacckkwwaarrdd--cchhaarr                _c_t_r_l_-_b  _l_e_f_t
+           bbaacckkwwaarrdd--ddeelleettee--cchhaarr         _c_t_r_l_-_h _c_t_r_l_-_b_s_p_a_c_e _b_s_p_a_c_e
+           bbaacckkwwaarrdd--ddeelleettee--cchhaarr//eeooff     (same as bbaacckkwwaarrdd--ddeelleettee--cchhaarr except
+       aborts fzf if query is empty)
+           bbaacckkwwaarrdd--kkiillll--ssuubbwwoorrdd
+           bbaacckkwwaarrdd--kkiillll--wwoorrdd           _a_l_t_-_b_s
+           bbaacckkwwaarrdd--ssuubbwwoorrdd
+           bbaacckkwwaarrdd--wwoorrdd                _a_l_t_-_b   _s_h_i_f_t_-_l_e_f_t
+           bbeeccoommee((......))                  (replace fzf process with the
+       specified command; see below for the details)
+           bbeeggiinnnniinngg--ooff--lliinnee            _c_t_r_l_-_a  _h_o_m_e
+           bbeellll                         (ring the terminal bell)
+           bbeesstt                         (move to the best match; same as ffiirrsstt
+       if raw mode is disabled)
+           bbgg--ccaanncceell                    (cancel background transform
+       processes)
+           ccaanncceell                       (clear query string if not empty,
+       abort fzf otherwise)
+           cchhaannggee--bboorrddeerr--llaabbeell((......))     (change ----bboorrddeerr--llaabbeell to the given
+       string)
+           cchhaannggee--gghhoosstt((......))            (change ghost text to the given
+       string)
+           cchhaannggee--hheeaaddeerr((......))           (change header to the given string;
+       doesn't affect ----hheeaaddeerr--lliinneess)
+           cchhaannggee--hheeaaddeerr--llaabbeell((......))     (change ----hheeaaddeerr--llaabbeell to the given
+       string)
+           cchhaannggee--iinnppuutt--llaabbeell((......))      (change ----iinnppuutt--llaabbeell to the given
+       string)
+           cchhaannggee--lliisstt--llaabbeell((......))       (change ----lliisstt--llaabbeell to the given
+       string)
+           cchhaannggee--mmuullttii                 (enable multi-select mode with no
+       limit)
+           cchhaannggee--mmuullttii((......))            (enable multi-select mode with a limit
+       or disable it with 0)
+           cchhaannggee--nntthh((......))              (change ----nntthh option; rotate through
+       the multiple options separated by '|')
+           cchhaannggee--ppooiinntteerr((......))          (change ----ppooiinntteerr option)
+           cchhaannggee--pprreevviieeww((......))          (change ----pprreevviieeww option)
+           cchhaannggee--pprreevviieeww--llaabbeell((......))    (change ----pprreevviieeww--llaabbeell to the given
+       string)
+           cchhaannggee--pprreevviieeww--wwiinnddooww((......))   (change ----pprreevviieeww--wwiinnddooww option;
+       rotate through the multiple option sets separated by '|')
+           cchhaannggee--pprroommpptt((......))           (change prompt to the given string)
+           cchhaannggee--qquueerryy((......))            (change query string to the given
+       string)
+           cclleeaarr--ssccrreeeenn                 _c_t_r_l_-_l
+           cclleeaarr--mmuullttii                  (clear multi-selection)
+           cclloossee                        (close preview window if open, abort
+       fzf otherwise)
+           cclleeaarr--qquueerryy                  (clear query string)
+           ddeelleettee--cchhaarr                  _d_e_l
+           ddeelleettee--cchhaarr//eeooff              _c_t_r_l_-_d (same as ddeelleettee--cchhaarr except
+       aborts fzf if query is empty)
+           ddeesseelleecctt
+           ddeesseelleecctt--aallll                 (deselect all matches; to also clear
+       non-matching selections, use cclleeaarr--mmuullttii)
+           ddiissaabbllee--rraaww                  (disable raw mode)
+           ddiissaabbllee--sseeaarrcchh               (disable search functionality)
+           ddoowwnn                         _c_t_r_l_-_j  _d_o_w_n
+           ddoowwnn--mmaattcchh                   _c_t_r_l_-_n  _a_l_t_-_d_o_w_n (move to the match
+       below the cursor)
+           ddoowwnn--sseelleecctteedd                (move to the selected item below the
+       cursor)
+           eennaabbllee--rraaww                   (enable raw mode)
+           eennaabbllee--sseeaarrcchh                (enable search functionality)
+           eenndd--ooff--lliinnee                  _c_t_r_l_-_e  _e_n_d
+           eexxcclluuddee                      (exclude the current item from the
+       result)
+           eexxcclluuddee--mmuullttii                (exclude the selected items or the
+       current item from the result)
+           eexxeeccuuttee((......))                 (see below for the details)
+           eexxeeccuuttee--ssiilleenntt((......))          (see below for the details)
+           ffiirrsstt                        (move to the first match; same as
+       ppooss((11)))
+           ffoorrwwaarrdd--cchhaarr                 _c_t_r_l_-_f  _r_i_g_h_t
+           ffoorrwwaarrdd--ssuubbwwoorrdd
+           ffoorrwwaarrdd--wwoorrdd                 _a_l_t_-_f   _s_h_i_f_t_-_r_i_g_h_t
+           iiggnnoorree
+           jjuummpp                         (EasyMotion-like 2-keystroke movement)
+           kkiillll--lliinnee
+           kkiillll--ssuubbwwoorrdd
+           kkiillll--wwoorrdd                    _a_l_t_-_d
+           llaasstt                         (move to the last match; same as
+       ppooss((--11)))
+           nneexxtt--hhiissttoorryy                 (_c_t_r_l_-_n on ----hhiissttoorryy)
+           nneexxtt--sseelleecctteedd                (synonym to ddoowwnn--sseelleecctteedd)
+           ppaaggee--ddoowwnn                    _p_g_d_n
+           ppaaggee--uupp                      _p_g_u_p
+           hhaallff--ppaaggee--ddoowwnn
+           hhaallff--ppaaggee--uupp
+           hhiiddee--hheeaaddeerr
+           hhiiddee--iinnppuutt
+           hhiiddee--pprreevviieeww
+           ooffffsseett--ddoowwnn                  (similar to CTRL-E of Vim)
+           ooffffsseett--uupp                    (similar to CTRL-Y of Vim)
+           ooffffsseett--mmiiddddllee                (place the current item is in the
+       middle of the screen)
+           ppooss((......))                     (move cursor to the numeric position;
+       negative number to count from the end)
+           pprreevv--hhiissttoorryy                 (_c_t_r_l_-_p on ----hhiissttoorryy)
+           pprreevv--sseelleecctteedd                (synonym to uupp--sseelleecctteedd)
+           pprreevviieeww((......))                 (see below for the details)
+           pprreevviieeww--ddoowwnn                 _s_h_i_f_t_-_d_o_w_n
+           pprreevviieeww--uupp                   _s_h_i_f_t_-_u_p
+           pprreevviieeww--ppaaggee--ddoowwnn
+           pprreevviieeww--ppaaggee--uupp
+           pprreevviieeww--hhaallff--ppaaggee--ddoowwnn
+           pprreevviieeww--hhaallff--ppaaggee--uupp
+           pprreevviieeww--bboottttoomm
+           pprreevviieeww--ttoopp
+           pprriinntt((......))                   (add string to the output queue and
+       print on normal exit)
+           ppuutt                          (put the character to the prompt)
+           ppuutt((......))                     (put the given string to the prompt)
+           rreeffrreesshh--pprreevviieeww
+           rreebbiinndd((......))                  (rebind bindings after uunnbbiinndd)
+           rreellooaadd((......))                  (see below for the details)
+           rreellooaadd--ssyynncc((......))             (see below for the details)
+           rreeppllaaccee--qquueerryy                (replace query string with the current
+       selection)
+           sseeaarrcchh((......))                  (trigger fzf search with the given
+       string)
+           sseelleecctt
+           sseelleecctt--aallll                   (select all matches)
+           sshhooww--hheeaaddeerr
+           sshhooww--iinnppuutt
+           sshhooww--pprreevviieeww
+           ttooggggllee                       (_r_i_g_h_t_-_c_l_i_c_k)
+           ttooggggllee--aallll                   (toggle all matches)
+           ttooggggllee--iinn                    (----llaayyoouutt==rreevveerrssee** ? ttooggggllee++uupp :
+       ttooggggllee++ddoowwnn)
+           ttooggggllee--oouutt                   (----llaayyoouutt==rreevveerrssee** ? ttooggggllee++ddoowwnn :
+       ttooggggllee++uupp)
+           ttooggggllee--bbiinndd
+           ttooggggllee--hheeaaddeerr
+           ttooggggllee--hhssccrroollll
+           ttooggggllee--iinnppuutt
+           ttooggggllee--mmuullttii--lliinnee
+           ttooggggllee--pprreevviieeww
+           ttooggggllee--pprreevviieeww--wwrraapp
+           ttooggggllee--rraaww                   (toggle raw mode for displaying non-
+       matching items)
+           ttooggggllee--sseeaarrcchh                (toggle search functionality)
+           ttooggggllee--ssoorrtt
+           ttooggggllee--ttrraacckk                 (toggle global tracking option
+       (----ttrraacckk))
+           ttooggggllee--ttrraacckk--ccuurrrreenntt         (toggle tracking of the current item)
+           ttooggggllee--wwrraapp                  _c_t_r_l_-_/  _a_l_t_-_/
+           ttooggggllee++ddoowwnn                  _c_t_r_l_-_i  _(_t_a_b_)
+           ttooggggllee++uupp                    _b_t_a_b    _(_s_h_i_f_t_-_t_a_b_)
+           ttrraacckk--ccuurrrreenntt                (track the current item; automatically
+       disabled if focus changes)
+           ttrraannssffoorrmm((......))               (transform states using the output of
+       an external command)
+           ttrraannssffoorrmm--bboorrddeerr--llaabbeell((......))  (transform border label using an
+       external command)
+           ttrraannssffoorrmm--gghhoosstt((......))         (transform ghost text using an
+       external command)
+           ttrraannssffoorrmm--hheeaaddeerr((......))        (transform header using an external
+       command)
+           ttrraannssffoorrmm--hheeaaddeerr--llaabbeell((......))  (transform header label using an
+       external command)
+           ttrraannssffoorrmm--iinnppuutt--llaabbeell((......))   (transform input label using an
+       external command)
+           ttrraannssffoorrmm--lliisstt--llaabbeell((......))    (transform list label using an
+       external command)
+           ttrraannssffoorrmm--nntthh((......))           (transform nth using an external
+       command)
+           ttrraannssffoorrmm--ppooiinntteerr((......))       (transform pointer using an external
+       command)
+           ttrraannssffoorrmm--pprreevviieeww--llaabbeell((......)) (transform preview label using an
+       external command)
+           ttrraannssffoorrmm--pprroommpptt((......))        (transform prompt string using an
+       external command)
+           ttrraannssffoorrmm--qquueerryy((......))         (transform query string using an
+       external command)
+           ttrraannssffoorrmm--sseeaarrcchh((......))        (trigger fzf search with the output of
+       an external command)
+           ttrriiggggeerr((......))                 (trigger actions bound to a comma-
+       separated list of keys and events)
+           uunnbbiinndd((......))                  (unbind bindings)
+           uunniixx--lliinnee--ddiissccaarrdd            _c_t_r_l_-_u
+           uunniixx--wwoorrdd--rruubboouutt             _c_t_r_l_-_w
+           uunnttrraacckk--ccuurrrreenntt              (stop tracking the current item; no-op
+       if global tracking is enabled)
+           uupp                           _c_t_r_l_-_k  _u_p
+           uupp--mmaattcchh                     _c_t_r_l_-_p  _a_l_t_-_u_p (move to the match
+       above the cursor)
+           uupp--sseelleecctteedd                  (move to the selected item above the
+       cursor)
+           yyaannkk                         _c_t_r_l_-_y
+
+       Each ttrraannssffoorrmm** action has a corresponding bbgg--ttrraannssffoorrmm** variant that
+       runs the command in the background.
+
+
+   AACCTTIIOONN CCOOMMPPOOSSIITTIIOONN
+       Multiple actions can be chained using ++ separator.
+
+       e.g.
+            ffzzff ----mmuullttii ----bbiinndd ''ccttrrll--aa::sseelleecctt--aallll++aacccceepptt''
+            ffzzff ----mmuullttii ----bbiinndd ''ccttrrll--aa::sseelleecctt--aallll'' ----bbiinndd ''ccttrrll--aa::++aacccceepptt''
+
+       Any action after a terminal action that exits fzf, such as aacccceepptt or
+       aabboorrtt, is ignored.
+
+
+   AACCTTIIOONN AARRGGUUMMEENNTT
+       An action denoted with ((......)) suffix takes an argument.
+
+       e.g.
+            ffzzff ----bbiinndd ''ccttrrll--aa::cchhaannggee--pprroommpptt((NNeewwPPrroommpptt>> ))''
+            ffzzff ----bbiinndd ''ccttrrll--vv::pprreevviieeww((ccaatt {{}}))'' ----pprreevviieeww--wwiinnddooww hhiiddddeenn
+
+       If the argument contains parentheses, fzf may fail to parse the
+       expression. In that case, you can use any of the following alternative
+       notations to avoid parse errors.
+
+           aaccttiioonn--nnaammee[[......]]
+           aaccttiioonn--nnaammee{{......}}
+           aaccttiioonn--nnaammee<<......>>
+           aaccttiioonn--nnaammee~~......~~
+           aaccttiioonn--nnaammee!!......!!
+           aaccttiioonn--nnaammee@@......@@
+           aaccttiioonn--nnaammee##......##
+           aaccttiioonn--nnaammee$$......$$
+           aaccttiioonn--nnaammee%%......%%
+           aaccttiioonn--nnaammee^^......^^
+           aaccttiioonn--nnaammee&&......&&
+           aaccttiioonn--nnaammee**......**
+           aaccttiioonn--nnaammee;;......;;
+           aaccttiioonn--nnaammee//......//
+           aaccttiioonn--nnaammee||......||
+           aaccttiioonn--nnaammee::......
+              The last one is the special form that frees you from parse
+              errors as it does not expect the closing character. The catch is
+              that it should be the last one in the comma-separated list of
+              key-action pairs.
+
+
+   CCOOMMMMAANNDD EEXXEECCUUTTIIOONN
+       With eexxeeccuuttee((......)) action, you can execute arbitrary commands without
+       leaving fzf. For example, you can turn fzf into a simple file browser
+       by binding eenntteerr key to lleessss command like follows.
+
+           ffzzff ----bbiinndd ""eenntteerr::eexxeeccuuttee((lleessss {{}}))""
+
+       You can use the same placeholder expressions as in ----pprreevviieeww.
+
+       fzf switches to the alternate screen when executing a command. However,
+       if the command is expected to complete quickly, and you are not
+       interested in its output, you might want to use eexxeeccuuttee--ssiilleenntt instead,
+       which silently executes the command without the switching. Note that
+       fzf will not be responsive until the command is complete. For
+       asynchronous execution, start your command as a background process
+       (i.e. appending &&).
+
+       On *nix systems, fzf runs the command with $$SSHHEELLLL --cc if SSHHEELLLL is set,
+       otherwise with sshh --cc, so in this case make sure that the command is
+       POSIX-compliant.
+
+       bbeeccoommee((......)) action is similar to eexxeeccuuttee((......)), but it replaces the
+       current fzf process with the specified command using eexxeeccvvee((22)) system
+       call.
+
+           ffzzff ----bbiinndd ""eenntteerr::bbeeccoommee((vviimm {{}}))""
+
+
+   RREELLOOAADD IINNPPUUTT
+       rreellooaadd((......)) action is used to dynamically update the input list without
+       restarting fzf. It takes the same command template with placeholder
+       expressions as eexxeeccuuttee((......)).
+
+       See _h_t_t_p_s_:_/_/_g_i_t_h_u_b_._c_o_m_/_j_u_n_e_g_u_n_n_/_f_z_f_/_i_s_s_u_e_s_/_1_7_5_0 for more info.
+
+       e.g.
+            ## UUppddaattee tthhee lliisstt ooff pprroocceesssseess bbyy pprreessssiinngg CCTTRRLL--RR
+            ppss --eeff || ffzzff ----bbiinndd ''ccttrrll--rr::rreellooaadd((ppss --eeff))'' ----hheeaaddeerr ''PPrreessss CCTTRRLL--RR
+       ttoo rreellooaadd'' \\
+                         ----hheeaaddeerr--lliinneess==11 ----llaayyoouutt==rreevveerrssee
+
+            ## IInntteeggrraattiioonn wwiitthh rriippggrreepp
+            RRGG__PPRREEFFIIXX==""rrgg ----ccoolluummnn ----lliinnee--nnuummbbeerr ----nnoo--hheeaaddiinngg ----ccoolloorr==aallwwaayyss
+       ----ssmmaarrtt--ccaassee ""
+            IINNIITTIIAALL__QQUUEERRYY==""ffoooobbaarr""
+            FFZZFF__DDEEFFAAUULLTT__CCOOMMMMAANNDD==""$$RRGG__PPRREEFFIIXX ''$$IINNIITTIIAALL__QQUUEERRYY''"" \\
+              ffzzff ----bbiinndd ""cchhaannggee::rreellooaadd::$$RRGG__PPRREEFFIIXX {{qq}} |||| ttrruuee"" \\
+                  ----aannssii ----ddiissaabblleedd ----qquueerryy ""$$IINNIITTIIAALL__QQUUEERRYY""
+
+       rreellooaadd--ssyynncc((......)) is a synchronous version of rreellooaadd that replaces the
+       list only when the command is complete. This is useful when the command
+       takes a while to produce the initial output and you don't want fzf to
+       run against an empty list while the command is running.
+
+
+       e.g.
+            ## YYoouu ccaann ssttiillll ffiilltteerr aanndd sseelleecctt eennttrriieess ffrroomm tthhee iinniittiiaall lliisstt
+       ffoorr 33 sseeccoonnddss
+            sseeqq 110000 || ffzzff ----bbiinndd ''llooaadd::rreellooaadd--ssyynncc((sslleeeepp 33;; sseeqq
+       11000000))++uunnbbiinndd((llooaadd))''
+
+
+   TTRRAANNSSFFOORRMM AACCTTIIOONNSS
+       Actions with ttrraannssffoorrmm-- prefix are used to transform the states of fzf
+       using the output of an external command. The output of these commands
+       are expected to be a single line of text.
+
+       e.g.
+           ffzzff ----bbiinndd ''ffooccuuss::ttrraannssffoorrmm--hheeaaddeerr::ffiillee ----bbrriieeff {{}}''
+
+       ttrraannssffoorrmm((......)) action runs an external command that should print a
+       series of actions to be performed. The output should be in the same
+       format as the payload of HTTP POST request to the ----lliisstteenn server.
+
+       e.g.
+           ## DDiissaallllooww sseelleeccttiinngg aann eemmppttyy lliinnee
+           eecchhoo --ee ""11.. HHeelllloo\\nn22.. GGooooddbbyyee\\nn\\nn33.. EExxiitt"" ||
+             ffzzff ----hheeiigghhtt ''~~110000%%'' ----rreevveerrssee ----hheeaaddeerr ''SSeelleecctt oonnee'' \\
+                 ----bbiinndd ''eenntteerr::ttrraannssffoorrmm::[[[[ --nn {{}} ]]]] &&&&
+                           eecchhoo aacccceepptt ||||
+                           eecchhoo ""cchhaannggee--hheeaaddeerr::IInnvvaalliidd sseelleeccttiioonn""''
+
+
+       A common mistake when writing a ttrraannssffoorrmm action is not escaping
+       placeholder expressions when passing them back to fzf. In the following
+       example, if you don't escape {{}}, fzf will immediately replace it with
+       the single-quoted string of the current item. This causes single quotes
+       to appear in the header and footer, and the script will break if any
+       item contains double-quote characters.
+
+           ffzzff ----bbiinndd ''ffooccuuss::ttrraannssffoorrmm::[[[[ $$FFZZFF__AACCTTIIOONN ==~~ uupp ]]]] &&&&
+                       eecchhoo ""cchhaannggee--hheeaaddeerr(())++ttrraannssffoorrmm--ffooootteerr::eecchhoo \\{{}}"" ||||
+                       eecchhoo ""cchhaannggee--ffooootteerr(())++ttrraannssffoorrmm--hheeaaddeerr::eecchhoo \\{{}}""''
+
+
+   TTRRAANNSSFFOORRMM IINN TTHHEE BBAACCKKGGRROOUUNNDD
+       Transform actions are synchronous, meaning fzf becomes unresponsive
+       while the command runs. To avoid this, each ttrraannssffoorrmm** action has a
+       corresponding bbgg--ttrraannssffoorrmm** variant that runs in the background. Unless
+       you need to chain multiple transform actions where later ones depend on
+       earlier results, prefer using the bbgg variant. To cancel currently
+       running background transform processes, use bbgg--ccaanncceell action.
+
+
+   PPRREEVVIIEEWW BBIINNDDIINNGG
+       With pprreevviieeww((......)) action, you can specify multiple different preview
+       commands in addition to the default preview command given by ----pprreevviieeww
+       option.
+
+       e.g.
+            # Default preview command with an extra preview binding
+            fzf --preview 'file {}' --bind '?:preview:cat {}'
+
+            # A preview binding with no default preview command
+            # (Preview window is initially empty)
+            fzf --bind '?:preview:cat {}'
+
+            # Preview window hidden by default, it appears when you first hit
+       '?'
+            fzf --bind '?:preview:cat {}' --preview-window hidden
+
+
+   CCHHAANNGGEE PPRREEVVIIEEWW WWIINNDDOOWW AATTTTRRIIBBUUTTEESS
+       cchhaannggee--pprreevviieeww--wwiinnddooww action can be used to change the properties of
+       the preview window. Unlike the ----pprreevviieeww--wwiinnddooww option, you can specify
+       multiple sets of options separated by '|' characters.
+
+       e.g.
+            # Rotate through the options using CTRL-/
+            fzf --preview 'cat {}' --bind
+       'ctrl-/:change-preview-window(right,70%|down,40%,border-horizontal|hidden|right)'
+
+            # The default properties given by `--preview-window` are
+       inherited, so an empty string in the list is interpreted as the default
+            fzf --preview 'cat {}' --preview-window 'right,40%,border-left'
+       --bind 'ctrl-/:change-preview-window(70%|down,border-top|hidden|)'
+
+            # This is equivalent to toggle-preview action
+            fzf --preview 'cat {}' --bind
+       'ctrl-/:change-preview-window(hidden|)'
+
+
+AAUUTTHHOORR
+       Junegunn Choi (_j_u_n_e_g_u_n_n_._c_@_g_m_a_i_l_._c_o_m)
+
+
+SSEEEE AALLSSOO
+       PPrroojjeecctt hhoommeeppaaggee::
+              _h_t_t_p_s_:_/_/_g_i_t_h_u_b_._c_o_m_/_j_u_n_e_g_u_n_n_/_f_z_f
+
+       EExxttrraa VViimm pplluuggiinn::
+              _h_t_t_p_s_:_/_/_g_i_t_h_u_b_._c_o_m_/_j_u_n_e_g_u_n_n_/_f_z_f_._v_i_m
+
+
+LLIICCEENNSSEE
+       MIT
+
+fzf 0.67.0                         Nov 2025                             fzf(1)

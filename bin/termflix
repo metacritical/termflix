@@ -312,13 +312,20 @@ main() {
         
         case "$type" in
             movies)
-                display_catalog "$icon $label Movies" get_latest_movies 50
+                # Use new enriched catalog (TPB top 100 + YTS pages)
+                export TERMFLIX_USE_ENRICHED=true
+                export CURRENT_CATEGORY=movies
+                display_catalog "$icon $label Movies" get_enriched_catalog 10 movies
                 ;;
             shows)
+                export CURRENT_CATEGORY=shows
                 display_catalog "$icon $label TV Shows" get_latest_shows 50
                 ;;
             all|*)
-                display_catalog "$icon $label" get_latest_movies 50
+                # Default to enriched catalog for all
+                export TERMFLIX_USE_ENRICHED=true
+                export CURRENT_CATEGORY=movies
+                display_catalog "$icon $label" get_enriched_catalog 10 movies
                 ;;
         esac
         exit $?
@@ -353,8 +360,11 @@ main() {
                 echo "Usage: torrent catalog <genre>"
                 exit 1
             fi
-            # TPB only - YTS disabled for genre search
-            display_catalog "📚 $genre Movies" get_latest_movies 50
+            # TPB + YTS - Use enriched catalog with genre filter
+            export TERMFLIX_USE_ENRICHED=true
+            export CURRENT_CATEGORY=movies
+            export CURRENT_GENRE="$genre"
+            display_catalog "📚 $genre Movies" get_enriched_catalog 10 movies
             exit $?
             ;;
         search)
@@ -494,7 +504,11 @@ main() {
                     menu_items+="${ind_ctx_title} 🔤 By Title (Mode)...\n"
                     
                     local selected_action
-                    selected_action=$(echo -e "$menu_items" | fzf --height=16 --layout=reverse --border --prompt="Type > " --header="Select Content Mode (Current marks: ●)" 2>/dev/null)
+                    # Use TML layout for centered popup style
+                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/type-selector.xml"
+                    local type_fzf_args=$(tml_get_fzf_args)
+                    selected_action=$(echo -e "$menu_items" | eval "fzf $type_fzf_args" 2>/dev/null)
                     
                     # Handle Esc/Cancel (Empty selection) - Just continue to re-render without changing state
                     [[ -z "$selected_action" ]] && continue
@@ -539,7 +553,7 @@ main() {
                     
                     case "$current_context" in
                         default)
-                            sort_menu="⬇️ Latest Uploads (Default)\n🔥 Trending Now\n⭐ Popular All Time" ;;
+                            sort_menu="⬇️ Latest Uploads (Default)\n🔥 Trending Now\n⭐ Popular All Time\n🌐 By Language..." ;;
                         year)
                             # Allow changing the filter value (Year) from here too
                             sort_menu="📅 Change Year... [Current: $current_query]\n"
@@ -554,7 +568,11 @@ main() {
                     esac
                     
                     local sel_sort
-                    sel_sort=$(echo -e "$sort_menu" | fzf --height=12 --layout=reverse --border --prompt="Sort: " --header="Sort & Tweak ($current_context)" 2>/dev/null)
+                    # Use TML layout for centered popup style
+                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/sort-selector.xml"
+                    local sort_fzf_args=$(tml_get_fzf_args)
+                    sel_sort=$(echo -e "$sort_menu" | eval "fzf $sort_fzf_args" 2>/dev/null)
                     
                     if [[ -n "$sel_sort" ]]; then
                         case "$sel_sort" in
@@ -592,6 +610,22 @@ main() {
                             *"Fewest Seeds"*)  current_sort="asc" ;;
                             *"A-Z"*)           current_sort="asc" ;;
                             *"Z-A"*)           current_sort="desc" ;;
+                            
+                            # LANGUAGE FILTER
+                            *"By Language"*)
+                                # Source languages module and show picker
+                                source "$SCRIPT_DIR/../modules/core/languages.sh" 2>/dev/null
+                                local lang_list="All Languages\n🇬🇧 English (en)\n🇪🇸 Spanish (es)\n🇫🇷 French (fr)\n🇩🇪 German (de)\n🇮🇹 Italian (it)\n🇯🇵 Japanese (ja)\n🇰🇷 Korean (ko)\n🇨🇳 Chinese (zh)\n🇮🇳 Hindi (hi)\n🇷🇺 Russian (ru)\n🇵🇹 Portuguese (pt)\n🇹🇷 Turkish (tr)"
+                                local sel_lang
+                                sel_lang=$(echo -e "$lang_list" | fzf --height=15 --layout=reverse --border --prompt="Language: " --header="Filter by Language" 2>/dev/null)
+                                if [[ -n "$sel_lang" && "$sel_lang" != "All Languages" ]]; then
+                                    # Extract language code from selection (e.g., "🇬🇧 English (en)" -> "en")
+                                    local lang_code=$(echo "$sel_lang" | grep -oE '\([a-z]{2}\)' | tr -d '()')
+                                    [[ -n "$lang_code" ]] && export CURRENT_LANGUAGE="$lang_code"
+                                else
+                                    export CURRENT_LANGUAGE=""
+                                fi
+                                ;;
                         esac
                     fi
                     continue
@@ -600,7 +634,11 @@ main() {
                     # Genre dropdown: show FZF popup with genre list
                     local genre_list="All Genres\nAction\nAdventure\nAnimation\nComedy\nCrime\nDocumentary\nDrama\nFamily\nFantasy\nHorror\nMusic\nMystery\nRomance\nSci-Fi\nThriller\nWar\nWestern"
                     local selected_genre
-                    selected_genre=$(echo -e "$genre_list" | fzf --height=15 --layout=reverse --border --prompt="Genre: " --header="Filter by genre" 2>/dev/null)
+                    # Use TML layout for centered popup style
+                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/genre-selector.xml"
+                    local genre_fzf_args=$(tml_get_fzf_args)
+                    selected_genre=$(echo -e "$genre_list" | eval "fzf $genre_fzf_args" 2>/dev/null)
                     
                     if [[ -n "$selected_genre" && "$selected_genre" != "All Genres" ]]; then
                         export CURRENT_GENRE="$selected_genre" # Use export for CURRENT_GENRE

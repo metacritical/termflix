@@ -323,5 +323,35 @@ get_latest_all() {
     done
 }
 
+# ═══════════════════════════════════════════════════════════════
+# NEW ENRICHED CATALOG - Single call fetches all (TPB top100 + YTS pages)
+# ═══════════════════════════════════════════════════════════════
+get_enriched_catalog() {
+    local yts_pages="${1:-10}"
+    local category="${2:-movies}"
+    
+    local extra_args=""
+    [[ "$FORCE_REFRESH" == "true" ]] && extra_args+=" --refresh"
+    [[ -n "$CURRENT_QUERY" ]] && extra_args+=" --query \"$CURRENT_QUERY\""
+    [[ -n "$CURRENT_GENRE" ]] && extra_args+=" --genre \"$CURRENT_GENRE\""
+    [[ -n "$CURRENT_MIN_RATING" ]] && extra_args+=" --min-rating $CURRENT_MIN_RATING"
+    [[ -n "$CURRENT_SORT" ]] && extra_args+=" --sort $CURRENT_SORT"
+    [[ -n "$CURRENT_ORDER" ]] && extra_args+=" --order-by $CURRENT_ORDER"
+    
+    local script_path="${CATALOG_HELPER_SCRIPTS_DIR}/fetch_multi_source_catalog.py"
+    
+    if [[ -f "$script_path" ]] && command -v python3 &>/dev/null; then
+        python3 "$script_path" \
+            --yts-pages "$yts_pages" \
+            --category "$category" \
+            $extra_args 2>/dev/null
+        return $?
+    fi
+    
+    # Fallback to old per-page method
+    get_latest_movies 50 1
+}
+
 # Export catalog fetching functions
-export -f get_latest_movies get_trending_movies get_popular_movies get_latest_shows get_catalog_by_genre get_new_48h_movies get_latest_all
+export -f get_latest_movies get_trending_movies get_popular_movies get_latest_shows get_catalog_by_genre get_new_48h_movies get_latest_all get_enriched_catalog
+

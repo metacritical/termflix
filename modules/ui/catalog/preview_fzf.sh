@@ -33,6 +33,7 @@ if [[ -f "${UI_DIR}/../core/theme.sh" ]]; then
 fi
 source "${UI_DIR}/../core/colors.sh"
 [[ -f "${UI_DIR}/../core/genres.sh" ]] && source "${UI_DIR}/../core/genres.sh"
+[[ -f "${UI_DIR}/../core/languages.sh" ]] && source "${UI_DIR}/../core/languages.sh"
 
 # Alias semantic colors (with theme fallback)
 MAGENTA="${THEME_GLOW:-$C_GLOW}"
@@ -64,7 +65,19 @@ movie_year=""
 if [[ "$title" =~ (19[0-9]{2}|20[0-9]{2}) ]]; then
     movie_year="${BASH_REMATCH[1]}"
 fi
-clean_title_for_api=$(echo "$title" | sed -E 's/\[SERIES\]//gi; s/\((19|20)[0-9]{2}\)//g; s/[[:space:]]+(19|20)[0-9]{2}//g; s/[[:space:]]+$//; s/^[[:space:]]+//')
+# Clean title for API lookups - remove all quality markers, brackets, codec info
+clean_title_for_api="$title"
+# Remove bracketed content like [1080p], [WEBRip], [5.1], [SERIES]
+clean_title_for_api=$(echo "$clean_title_for_api" | sed -E 's/\[[^]]*\]//g')
+# Remove quality/codec markers
+clean_title_for_api=$(echo "$clean_title_for_api" | sed -E 's/[[:space:]]+(1080p|720p|480p|2160p|4K|HDRip|BRRip|BluRay|WEB-DL|WEBRip|HDTV|x264|x265|HEVC|AAC|DTS|10bit|HDR|REMUX)([[:space:]]|$)/ /gi')
+# Remove release group at end (e.g., -YTS, -RARBG)
+clean_title_for_api=$(echo "$clean_title_for_api" | sed -E 's/[[:space:]]*-[A-Za-z0-9]+$//')
+# Remove year (we add it back separately if needed)
+clean_title_for_api=$(echo "$clean_title_for_api" | sed -E 's/\((19|20)[0-9]{2}\)//g; s/[[:space:]]+(19|20)[0-9]{2}//g')
+# Trim whitespace
+clean_title_for_api=$(echo "$clean_title_for_api" | sed -E 's/[[:space:]]+/ /g; s/^[[:space:]]+//; s/[[:space:]]+$//')
+
 
 # Sanitize display title
 display_title="$title"
@@ -84,6 +97,7 @@ imdb_id=""
 total_seasons=""
 latest_season_num=""
 episodes_list_raw=""
+movie_language=""
 
 # Season Persistence in Preview (Stage 1)
 # Title-based hash to remember season selection per show
@@ -126,6 +140,8 @@ if [[ -f "$TMDB_MODULE" ]]; then
             [[ "$tmdb_rating" != "N/A" ]] && movie_rating="$tmdb_rating"
             description=$(echo "$metadata_json" | extract_description)
             [[ -z "$poster_url" || "$poster_url" == "N/A" ]] && poster_url=$(echo "$metadata_json" | python3 -c "import sys, json; data=json.load(sys.stdin); path=data.get('poster_path', ''); print(f'https://image.tmdb.org/t/p/w500{path}' if path else '')" 2>/dev/null)
+            # Extract language
+            [[ -z "$movie_language" ]] && movie_language=$(echo "$metadata_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('original_language', ''))" 2>/dev/null)
 
             if [[ "$is_series" == "true" ]]; then
                 tmdb_id=$(echo "$metadata_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null)
@@ -199,6 +215,35 @@ print('\\n'.join(lines))
 " 2>/dev/null)
                     fi
                 fi
+            else
+                # For movies: Extract genres from TMDB (handle both genre_ids and genres)
+                if [[ -z "$movie_genre" || "$movie_genre" == "N/A" || "$movie_genre" == "Movies" || "$movie_genre" == "Unknown" ]]; then
+                    tmdb_genres=$(echo "$metadata_json" | python3 -c "
+import sys, json
+# TMDB genre ID to name mapping
+GENRE_MAP = {
+    28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime',
+    99: 'Documentary', 18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History',
+    27: 'Horror', 10402: 'Music', 9648: 'Mystery', 10749: 'Romance', 878: 'Sci-Fi',
+    10770: 'TV Movie', 53: 'Thriller', 10752: 'War', 37: 'Western'
+}
+try:
+    data = json.load(sys.stdin)
+    # Method 1: genres array (from movie details endpoint)
+    if data.get('genres'):
+        genres = [g.get('name', '') for g in data.get('genres', [])]
+        print(', '.join(filter(None, genres)))
+    # Method 2: genre_ids array (from search endpoint)
+    elif data.get('genre_ids'):
+        genres = [GENRE_MAP.get(gid, '') for gid in data.get('genre_ids', [])]
+        print(', '.join(filter(None, genres)))
+    else:
+        print('')
+except:
+    print('')
+" 2>/dev/null)
+                    [[ -n "$tmdb_genres" && "$tmdb_genres" != "null" && "$tmdb_genres" != "" ]] && movie_genre="$tmdb_genres"
+                fi
             fi
         fi
     fi
@@ -221,9 +266,54 @@ header_btn=""
 # Top Title Header with Box Elements
 content_emoji="🎬"
 [[ "$is_series" == "true" ]] && content_emoji="📺"
-echo -e "${content_emoji}  ${BOLD}${PURPLE}${display_title}${RESET}${header_btn}"
+
+# Language flag display
+# Fallback: If Language is missing, try OMDB extraction
+if [[ -z "$movie_language" && -f "$OMDB_MODULE" ]]; then
+    if [[ -z "$omdb_json" ]]; then
+        source "$OMDB_MODULE" 2>/dev/null
+        if omdb_configured; then
+            omdb_json=$(get_omdb_metadata "$clean_title_for_api" "$movie_year" 2>/dev/null)
+        fi
+    fi
+    
+    if [[ -n "$omdb_json" ]]; then
+        # Extract first language (e.g., "English, Spanish" -> "English")
+        omdb_lang=$(echo "$omdb_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('Language', '').split(',')[0].strip())" 2>/dev/null)
+        
+        if [[ -n "$omdb_lang" && "$omdb_lang" != "N/A" ]]; then
+            # Map full name to ISO code using languages.json
+            if [[ -f "${UI_DIR}/../core/languages.sh" ]]; then
+                # Ensure languages module is loaded for file path
+                source "${UI_DIR}/../core/languages.sh"
+            fi
+            
+            # Helper python script to reverse lookup name -> code
+            movie_language=$(python3 -c "
+import json, sys
+try:
+    with open('$LANGUAGES_DATA_FILE') as f:
+        data = json.load(f)
+    target = '$omdb_lang'.lower()
+    for code, info in data.items():
+        if info.get('name', '').lower() == target:
+            print(code)
+            sys.exit(0)
+    print('')
+except:
+    print('')
+" 2>/dev/null)
+        fi
+    fi
+fi
+
+language_flag=""
+if [[ -n "$movie_language" && "$movie_language" != "" ]]; then
+    language_flag=$(get_language_flag "$movie_language" 2>/dev/null)
+    [[ -n "$language_flag" ]] && language_flag="${language_flag} "
+fi
+echo -e "${content_emoji}  ${language_flag}${BOLD}${PURPLE}${display_title}${RESET}${header_btn}"
 echo -e "${THEME_DIM:-$GRAY}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
-echo
 
 # --- Sources and IMDB Line (for COMBINED entries) ---
 if [[ "$source" == "COMBINED" ]]; then
@@ -239,21 +329,16 @@ if [[ "$source" == "COMBINED" ]]; then
         source_badges+="[${src}]"
     done
     
-    # Show Sources and IMDB rating on same line
-    imdb_display=""
-    if [[ -n "$movie_rating" ]] && [[ "$movie_rating" != "N/A" ]]; then
-        imdb_display="    ${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}${RESET}"
-    fi
-    echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
-    
-    # Fetch OMDB metadata for Runtime and Rating
+    # Fetch OMDB metadata for Runtime and Rating (BEFORE printing so movie_rating is set)
     movie_runtime=""
     if [[ -f "$OMDB_MODULE" && "$is_series" == "false" ]]; then
         source "$OMDB_MODULE" 2>/dev/null
         if omdb_configured; then
             omdb_json=$(get_omdb_metadata "$clean_title_for_api" "$movie_year" 2>/dev/null)
             if [[ -n "$omdb_json" ]] && echo "$omdb_json" | grep -q '"Response":"True"'; then
-                [[ -z "$movie_genre" || "$movie_genre" == "N/A" ]] && movie_genre=$(echo "$omdb_json" | extract_omdb_genre 2>/dev/null)
+                if [[ -z "$movie_genre" || "$movie_genre" == "N/A" || "$movie_genre" == "Movies" || "$movie_genre" == "Shows" || "$movie_genre" == "Unknown" ]]; then
+                    movie_genre=$(echo "$omdb_json" | extract_omdb_genre 2>/dev/null)
+                fi
                 movie_runtime=$(echo "$omdb_json" | extract_omdb_runtime 2>/dev/null)
                 # Extract IMDB rating
                 omdb_rating=$(echo "$omdb_json" | extract_omdb_rating 2>/dev/null)
@@ -261,6 +346,13 @@ if [[ "$source" == "COMBINED" ]]; then
             fi
         fi
     fi
+    
+    # Show Sources and IMDB rating on same line (now movie_rating is set for movies)
+    imdb_display=""
+    if [[ -n "$movie_rating" ]] && [[ "$movie_rating" != "N/A" ]]; then
+        imdb_display="    ${BOLD}IMDB:${RESET} ${YELLOW}⭐ ${movie_rating}${RESET}"
+    fi
+    echo -e "${BOLD}Sources:${RESET} ${GREEN}${source_badges}${RESET}${imdb_display}"
     
     # Deduplicate and format qualities
     seen_quals=()
@@ -292,17 +384,31 @@ fi
 # --- Genre Line (separate to prevent truncation) ---
 if [[ -n "$movie_genre" && "$movie_genre" != "N/A" ]]; then
     styled_genre=$(style_genres "$movie_genre" 2>/dev/null || echo "$movie_genre")
-    echo -e "${BOLD}Genre:${RESET} ${styled_genre}"
+    # \033[0m resets all attrs, \033[49m clears bg specifically, \033[K clears to end of line
+    echo -e "${BOLD}Genre:${RESET} ${styled_genre}\033[0m\033[49m\033[K"
 fi
 echo
 
 # --- 7. UI: Poster ---
-IMAGE_HEIGHT=30; IMAGE_WIDTH=40; poster_path=""
+IMAGE_HEIGHT=25; IMAGE_WIDTH=30; poster_path=""
 if [[ -z "$poster_url" || "$poster_url" == "N/A" ]]; then
     POSTER_SCRIPT="${ROOT_DIR}/lib/termflix/scripts/get_poster.py"
     if [[ -f "$POSTER_SCRIPT" ]]; then
-        poster_url=$(timeout 3s python3 "$POSTER_SCRIPT" "$clean_title_for_api ($movie_year)" 2>/dev/null)
+        # Use display_title which preserves subtitle info
+        # The get_poster.py script does its own cleaning internally
+        poster_url=$(timeout 5s python3 "$POSTER_SCRIPT" "$display_title" 2>/dev/null)
+        
+        # If that fails, try with just clean_title + year
+        if [[ -z "$poster_url" || "$poster_url" == "N/A" || "$poster_url" == "null" ]]; then
+            if [[ -n "$movie_year" ]]; then
+                poster_url=$(timeout 5s python3 "$POSTER_SCRIPT" "$clean_title_for_api ($movie_year)" 2>/dev/null)
+            else
+                poster_url=$(timeout 5s python3 "$POSTER_SCRIPT" "$clean_title_for_api" 2>/dev/null)
+            fi
+        fi
     fi
+else
+    [[ "${TERMFLIX_DEBUG:-false}" == "true" ]] && echo "DEBUG: Using existing poster_url: $poster_url" >&2
 fi
 
 if [[ -n "$poster_url" && "$poster_url" != "N/A" ]]; then
@@ -322,13 +428,9 @@ fi
 
 if [[ -f "$poster_path" && -s "$poster_path" ]]; then
     if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &>/dev/null; then
-        # Kitty: Scale poster based on available space
-        # Use FZF_PREVIEW_COLUMNS/LINES if available, else defaults
-        KITTY_WIDTH=${FZF_PREVIEW_COLUMNS:-40}
-        KITTY_HEIGHT=${FZF_PREVIEW_LINES:-30}
-        # Limit to reasonable max
-        ((KITTY_WIDTH = KITTY_WIDTH > 45 ? 45 : KITTY_WIDTH))
-        ((KITTY_HEIGHT = KITTY_HEIGHT > 30 ? 30 : KITTY_HEIGHT))
+        # Kitty: Fixed poster size for optimal preview layout
+        KITTY_WIDTH=37
+        KITTY_HEIGHT=27
         
         # Clear previous image with blank, then draw poster
         BLANK_IMG="${ROOT_DIR}/lib/torrent/img/blank.png"
@@ -364,13 +466,57 @@ else
             echo -e "${GRAY}[ No Poster Available ]${RESET}"; echo
         fi
     else
-        echo -e "${GRAY}[ No Poster Available ]${RESET}"; echo
+        # Generate rainbow ASCII art poster for text mode (inspired by chafa output)
+        # Using block/shade characters with rainbow colors
+        local rainbow_colors=(
+            "\033[38;5;196m"  # Red
+            "\033[38;5;202m"  # Orange
+            "\033[38;5;208m"  # Orange-Yellow
+            "\033[38;5;214m"  # Yellow
+            "\033[38;5;220m"  # Yellow-Green
+            "\033[38;5;226m"  # Yellow
+            "\033[38;5;46m"   # Green
+            "\033[38;5;48m"   # Cyan-Green
+            "\033[38;5;51m"   # Cyan
+            "\033[38;5;45m"   # Light Blue
+            "\033[38;5;39m"   # Blue
+            "\033[38;5;33m"   # Dark Blue
+            "\033[38;5;129m"  # Purple
+            "\033[38;5;165m"  # Magenta
+            "\033[38;5;201m"  # Pink
+        )
+        local chars=("░" "▒" "▓" "█" "▓" "▒" "░" "▒" "▓" "█" "▀" "▄" "▐" "▌" "▆" "▇")
+        local num_colors=${#rainbow_colors[@]}
+        local num_chars=${#chars[@]}
+        local poster_width=24
+        local poster_height=18
+        
+        # Top border
+        echo -e "\033[38;5;240m╭$(printf '─%.0s' $(seq 1 $poster_width))╮\033[0m"
+        
+        for ((row=0; row<poster_height; row++)); do
+            local line="\033[38;5;240m│\033[0m"
+            for ((col=0; col<poster_width; col++)); do
+                local color_idx=$(( (row + col) % num_colors ))
+                local char_idx=$(( (row * col + row + col) % num_chars ))
+                line+="${rainbow_colors[$color_idx]}${chars[$char_idx]}"
+            done
+            line+="\033[0m\033[38;5;240m│\033[0m"
+            echo -e "$line"
+        done
+        
+        # Bottom border with film reel
+        echo -e "\033[38;5;240m╰$(printf '─%.0s' $(seq 1 $poster_width))╯\033[0m"
+        echo -e "\033[38;5;245m       🎬 NO POSTER\033[0m"
+        echo
     fi
 fi
 
 # Print Description (Safe wrapping)
 [[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]] && description="No description available."
-wrapped_desc=$(echo -e "$description" | fmt -w 60)
+# Use FZF preview width dynamically, subtract 2 for padding, default to 90 if not available
+desc_width=$((${FZF_PREVIEW_COLUMNS:-92} - 2))
+wrapped_desc=$(echo -e "$description" | fold -s -w "$desc_width")
 while IFS= read -r line; do
     echo -e "${GRAY}${line}${RESET}"
 done <<< "$wrapped_desc"

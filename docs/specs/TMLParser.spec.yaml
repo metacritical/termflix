@@ -1,0 +1,79 @@
+---
+# AgentSpec: TML Parser Module
+# Version: 2.0
+# Last Updated: 2025-12-25
+
+feature:
+  name: "TML Parser (Terminal Markup Language)"
+  description: "Parses XML/TML layout files and generates FZF command arguments. Provides rich menu-bar rendering with tabs, dropdowns, and theme integration."
+  version: "2.0"
+
+files:
+  - modules/ui/tml/parser/tml_parser.sh
+  - modules/ui/tml/schema/tml-1.0.xsd
+  - modules/ui/layouts/*.xml
+  - modules/ui/layouts/*.tml
+
+pipeline:
+  - stage: parse
+    function: "tml_parse"
+    description: "Parse TML/XML layout file and extract FZF configuration"
+    inputs:
+      - tml_file: "Path to .tml or .xml layout file"
+    outputs:
+      - TML_FZF_ARGS: "Generated FZF command arguments"
+      - TML_EXPECT_KEYS: "Expected keys for FZF --expect"
+
+  - stage: render_header
+    function: "tml_render_header"
+    description: "Render menu-bar with tabs, dropdowns, and logo"
+    outputs:
+      - header_string: "ANSI-colored header for FZF"
+
+helper_functions:
+  - name: "tml_eval"
+    description: "Evaluate ${var} and ${var:-default} expressions"
+  - name: "tml_eval_bool"
+    description: "Evaluate boolean expressions for conditionals"
+  - name: "tml_shell_escape"
+    description: "Escape special characters for safe shell embedding in double-quoted strings"
+    escapes: ["\\", "`", "$", "\"", "!"]
+  - name: "tml_attr"
+    description: "Extract XML attribute via xmllint"
+  - name: "tml_text"
+    description: "Extract XML text content via xmllint"
+  - name: "tml_count"
+    description: "Count matching XML elements"
+  - name: "tml_exists"
+    description: "Check if XPath exists"
+
+xml_elements:
+  layout:
+    attributes: ["direction", "height", "margin", "padding", "info"]
+  border:
+    attributes: ["style", "label", "label-pos"]
+  prompt:
+    attributes: ["pointer"]
+  header:
+    attributes: ["first"]
+  preview:
+    attributes: ["position", "size", "wrap", "border", "script"]
+  colors:
+    children: ["color[@name, @value]"]
+  bindings:
+    attributes: ["delimiter", "with-nth", "expect"]
+    children: ["bind[@key, @action, @return-code, @script]"]
+
+resilience:
+  - issue: "Single quotes in header content break eval"
+    solution: "tml_shell_escape escapes special chars, header uses double quotes"
+  - issue: "Bash 3.2 compatibility"
+    solution: "No associative arrays, uses eval for variable assignment"
+
+integration:
+  used_by:
+    - modules/ui/catalog/fzf_catalog.sh
+    - modules/streaming/buffer_ui.sh
+    - modules/ui/pickers/*.sh
+  sources:
+    - modules/core/theme.sh (optional color scheme)

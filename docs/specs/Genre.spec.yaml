@@ -1,0 +1,63 @@
+# Machine-Readable Specification for Genre System
+# This document defines the Genre system structure, data sources, and mapping logic.
+# Format: YAML (Optimized for Machine Parsing)
+
+feature:
+  name: Genre System
+  version: 1.0.0
+  purpose: "Fetch, map, and display movie/show genres from external APIs."
+
+data_sources:
+  - source: "TMDB"
+    priority: 1
+    endpoints:
+      - type: "movie_details"
+        field: "genres"
+        format: "Array<{id: int, name: string}>"
+        example: [{"id": 28, "name": "Action"}]
+      - type: "search_movie"
+        field: "genre_ids"
+        format: "Array<int>"
+        example: [28, 12, 53]
+  
+  - source: "OMDB"
+    priority: 2
+    field: "Genre"
+    format: "string (comma-separated)"
+    example: "Action, Adventure, Sci-Fi"
+
+mapping_logic:
+  description: "Converts TMDB Genre IDs to human-readable names when full objects are missing."
+  implementation: "Python Dictionary (Hardcoded)"
+  location: "modules/ui/catalog/preview_fzf.sh"
+  map:
+    28: "Action"
+    12: "Adventure"
+    16: "Animation"
+    35: "Comedy"
+    80: "Crime"
+    99: "Documentary"
+    18: "Drama"
+    10751: "Family"
+    14: "Fantasy"
+    36: "History"
+    27: "Horror"
+    10402: "Music"
+    9648: "Mystery"
+    10749: "Romance"
+    878: "Sci-Fi"
+    10770: "TV Movie"
+    53: "Thriller"
+    10752: "War"
+    37: "Western"
+
+display:
+  ui_component: "Preview Pane"
+  file: "modules/ui/catalog/preview_fzf.sh"
+  format: "Comma-separated string"
+  style: "Colorized by hash or predefined genre colors"
+  fallback: "Unknown"
+
+integration:
+  environment_variable: "CURRENT_GENRE"
+  usage: "Filter catalog results by genre name"

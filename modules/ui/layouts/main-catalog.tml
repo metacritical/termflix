@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Main Catalog Layout (TML v1.0)
+  Termflix content browser with tabs, list, and preview
+-->
+<tml version="1.0" theme="crush">
+
+  <variables>
+    <var name="category" default="movies"/>
+    <var name="page" default="1"/>
+    <var name="total_pages" default="1"/>
+  </variables>
+
+  <handlers>
+    <handler id="get_catalog" type="python" script="fetch_catalog.py"/>
+    <handler id="switch_category" type="bash" script="category.sh"/>
+    <handler id="show_preview" type="bash" script="preview.sh"/>
+  </handlers>
+
+  <layout id="main-catalog" renderer="fzf">
+
+    <menu-bar id="main-nav">
+      <logo>🍿 TERMFLIX™</logo>
+      <tab-group id="category-tabs">
+        <tab id="movies" shortcut="o" shortcut-prefix="M" active="${category=='movies'}">ovies</tab>
+        <tab id="shows" shortcut="S" active="${category=='shows'}">hows</tab>
+        <tab id="watchlist" shortcut="W" active="${category=='watchlist'}">atchlist</tab>
+      </tab-group>
+      <dropdown id="type" shortcut="T">Type ▾</dropdown>
+      <dropdown id="sort" shortcut="V">Sort [V] ▾</dropdown>
+      <dropdown id="genre" shortcut="G">Genre ▾</dropdown>
+    </menu-bar>
+
+    <list id="catalog-items" source="handler:get_catalog" empty-text="No results found">
+      <item-template>
+        <text>${index}. ${watched_icon}${title}</text>
+        <on-enter>handler:open_details($item)</on-enter>
+        <on-hover>handler:show_preview($item)</on-hover>
+      </item-template>
+      <on-empty>handler:show_no_results()</on-empty>
+    </list>
+
+    <preview id="content-preview" position="right" size="50%" wrap="true" border="border-left">
+      <image src="${poster}"/>
+      <text style="title">${title}</text>
+      <text style="meta">${year} • ⭐ ${rating}</text>
+      <genre-pills source="${genres}"/>
+      <text style="plot">${plot}</text>
+    </preview>
+
+    <status-bar position="bottom">
+      <text>Page ${page}/${total_pages}</text>
+    </status-bar>
+
+    <bindings>
+      <bind key="ctrl-o" handler="switch_category" args="movies" return-code="101"/>
+      <bind key="ctrl-s" handler="switch_category" args="shows" return-code="102"/>
+      <bind key="ctrl-w" handler="switch_category" args="watchlist" return-code="103"/>
+      <bind key="ctrl-t" action="show" target="#type-picker" return-code="104"/>
+      <bind key="ctrl-v" action="show" target="#sort-picker" return-code="105"/>
+      <bind key="ctrl-g" action="show" target="#genre-picker" return-code="106"/>
+      <bind key=">" handler="next_page" condition="${page &lt; total_pages}" return-code="107"/>
+      <bind key="&lt;" handler="prev_page" condition="${page &gt; 1}" return-code="108"/>
+      <bind key="ctrl-f" action="search" return-code="110"/>
+      <bind key="enter" on="#catalog-items" action="select"/>
+      <bind key="esc" action="back" fallback="quit"/>
+      <bind key="?" action="show" target="#help-modal"/>
+    </bindings>
+
+  </layout>
+</tml>

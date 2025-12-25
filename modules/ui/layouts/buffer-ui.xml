@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Buffer UI Layout
-  Shows streaming buffer status with live preview
+  For streaming buffer status display with live preview updates
+  Special: Uses FZF listen port for API-driven refresh
 -->
 <fzf-layout id="buffer-ui" name="Buffer UI">
-  <layout direction="reverse" height="100%" margin="1" padding="1" info="hidden"/>
-  <preview position="left" size="55%" wrap="true" border="border-right"
-            script="${preview_script:-}"/>
-  <header first="true">Streaming: ${title:-Title}</header>
+  <layout direction="reverse" height="100%" margin="1" padding="1"/>
   <border style="rounded" label=" Esc:Back " label-pos="bottom"/>
-  <prompt pointer="➤">⬇ Buffering</prompt>
-  <colors theme="dracula">
+  <prompt pointer="➤">⬇ Buffering </prompt>
+  <header first="true">Streaming: ${title:-Movie}</header>
+  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <colors>
     <color name="fg" value="#f8f8f2"/>
     <color name="bg" value="-1"/>
     <color name="hl" value="#ff79c6"/>
@@ -24,6 +24,5 @@
   <bindings delimiter="|" with-nth="2">
     <bind key="enter" action="accept"/>
     <bind key="esc" action="abort"/>
-    <bind key="ctrl-c" action="abort"/>
   </bindings>
 </fzf-layout>

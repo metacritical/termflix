@@ -66,8 +66,8 @@ show_inline_buffer_ui() {
         debug_log "Fetching backdrop via Google Images for: $title (type: $content_type)"
         local fetched_backdrop=""
         local retry=0
-        while [[ -z "$fetched_backdrop" || ! -f "$fetched_backdrop" ]] && [[ $retry -lt 3 ]]; do
-            fetched_backdrop=$(timeout 3 python3 "$BACKDROP_SCRIPT" "$title" --type "$content_type" 2>/dev/null)
+        while [[ -z "$fetched_backdrop" || ! -f "$fetched_backdrop" ]] && [[ $retry -lt 2 ]]; do
+            fetched_backdrop=$(timeout 10 python3 "$BACKDROP_SCRIPT" "$title" --type "$content_type" 2>/dev/null)
             ((retry++))
         done
         if [[ -n "$fetched_backdrop" ]] && [[ -f "$fetched_backdrop" ]]; then
@@ -80,6 +80,26 @@ show_inline_buffer_ui() {
     else
         # Script not available, use poster
         backdrop_image="$poster"
+    fi
+
+    # Fallback chain: if backdrop_image is still invalid (N/A, empty, not a file)
+    # try to use a bundled default image
+    if [[ -z "$backdrop_image" || "$backdrop_image" == "N/A" || ( ! -f "$backdrop_image" && ! "$backdrop_image" =~ ^https?:// ) ]]; then
+        # Check if poster itself is a URL we can download
+        if [[ "$poster" =~ ^https?:// ]]; then
+            debug_log "Poster is a URL, will download later"
+            backdrop_image="$poster"
+        else
+            # Try bundled default image
+            local default_img="${root_dir}/lib/torrent/img/movie_night.jpg"
+            if [[ -f "$default_img" ]]; then
+                debug_log "Using bundled default image: $default_img"
+                backdrop_image="$default_img"
+            else
+                debug_log "No valid backdrop or fallback image available"
+                backdrop_image=""
+            fi
+        fi
     fi
     
     debug_log "Checking splash screen preconditions..."
@@ -128,6 +148,7 @@ show_inline_buffer_ui() {
     # Launch progress monitor if splash launched successfully
     if [[ -n "$splash_socket" ]] && [[ -S "$splash_socket" ]]; then
         monitor_splash_progress "$splash_socket" "$status_file" "$title" &>/dev/null &
+        disown 2>/dev/null || true  # Fully detach progress monitor
         debug_log "Progress monitor started"
     fi
     
@@ -148,6 +169,7 @@ show_inline_buffer_ui() {
         echo "stream_torrent exited with code: $?" >> "$stream_log" 2>&1
     } &
     local stream_pid=$!
+    disown 2>/dev/null || true  # Fully detach stream process
     
     # Setup cleanup
     local preview_script="$tmpdir/termflix_buffer_preview.sh"
@@ -155,18 +177,25 @@ show_inline_buffer_ui() {
     # Cleanup function
     cleanup_stream() {
         tput cnorm
+        
+        # Kill sidecar refresh loop
+        if [[ -n "${refresh_pid:-}" ]] && kill -0 "$refresh_pid" 2>/dev/null; then
+             kill "$refresh_pid" 2>/dev/null
+        fi
+
         # Kill splash screen if still running
         if [[ -n "$splash_pid" ]] && kill -0 "$splash_pid" 2>/dev/null; then
             kill "$splash_pid" 2>/dev/null
         fi
-        if kill -0 "$stream_pid" 2>/dev/null; then
+        
+        # Kill stream process
+        if [[ -n "$stream_pid" ]] && kill -0 "$stream_pid" 2>/dev/null; then
             kill -9 "$stream_pid" 2>/dev/null
             wait "$stream_pid" 2>/dev/null
         fi
         rm -f "$status_file" "$preview_script" 2>/dev/null
         
         # Clean torrent cache (like termflix --remove)
-        # Verify this logic matches user request to clear /tmp/torrent-stream
         local torrent_dir="/tmp/torrent-stream"
         if [ -d "$torrent_dir" ]; then
              rm -rf "$torrent_dir"/* 2>/dev/null
@@ -183,9 +212,22 @@ show_inline_buffer_ui() {
     # Generate random port for FZF API (between 10000 and 20000)
     local fzf_port=$((10000 + RANDOM % 10000))
     export FZF_API_PORT="$fzf_port"
+    
+    # Export trailer script path and cache dir for preview
+    export TERMFLIX_TRAILER_SCRIPT="${helper_dir}/fetch_trailers.py"
+    export TERMFLIX_POSTER_CACHE="${HOME}/.cache/termflix/posters"
+    
     cat > "$preview_script" << 'PREVIEW_EOF'
 #!/usr/bin/env bash
 # Buffering preview - updates continuously
+
+# DEBUG: Log status file path and content
+echo "$(date +%H:%M:%S): Preview running, status_file=$TERMFLIX_BUFFER_STATUS" >> /tmp/termflix_preview_debug.log
+if [[ -f "$TERMFLIX_BUFFER_STATUS" ]]; then
+    echo "$(date +%H:%M:%S): Status: $(cat "$TERMFLIX_BUFFER_STATUS")" >> /tmp/termflix_preview_debug.log
+else
+    echo "$(date +%H:%M:%S): Status file NOT FOUND" >> /tmp/termflix_preview_debug.log
+fi
 
 # Movie metadata from environment
 status_file="$TERMFLIX_BUFFER_STATUS"
@@ -194,6 +236,19 @@ poster="$STAGE2_POSTER"
 title="$STAGE2_TITLE"
 plot="$STAGE2_PLOT"
 sources="$STAGE2_SOURCES"
+trailer_script="$TERMFLIX_TRAILER_SCRIPT"
+poster_cache="$TERMFLIX_POSTER_CACHE"
+
+# Download poster if it's a URL
+if [[ "$poster" =~ ^https?:// ]]; then
+    mkdir -p "$poster_cache"
+    poster_hash=$(echo -n "$poster" | md5 2>/dev/null || echo -n "$poster" | md5sum | cut -d' ' -f1)
+    local_poster="${poster_cache}/${poster_hash}.jpg"
+    if [[ ! -f "$local_poster" ]]; then
+        curl -sL "$poster" -o "$local_poster" --max-time 5 2>/dev/null
+    fi
+    [[ -f "$local_poster" ]] && poster="$local_poster"
+fi
 
 # Read status file
 state="STARTING"
@@ -240,174 +295,100 @@ GREEN="\033[38;5;46m"
 YELLOW="\033[38;5;226m"
 GRAY="\033[38;5;240m"
 CYAN="\033[38;5;51m"
-BRIGHT_CYAN="\033[38;2;94;234;212m"  # Charm Bracelet cyan #5EEAD4
+RED="\033[38;5;196m"
+BRIGHT_CYAN="\033[38;2;94;234;212m"
 RESET="\033[0m"
 
-# Activity indicator at top-right (colored bright cyan)
-# Calculate position for right-alignment (assume 80 char width)
-activity_len=${#activity}
-padding=$((80 - activity_len))
-printf "%${padding}s" ""  # Right padding
-echo -e "${BRIGHT_CYAN}${activity}${RESET}"
-echo ""
+# ═══════════════════════════════════════════════════════════════════
+# SECTION 1: TITLE + LIVE PROGRESS (MOST IMPORTANT - ALWAYS VISIBLE)
+# ═══════════════════════════════════════════════════════════════════
 
-# Movie info header
 echo -e "${PINK}${title}${RESET}"
-echo ""
 echo "Sources: ${sources}"
 echo ""
 
-# Show plot/description instead of magnet link
-if [[ -n "$plot" && "$plot" != "null" ]]; then
-    echo -e "${GRAY}SYNOPSIS${RESET}"
-    echo "$plot" | fmt -w 50
-    echo ""
-else
-    # Fallback streaming tips
-    echo -e "${CYAN}🎬 Streaming Tips${RESET}"
-    echo "  • Buffering takes 30-60 seconds"
-    echo "  • Better seeds = faster stream"
-    echo "  • 1080p requires ~5MB/s connection"
-    echo ""
-fi
-
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-
-
-# Poster display (fixed aspect ratio) - AFTER text to prevent overlay
-if [[ -f "$poster" ]]; then
-    # Direct image display (can't source modules from /tmp preview script)
-    if [[ "$TERM" == "xterm-kitty" ]] && command -v kitten &> /dev/null; then
-        # Kitty terminal - use kitten icat
-        command -v chafa &> /dev/null && TERM=xterm-256color chafa --symbols=block --size="40x30" "$poster" 2>/dev/null || echo "[POSTER]"
-        # Add spacing after image
-        for i in {1..31}; do echo ""; done
-    elif command -v viu &> /dev/null; then
-        # VIU - Unicode-based image viewer
-        viu -w 40 "$poster" 2>/dev/null
-    elif command -v chafa &> /dev/null; then
-        # Chafa - Block graphics fallback
-        TERM=xterm-256color chafa --symbols=block --size="40x30" "$poster" 2>/dev/null
-    else
-        echo "[POSTER]"
-    fi
-else
-    echo "[POSTER]"
-    echo ""
-fi
-
-# Debug info
-if [[ -f "$stream_log" ]]; then
-    # Filter out error messages and verification loops
-    last_log=$(tail -5 "$stream_log" 2>/dev/null | grep -v "transmission\|error\|Error\|Verifying" | head -1)
-    if [[ -n "$last_log" ]]; then
-        echo -e "${GRAY}Debug: ${last_log:0:50}...${RESET}"
-        echo ""
-    fi
-fi
-
-# Buffering status (live)
+# Live buffering progress (THE MAIN PURPOSE OF THIS UI)
 if [[ -f "$status_file" ]]; then
     status_line=$(cat "$status_file")
     IFS='|' read -r progress speed_bytes peers total_peers size state stream_url peerflix_pid <<< "$status_line"
     
-    # Provide defaults
     progress="${progress:-0}"
     speed_bytes="${speed_bytes:-0}"
-    peers="${peers:-0}"
-    total_peers="${total_peers:-0}"
-    size="${size:-0}"
-    state="${state:-BUFFERING}"
+    state="${state:-STARTING}"
     
-    # Format speed from bytes/sec to human readable
+    # Format speed
     speed="0"
     if [[ $speed_bytes -gt 1048576 ]]; then
-        # MB/s
-        speed=$(awk "BEGIN {printf \"%.2f MB/s\", $speed_bytes / 1048576}")
+        speed=$(awk "BEGIN {printf \"%.1f MB/s\", $speed_bytes / 1048576}")
     elif [[ $speed_bytes -gt 1024 ]]; then
-        # KB/s
-        speed=$(awk "BEGIN {printf \"%.2f KB/s\", $speed_bytes / 1024}")
-    elif [[ $speed_bytes -gt 0 ]]; then
-        speed="${speed_bytes} B/s"
+        speed=$(awk "BEGIN {printf \"%.0f KB/s\", $speed_bytes / 1024}")
     fi
     
-    echo -e "${YELLOW}Status: ${state}${RESET}"
-    echo ""
+    # Progress bar (compact)
+    bar_len=25
+    filled=$((progress * bar_len / 100))
+    bar="${PINK}"
+    for ((i=0; i<filled; i++)); do bar+="━"; done
+    bar+="${GRAY}"
+    for ((i=filled; i<bar_len; i++)); do bar+="━"; done
+    bar+="${RESET}"
     
-    if [[ "$state" == "READY" ]]; then
-        echo -e "${GREEN}✓ Buffer complete! Auto-playing...${RESET}"
-        echo ""
-        # Trigger FZF accept via API
-        if [[ -n "$FZF_API_PORT" ]]; then
-            curl -s -X POST -d 'accept' "http://localhost:${FZF_API_PORT}" >/dev/null 2>&1
-        fi
+    if [[ "$state" == "PLAYING" ]]; then
+        echo -e "${GREEN}▶ PLAYING${RESET}  ${bar} ${progress}%"
+    elif [[ "$state" == "READY" ]]; then
+        echo -e "${GREEN}✓ READY${RESET}    ${bar} ${progress}%"
+        # Auto-accept
+        [[ -n "$FZF_API_PORT" ]] && curl -s -X POST -d 'accept' "http://localhost:${FZF_API_PORT}" >/dev/null 2>&1
+    elif [[ "$state" == "BUFFERING" ]]; then
+        echo -e "${YELLOW}⬇ BUFFERING${RESET} ${bar} ${progress}%"
     else
-        # Progress bar
-        bar_len=30
-        filled=$((progress * bar_len / 100))
-        
-        bar="${PINK}"
-        for ((i=0; i<filled; i++)); do bar+="━"; done
-        bar+="${GRAY}"
-        for ((i=filled; i<bar_len; i++)); do bar+="━"; done
-        bar+="${RESET}"
-        
-        echo -e "⬇  ${YELLOW}Downloading & Buffering${RESET}"
-        echo ""
-        echo -e "${bar} ${progress}%"
-        echo ""
-        # Status indicators using colored dots (like Stage 1 header)
-        # 🟢 = Running, 🔴 = Stopped/Died
-        
-        # Peerflix Status
-        peerflix_dot="${RED}●${RESET}"
-        if [[ -n "$peerflix_pid" ]] && kill -0 "$peerflix_pid" 2>/dev/null; then
-             peerflix_dot="${GREEN}●${RESET}"
-        fi
-        
-        # MPV Status (check if mpv process exists)
-        mpv_dot="${RED}●${RESET}"
-        # We need to find MPV pid. Attempt to read from status file if available or check standard pid
-        # Since we don't have MPV PID in status file yet, we'll check broadly or just rely on stream URL reachability?
-        # Better: Update torrent.sh to write MPV pid to status file too. 
-        # For now, let's assume if stream URL is up and we assume MPV is launched...
-        # Actually, user asked to "produce its status aswell".
-        # Let's check for any mpv process playing this file? Or better, check if the transition happened.
-        # If state is PLAYING, MPV should be running.
-        if [[ "$state" == "PLAYING" ]] || [[ "$state" == "READY" ]]; then
-             # Simple check: is there an MPV process running?
-             if pgrep -x "mpv" >/dev/null; then
-                 mpv_dot="${GREEN}●${RESET}"
-             fi
-        fi
-
-        printf "%-15s %b Peerflix\n" "Source:" "$peerflix_dot"
-        printf "%-15s %b MPV Player\n" "Player:" "$mpv_dot"
-        
-        if [[ -n "$stream_url" ]]; then
-             # Clean URL for display (remove http://localhost:)
-             display_url="${stream_url#http://localhost:}"
-             display_url="${display_url%/}"
-             printf "%-15s Port: %s\n" "Stream:" "$display_url"
-        fi
-        
-        printf "%-15s %s\n" "Speed:" "$speed"
-        printf "%-15s %d MB\n" "Buffered:" "${buffered_mb:-0}"
-        
-        echo ""
-        echo -e "${GRAY}Press ESC to cancel${RESET}"
+        echo -e "${CYAN}⏳ ${state}${RESET}"
     fi
+    
+    # Compact stats line
+    echo -e "${GRAY}Speed: ${speed} | Buffered: ${size:-0} MB${RESET}"
 else
-    echo -e "${YELLOW}Initializing stream...${RESET}"
-    echo ""
-    echo "Status file: $status_file"
-    if [[ -f "$stream_log" ]]; then
-        echo ""
-        echo "Recent log:"
-        tail -5 "$stream_log" 2>/dev/null | sed 's/^/  /'
-    fi
+    echo -e "${CYAN}⏳ Initializing stream...${RESET}"
 fi
+
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+# ═══════════════════════════════════════════════════════════════════
+# SECTION 2: SYNOPSIS (if available, truncated)
+# ═══════════════════════════════════════════════════════════════════
+
+if [[ -n "$plot" && "$plot" != "null" ]]; then
+    # Truncate synopsis to 3 lines max
+    echo -e "${GRAY}SYNOPSIS${RESET}"
+    echo "$plot" | fmt -w 45 | head -3
+    echo ""
+fi
+
+# ═══════════════════════════════════════════════════════════════════
+# SECTION 3: PROCESS STATUS (compact)
+# ═══════════════════════════════════════════════════════════════════
+
+if [[ -f "$status_file" ]]; then
+    # Peerflix status
+    peerflix_dot="${RED}●${RESET}"
+    if [[ -n "$peerflix_pid" ]] && kill -0 "$peerflix_pid" 2>/dev/null; then
+        peerflix_dot="${GREEN}●${RESET}"
+    fi
+    
+    # MPV status
+    mpv_dot="${RED}●${RESET}"
+    if pgrep -x "mpv" >/dev/null 2>&1; then
+        mpv_dot="${GREEN}●${RESET}"
+    fi
+    
+    echo -e "Peerflix: ${peerflix_dot}  MPV: ${mpv_dot}"
+    [[ -n "$stream_url" ]] && echo -e "${GRAY}Stream: ${stream_url}${RESET}"
+fi
+
+echo ""
+echo -e "${GRAY}Press ESC to cancel${RESET}"
 PREVIEW_EOF
     
     # Make preview script executable and verify
@@ -421,7 +402,12 @@ PREVIEW_EOF
     echo "✓ Preview script created: $preview_script" >> "$stream_log"
     
     # Export env vars for preview
-    export STAGE2_POSTER="$poster"
+    # Use existing STAGE2_POSTER from Stage 2 if available and valid
+    if [[ -n "${STAGE2_POSTER:-}" && -f "${STAGE2_POSTER}" ]]; then
+        : # Keep existing value
+    else
+        export STAGE2_POSTER="$poster"
+    fi
     export STAGE2_TITLE="$title"
     export STAGE2_PLOT="$plot"
     export STAGE2_SOURCES="[$source]"
@@ -439,51 +425,87 @@ PREVIEW_EOF
     local fzf_port=$((10000 + RANDOM % 10000))
     
     # Start background refresh loop (Sidecar) - refresh every 0.3s for smooth updates
+    local refresh_pid=""
     {
+        echo "$(date): Sidecar starting, FZF port=$fzf_port, stream_pid=$stream_pid" >> /tmp/termflix_sidecar.log
+        local refresh_count=0
         while kill -0 "$stream_pid" 2>/dev/null; do
             sleep 0.3
-            curl -s -X POST -d 'refresh-preview' "http://localhost:${fzf_port}" >/dev/null 2>&1
+            # FZF listen API: just send the action name
+            local curl_result=$(curl -s -X POST "http://localhost:${fzf_port}" -d 'refresh-preview' 2>&1)
+            ((refresh_count++))
+            if [[ $((refresh_count % 10)) -eq 0 ]]; then
+                echo "$(date): Sidecar refresh #$refresh_count, curl result: $curl_result" >> /tmp/termflix_sidecar.log
+            fi
         done
+        echo "$(date): Sidecar exiting, stream_pid no longer running" >> /tmp/termflix_sidecar.log
+        # Stream finished (MPV closed) - auto-close FZF buffer UI
+        sleep 0.5  # Brief delay for cleanup
+        curl -s -X POST "http://localhost:${fzf_port}" -d 'abort' 2>/dev/null || true
+        echo "$(date): Sent abort to FZF to auto-close buffer UI" >> /tmp/termflix_sidecar.log
     } &
-    local refresh_pid=$!
+    refresh_pid=$!
+    disown 2>/dev/null || true  # Fully detach sidecar from job control
     
     # Update cleanup to kill refresh loop
-    cleanup_stream() {
-        if kill -0 "$refresh_pid" 2>/dev/null; then kill "$refresh_pid" 2>/dev/null; fi
-        tput cnorm
-        if kill -0 "$stream_pid" 2>/dev/null; then
-            kill -9 "$stream_pid" 2>/dev/null
-            wait "$stream_pid" 2>/dev/null
-        fi
-        rm -f "$status_file" "$preview_script" 2>/dev/null
-    }
+    # Cleanup logic is handled by the main cleanup_stream function defined earlier
     
-    # Launch Stage 2 FZF with listen port for API updates
+    # ════════════════════════════════════════════════════════════════
+    # FZF Buffer UI (Stage 3) with listen port for API-driven refresh
+    # ════════════════════════════════════════════════════════════════
+    # NOTE: Avoid eval for FZF - it causes syntax errors with special characters
     printf "%s" "$options" | fzf \
         --ansi \
-        --delimiter='|' \
-        --with-nth=2 \
-        --height=100% \
-        --layout=reverse \
-        --border=rounded \
-        --margin=1 \
-        --padding=1 \
-        --border-label=" Esc:Back " \
-        --border-label-pos=bottom \
-        --prompt='⬇ Buffering ' \
-        --pointer='➤' \
-        --header="Streaming: ${title}" \
+        --layout reverse \
+        --height 100% \
+        --margin 1 \
+        --padding 1 \
+        --border rounded \
+        --border-label " Esc:Back " \
+        --border-label-pos bottom \
+        --prompt "⬇ Buffering " \
+        --pointer "➤" \
+        --header "Streaming: ${title:-Movie}" \
         --header-first \
-        --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
-        --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
-        --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
+        --preview-window "left:55%:wrap:border-right" \
+        --color "fg:#f8f8f2,bg:-1,hl:#ff79c6,fg+:#ffffff,bg+:#44475a,hl+:#ff79c6,info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6" \
+        --delimiter "|" \
+        --with-nth 2 \
         --listen "$fzf_port" \
         --preview "$preview_script" \
-        --preview-window=left:55%:wrap:border-right \
-        --bind='enter:accept' \
-        --bind='esc:abort' \
-        --bind='ctrl-c:abort' \
+        --bind "enter:accept" \
+        --bind "esc:abort" \
+        --bind "ctrl-c:abort" \
         >/dev/null 2>&1
+    
+    # ════════════════════════════════════════════════════════════════
+    # OLD HARDCODED FZF CONFIG (commented for reference)
+    # ════════════════════════════════════════════════════════════════
+    # printf "%s" "$options" | fzf \
+    #     --ansi \
+    #     --delimiter='|' \
+    #     --with-nth=2 \
+    #     --height=100% \
+    #     --layout=reverse \
+    #     --border=rounded \
+    #     --margin=1 \
+    #     --padding=1 \
+    #     --border-label=" Esc:Back " \
+    #     --border-label-pos=bottom \
+    #     --prompt='⬇ Buffering ' \
+    #     --pointer='➤' \
+    #     --header="Streaming: ${title}" \
+    #     --header-first \
+    #     --color=fg:#f8f8f2,bg:-1,hl:#ff79c6 \
+    #     --color=fg+:#ffffff,bg+:#44475a,hl+:#ff79c6 \
+    #     --color=info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6 \
+    #     --listen "$fzf_port" \
+    #     --preview "$preview_script" \
+    #     --preview-window=left:55%:wrap:border-right \
+    #     --bind='enter:accept' \
+    #     --bind='esc:abort' \
+    #     --bind='ctrl-c:abort' \
+    #     >/dev/null 2>&1
     
     local fzf_exit=$?
     
@@ -496,12 +518,22 @@ PREVIEW_EOF
         return 1
     fi
     
-    # Stream is ready, bring player to foreground
+    # Stream is ready, wait for it to finish
+    # Note: Since process is disowned, we loop-wait instead of fg
     if kill -0 "$stream_pid" 2>/dev/null; then
         tput cnorm
-        fg %1 2>/dev/null || wait "$stream_pid"
+        while kill -0 "$stream_pid" 2>/dev/null; do
+            sleep 1
+        done
     fi
     
     # Cleanup after stream finishes
     cleanup_stream
+
+    # Restore global trap to prevent cleanup_stream firing later with unbound vars
+    if command -v cleanup_on_exit &>/dev/null; then
+        trap cleanup_on_exit EXIT INT TERM
+    else
+        trap - EXIT INT TERM
+    fi
 }

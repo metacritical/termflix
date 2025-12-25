@@ -1,0 +1,576 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  TML (Terminal Markup Language) Schema v1.0
+  Defines the structure for declarative terminal UI layouts
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="http://termflix.app/tml"
+           xmlns:tml="http://termflix.app/tml"
+           elementFormDefault="qualified">
+
+  <!-- Root element -->
+  <xs:element name="tml">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="tml:imports" minOccurs="0"/>
+        <xs:element ref="tml:variables" minOccurs="0"/>
+        <xs:element ref="tml:handlers" minOccurs="0"/>
+        <xs:element ref="tml:layout"/>
+      </xs:sequence>
+      <xs:attribute name="version" type="xs:string" default="1.0"/>
+      <xs:attribute name="theme" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Imports -->
+  <xs:element name="imports">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="import" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="src" type="xs:string" use="required"/>
+            <xs:attribute name="as" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Variables -->
+  <xs:element name="variables">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="var" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="name" type="xs:string" use="required"/>
+            <xs:attribute name="default" type="xs:string"/>
+            <xs:attribute name="type" type="xs:string" default="string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Handlers -->
+  <xs:element name="handlers">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="handler" maxOccurs="unbounded">
+          <xs:complexType mixed="true">
+            <xs:attribute name="id" type="xs:string" use="required"/>
+            <xs:attribute name="type" type="tml:handlerType" use="required"/>
+            <xs:attribute name="script" type="xs:string"/>
+            <xs:attribute name="function" type="xs:string"/>
+            <xs:attribute name="args" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="handlerType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="bash"/>
+      <xs:enumeration value="bash-inline"/>
+      <xs:enumeration value="python"/>
+      <xs:enumeration value="return-code"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Layout container -->
+  <xs:element name="layout">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="tml:menu-bar" minOccurs="0"/>
+        <xs:element ref="tml:list" minOccurs="0"/>
+        <xs:element ref="tml:preview" minOccurs="0"/>
+        <xs:element ref="tml:status-bar" minOccurs="0"/>
+        <xs:element ref="tml:bindings" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="renderer" type="xs:string" default="fzf"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Menu Bar -->
+  <xs:element name="menu-bar">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="logo" type="xs:string" minOccurs="0"/>
+        <xs:element ref="tml:tab-group" minOccurs="0"/>
+        <xs:element ref="tml:dropdown" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="position" type="xs:string" default="header"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Tab Group -->
+  <xs:element name="tab-group">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="tml:tab" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Tab -->
+  <xs:element name="tab">
+    <xs:complexType mixed="true">
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="shortcut" type="xs:string"/>
+      <xs:attribute name="shortcut-prefix" type="xs:string"/>
+      <xs:attribute name="active" type="xs:string"/>
+      <xs:attribute name="on-select" type="xs:string"/>
+      <xs:attribute name="style" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Dropdown -->
+  <xs:element name="dropdown">
+    <xs:complexType mixed="true">
+      <xs:sequence>
+        <xs:element name="option" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType mixed="true">
+            <xs:attribute name="value" type="xs:string" use="required"/>
+            <xs:attribute name="icon" type="xs:string"/>
+            <xs:attribute name="disabled" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="shortcut" type="xs:string"/>
+      <xs:attribute name="on-select" type="xs:string"/>
+      <xs:attribute name="on-open" type="xs:string"/>
+      <xs:attribute name="on-close" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- List -->
+  <xs:element name="list">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="tml:item-template"/>
+        <xs:element name="on-empty" type="xs:string" minOccurs="0"/>
+        <xs:element name="on-load" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="source" type="xs:string"/>
+      <xs:attribute name="empty-text" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Item Template -->
+  <xs:element name="item-template">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="tml:text" minOccurs="0" maxOccurs="unbounded"/>
+        <xs:element name="on-enter" type="xs:string" minOccurs="0"/>
+        <xs:element name="on-hover" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Text -->
+  <xs:element name="text">
+    <xs:complexType mixed="true">
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="format" type="xs:string"/>
+      <xs:attribute name="visible" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Preview -->
+  <xs:element name="preview">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="position" type="xs:string" default="right"/>
+      <xs:attribute name="width" type="xs:string" default="50%"/>
+      <xs:attribute name="scroll" type="xs:boolean" default="true"/>
+      <xs:attribute name="border" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Status Bar -->
+  <xs:element name="status-bar">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="position" type="xs:string" default="bottom"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bindings -->
+  <xs:element name="bindings">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="bind" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="key" type="xs:string" use="required"/>
+            <xs:attribute name="handler" type="xs:string"/>
+            <xs:attribute name="action" type="xs:string"/>
+            <xs:attribute name="args" type="xs:string"/>
+            <xs:attribute name="on" type="xs:string"/>
+            <xs:attribute name="target" type="xs:string"/>
+            <xs:attribute name="alias" type="xs:string"/>
+            <xs:attribute name="condition" type="xs:string"/>
+            <xs:attribute name="return-code" type="xs:integer"/>
+          </xs:complexType>
+        </xs:element>
+        <xs:element ref="tml:bind-layer" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Bind Layer -->
+  <xs:element name="bind-layer">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="bind" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:attribute name="key" type="xs:string" use="required"/>
+            <xs:attribute name="action" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="enabled" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- ═══════════════════════════════════════════════════════════════
+       BROWSER MODE ELEMENTS
+       For terminal browser / free-form layout rendering
+       ═══════════════════════════════════════════════════════════════ -->
+
+  <!-- Box - Positioned container for free-form layout -->
+  <xs:element name="box">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="x" type="xs:string" default="0"/>
+      <xs:attribute name="y" type="xs:string" default="0"/>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="height" type="xs:string"/>
+      <xs:attribute name="border" type="tml:borderStyle"/>
+      <xs:attribute name="padding" type="xs:string"/>
+      <xs:attribute name="margin" type="xs:string"/>
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="visible" type="xs:string" default="true"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="borderStyle">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="none"/>
+      <xs:enumeration value="single"/>
+      <xs:enumeration value="double"/>
+      <xs:enumeration value="rounded"/>
+      <xs:enumeration value="bold"/>
+      <xs:enumeration value="dashed"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Link - Hyperlink for navigation -->
+  <xs:element name="link">
+    <xs:complexType mixed="true">
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="url" type="xs:string"/>
+      <xs:attribute name="href" type="xs:string"/>
+      <xs:attribute name="target" type="xs:string"/>
+      <xs:attribute name="on-select" type="xs:string"/>
+      <xs:attribute name="on-hover" type="xs:string"/>
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="focusable" type="xs:boolean" default="true"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Viewport - Scrollable content region -->
+  <xs:element name="viewport">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="height" type="xs:string"/>
+      <xs:attribute name="scroll" type="tml:scrollType" default="vertical"/>
+      <xs:attribute name="scroll-x" type="xs:string" default="0"/>
+      <xs:attribute name="scroll-y" type="xs:string" default="0"/>
+      <xs:attribute name="on-scroll" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="scrollType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="none"/>
+      <xs:enumeration value="vertical"/>
+      <xs:enumeration value="horizontal"/>
+      <xs:enumeration value="both"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Focusable - Element that can receive keyboard focus -->
+  <xs:element name="focusable">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="order" type="xs:integer"/>
+      <xs:attribute name="group" type="xs:string"/>
+      <xs:attribute name="on-focus" type="xs:string"/>
+      <xs:attribute name="on-blur" type="xs:string"/>
+      <xs:attribute name="on-enter" type="xs:string"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Image - Terminal image display -->
+  <xs:element name="image">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="src" type="xs:string" use="required"/>
+      <xs:attribute name="alt" type="xs:string"/>
+      <xs:attribute name="fallback" type="xs:string"/>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="height" type="xs:string"/>
+      <xs:attribute name="display" type="tml:imageDisplay" default="auto"/>
+      <xs:attribute name="align" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="imageDisplay">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="auto"/>
+      <xs:enumeration value="kitty"/>
+      <xs:enumeration value="sixel"/>
+      <xs:enumeration value="iterm"/>
+      <xs:enumeration value="ascii"/>
+      <xs:enumeration value="braille"/>
+      <xs:enumeration value="block"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Form - Container for input elements -->
+  <xs:element name="form">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="on-submit" type="xs:string"/>
+      <xs:attribute name="on-change" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Input - Text input field -->
+  <xs:element name="input">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="validation" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="pattern" type="xs:string"/>
+            <xs:attribute name="message" type="xs:string"/>
+            <xs:attribute name="required" type="xs:boolean"/>
+            <xs:attribute name="min-length" type="xs:integer"/>
+            <xs:attribute name="max-length" type="xs:integer"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="tml:inputType" default="text"/>
+      <xs:attribute name="name" type="xs:string"/>
+      <xs:attribute name="value" type="xs:string"/>
+      <xs:attribute name="placeholder" type="xs:string"/>
+      <xs:attribute name="autofocus" type="xs:boolean"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+      <xs:attribute name="on-change" type="xs:string"/>
+      <xs:attribute name="on-submit" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="inputType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="text"/>
+      <xs:enumeration value="password"/>
+      <xs:enumeration value="number"/>
+      <xs:enumeration value="search"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Button - Clickable button -->
+  <xs:element name="button">
+    <xs:complexType mixed="true">
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="type" type="xs:string" default="button"/>
+      <xs:attribute name="on-click" type="xs:string"/>
+      <xs:attribute name="on-focus" type="xs:string"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="shortcut" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Select - Dropdown select -->
+  <xs:element name="select">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="option" maxOccurs="unbounded">
+          <xs:complexType mixed="true">
+            <xs:attribute name="value" type="xs:string" use="required"/>
+            <xs:attribute name="selected" type="xs:boolean"/>
+            <xs:attribute name="disabled" type="xs:string"/>
+            <xs:attribute name="icon" type="xs:string"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="name" type="xs:string"/>
+      <xs:attribute name="default" type="xs:string"/>
+      <xs:attribute name="on-change" type="xs:string"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Toggle - On/off switch -->
+  <xs:element name="toggle">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="chars" minOccurs="0">
+          <xs:complexType>
+            <xs:attribute name="on" type="xs:string" default="◉"/>
+            <xs:attribute name="off" type="xs:string" default="○"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="label" type="xs:string"/>
+      <xs:attribute name="value" type="xs:string"/>
+      <xs:attribute name="on-toggle" type="xs:string"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Checkbox -->
+  <xs:element name="checkbox">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="label" type="xs:string"/>
+      <xs:attribute name="checked" type="xs:string"/>
+      <xs:attribute name="on-change" type="xs:string"/>
+      <xs:attribute name="disabled" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Modal - Popup dialog -->
+  <xs:element name="modal">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="title" type="xs:string"/>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="height" type="xs:string"/>
+      <xs:attribute name="backdrop" type="xs:string"/>
+      <xs:attribute name="closable" type="xs:boolean" default="true"/>
+      <xs:attribute name="on-open" type="xs:string"/>
+      <xs:attribute name="on-close" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Confirm - Confirmation dialog -->
+  <xs:element name="confirm">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="button-yes" type="xs:string" minOccurs="0"/>
+        <xs:element name="button-no" type="xs:string" minOccurs="0"/>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="title" type="xs:string"/>
+      <xs:attribute name="message" type="xs:string"/>
+      <xs:attribute name="on-yes" type="xs:string"/>
+      <xs:attribute name="on-no" type="xs:string"/>
+      <xs:attribute name="on-cancel" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Prompt - Input dialog -->
+  <xs:element name="prompt">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string" use="required"/>
+      <xs:attribute name="title" type="xs:string"/>
+      <xs:attribute name="placeholder" type="xs:string"/>
+      <xs:attribute name="default" type="xs:string"/>
+      <xs:attribute name="on-submit" type="xs:string"/>
+      <xs:attribute name="on-cancel" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Progress Bar -->
+  <xs:element name="progress-bar">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="chars" minOccurs="0">
+          <xs:complexType>
+            <xs:element name="filled" type="xs:string" minOccurs="0"/>
+            <xs:element name="empty" type="xs:string" minOccurs="0"/>
+            <xs:element name="partial" type="xs:string" minOccurs="0"/>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="value" type="xs:string" default="0"/>
+      <xs:attribute name="max" type="xs:string" default="100"/>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="show-percent" type="xs:boolean" default="true"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Spinner - Loading indicator -->
+  <xs:element name="spinner">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:string"/>
+      <xs:attribute name="style" type="tml:spinnerStyle" default="dots"/>
+      <xs:attribute name="text" type="xs:string"/>
+      <xs:attribute name="visible" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:simpleType name="spinnerStyle">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="dots"/>
+      <xs:enumeration value="line"/>
+      <xs:enumeration value="circle"/>
+      <xs:enumeration value="bounce"/>
+      <xs:enumeration value="bar"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <!-- Divider / Horizontal Rule -->
+  <xs:element name="hr">
+    <xs:complexType>
+      <xs:attribute name="style" type="xs:string"/>
+      <xs:attribute name="char" type="xs:string" default="─"/>
+      <xs:attribute name="width" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Spacer - Empty space -->
+  <xs:element name="spacer">
+    <xs:complexType>
+      <xs:attribute name="width" type="xs:string"/>
+      <xs:attribute name="height" type="xs:string"/>
+    </xs:complexType>
+  </xs:element>
+
+</xs:schema>

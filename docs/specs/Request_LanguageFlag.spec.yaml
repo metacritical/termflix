@@ -1,0 +1,28 @@
+# Machine-Readable Request for Language Flag Bugfix
+# Based on AgentSpec Request Protocol 1.0.0
+
+feature:
+  name: Request Protocol
+  version: 1.0.0
+  purpose: "Formalize the debugging task for language flag display inconsistencies."
+
+request:
+  type: "Bugfix"
+  source: "Human (User)"
+  target: "Agent (Antigravity)"
+  priority: "High"
+
+goal: "Ensure language flags (emojis) are displayed correctly in Termflix Text Mode, matching functionality in Kitty Mode."
+
+context:
+  description: "Language flags currently appear in Kitty icat mode but are missing in Text Mode preview."
+  files:
+    - "modules/ui/catalog/preview_fzf.sh"
+    - "modules/core/languages.sh"
+  memory:
+    - "2c85626e-0996-4435-91dc-e9c80e24505e" # Debug Language Flag Display conversation
+
+success_criteria:
+  - "Flag emoji is visible in the Preview Pane header in Text Mode."
+  - "No regression in Kitty Mode display."
+  - "Correct mapping of ISO 639-1 codes to emojis."

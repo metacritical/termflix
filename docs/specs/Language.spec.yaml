@@ -1,0 +1,61 @@
+# Machine-Readable Specification for Language System
+# This document defines the Language system structure, data sources, and mapping logic.
+# Format: YAML (Optimized for Machine Parsing)
+
+feature:
+  name: Language System
+  version: 1.0.0
+  purpose: "Identify, map, and display content original language with flags."
+
+data_sources:
+  - source: "TMDB"
+    priority: 1
+    field: "original_language"
+    format: "ISO 639-1 (2-letter code)"
+    example: "en", "ko", "ja", "es"
+  - source: "OMDB"
+    priority: 2
+    field: "Language"
+    format: "Full English Name (comma-separated)"
+    example: "English", "Korean", "Spanish"
+    note: "Used as fallback if TMDB data is missing."
+
+mapping_logic:
+  description: "Maps ISO 639-1 codes to Flag Emoji and Display Name."
+  logic_flow:
+    1. Try fetch `original_language` from TMDB.
+    2. If missing, fetch `Language` from OMDB.
+    3. If OMDB (Name) -> Reverse lookup Name to ISO Code using `languages.json`.
+    4. Map ISO Code -> Flag Emoji.
+  data_file:
+    path: "data/languages.json"
+    format: "JSON"
+    persistence: "Permanent (Not affected by cache clear)"
+    schema:
+      key: "ISO 639-1 Code (string)"
+      value:
+        flag: "Emoji (string)"
+        name: "Display Name (string)"
+  
+  helper_module:
+    path: "modules/core/languages.sh"
+    functions:
+      - name: "get_language_flag"
+        input: "iso_code"
+        output: "flag_emoji"
+      - name: "get_language_name"
+        input: "iso_code"
+        output: "display_name"
+
+display:
+  ui_component: "Preview Pane"
+  file: "modules/ui/catalog/preview_fzf.sh"
+  location: "Header (Title Line)"
+  format: "{FLAG_EMOJI} {TITLE}"
+  example: "🇰🇷 Parasite"
+
+sorting:
+  ui_component: "Header Menu"
+  trigger: "Ctrl+V"
+  action: "Filter by Language"
+  environment_variable: "CURRENT_LANGUAGE"

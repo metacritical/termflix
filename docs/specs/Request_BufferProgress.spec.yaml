@@ -1,0 +1,75 @@
+# Machine-Readable Request for Buffer UI Progress Visibility Bugfix
+# Based on AgentSpec Request Protocol 1.0.0
+
+feature:
+  name: Request Protocol
+  version: 1.0.0
+  purpose: "Debug and fix the buffer UI progress visibility issue during MPV splash screen."
+
+request:
+  type: "Bugfix"
+  source: "Human (User)"
+  target: "Agent (Antigravity)"
+  priority: "High"
+
+goal: "Ensure FZF Stage 3 preview pane updates in real-time while MPV splash screen is displaying."
+
+context:
+  description: "The FZF buffer UI preview pane does not visually update while MPV splash is open. Progress only appears after quitting MPV. Suggests blocking/threading issue."
+  observations:
+    - "MPV runs in background with & but appears to block UI updates"
+    - "FZF sidecar sends curl POST to listen port every 0.3s"
+    - "Preview content IS running (visible after MPV closes)"
+    - "MPV may be stealing terminal focus or blocking refresh"
+
+specs_to_read:
+  - docs/specs/BufferUI.spec.yaml
+  - docs/specs/Player.spec.yaml
+  - docs/specs/TMLParser.spec.yaml
+
+files:
+  - modules/streaming/buffer_ui.sh     # Main orchestration (lines 500-550)
+  - modules/streaming/player.sh        # MPV splash launch
+  - modules/streaming/splash_progress.sh # OSD progress updater
+
+investigation_areas:
+  - "FZF --listen port: Is sidecar curl triggering refresh-preview?"
+  - "Subshell isolation: Is MPV in same process group as FZF?"  
+  - "TTY allocation: Does MPV steal the controlling terminal?"
+  - "macOS focus: Should MPV launch with nohup, setsid, or caffeinate?"
+
+debug_command: "TERMFLIX_DEBUG=true bin/termflix"
+
+success_criteria:
+  - "Preview pane updates live while MPV splash is visible"
+  - "No blocking between MPV and FZF processes"
+  - "Buffering percentage, speed, peers visible in real-time"
+
+resolution:
+  status: "FIXED"
+  date: "2025-12-25"
+  root_cause: |
+    Multiple issues identified:
+    1. TML parser's eval-based FZF calls caused syntax errors with movie titles containing parentheses
+    2. macOS throttles background window updates when MPV is fullscreen
+    3. Preview output had progress bar buried below trailers/poster (30+ lines deep)
+    4. FZF buffer UI didn't auto-close when MPV exited
+    5. Duplicate cleanup_stream functions causing undefined behavior
+  fix:
+    - "Replaced eval-based FZF calls with direct fzf invocations"
+    - "Changed MPV splash from fullscreen to windowed mode (1280x720)"
+    - "Reorganized preview output: progress bar now at TOP (always visible)"
+    - "Added sidecar auto-abort: sends 'abort' to FZF when stream_pid dies"
+    - "Consolidated duplicate cleanup_stream functions"
+    - "Added disown to background processes for proper job control detachment"
+    - "Removed strict mode (set -euo pipefail) from tml_parser.sh"
+  files_modified:
+    - modules/streaming/player.sh
+    - modules/streaming/buffer_ui.sh
+    - modules/ui/catalog/fzf_catalog.sh
+    - modules/ui/tml/parser/tml_parser.sh
+  verification: |
+    - FZF preview updates in real-time: STARTING → BUFFERING (20%→100%) → PLAYING
+    - Progress bar visible at TOP of preview pane
+    - MPV splash window alongside terminal
+    - Auto-closes and returns to Stage 2 when MPV exits

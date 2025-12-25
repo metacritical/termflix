@@ -42,21 +42,35 @@ REMOVAL_TAGS = [
     '2160p', '1080p', '720p', '480p', '4k', 'uhd', 'fhd', 'hd', 'sd',
     # Source
     'bluray', 'blu-ray', 'bdrip', 'brrip', 'web-dl', 'webrip', 'webdl',
-    'hdrip', 'dvdrip', 'hdtv', 'pdtv', 'cam', 'ts', 'tc', 'screener', 'dvdscr',
-    # Codec
-    'x264', 'x265', 'hevc', 'h264', 'h265', 'avc', '10bit', 'xvid', 'divx',
-    # Audio
-    'aac', 'ac3', 'dts', 'truehd', 'atmos', 'flac', 'mp3', 'dd5', 'dd51',
+    'hdrip', 'dvdrip', 'hdtv', 'pdtv', 'cam', 'ts', 'tc', 'screener', 'dvdscr', 'r5', 'ppvrip',
+    # Codec (including truncated variants like 'h26' from 'h264')
+    'x264', 'x265', 'x26', 'hevc', 'h264', 'h265', 'h26', 'avc', '10bit', '8bit', '12bit', 'xvid', 'divx', 'av1', 'vp9',
+    # Audio - ENHANCED
+    'aac', 'ac3', 'dts', 'truehd', 'atmos', 'flac', 'mp3', 'ogg', 'opus', 'lpcm', 'eac3',
+    'dd5', 'dd51', 'dd71', 'ddp5', 'ddp51', 'ddp',  # Dolby Digital variants
+    '51', '71', '20',  # Channel configs
     # HDR
-    'hdr', 'hdr10', 'hdr10plus', 'dolby', 'dovi', 'vision', 'sdr',
-    # Release groups
+    'hdr', 'hdr10', 'hdr10plus', 'dolby', 'dovi', 'vision', 'sdr', 'dv',
+    # Streaming services - ENHANCED
+    'nf', 'amzn', 'dsnp', 'hmax', 'atvp', 'pcok', 'hulu', 'max', 'pmtp',
+    'netflix', 'amazon', 'disney', 'apple', 'peacock',
+    # Release groups - ENHANCED
     'yts', 'yify', 'rarbg', 'eztv', 'ettv', 'sparks', 'axxo', 'ethel',
     'tepes', 'yts mx', 'yts lt', 'tigole', 'qxr', 'psypher', 'f', 'joy',
+    'bone', 'flux', 'ion10', 'megusta', 'playweb', 'cmrg', 'psa', 'telly', 'ntb', 'fgt', 'evo', 'geckos',
     # Edition tags
     'repack', 'proper', 'real', 'extended', 'unrated', 'directors', 'cut',
     'theatrical', 'remastered', 'imax', 'internal', 'limited', 'remux',
-    # Languages
-    'english', 'hindi', 'dual', 'multi', 'subbed', 'dubbed',
+    'criterion', 'anniversary', 'complete', 'dc',
+    'v2', 'v3', 'v4',  # Version markers
+    # Languages - ENHANCED
+    'english', 'hindi', 'spanish', 'french', 'german', 'italian', 'russian',
+    'korean', 'chinese', 'japanese', 'arabic', 'portuguese', 'turkish',
+    'en', 'eng', 'hin', 'spa', 'fre', 'ger', 'ita', 'rus', 'kor', 'chi', 'jpn',
+    'dual', 'multi', 'subbed', 'dubbed', 'subs', 'hc', 'hardcoded',
+    # Misc
+    'ma',  # Multi-channel audio marker
+    'line audio', 'mic dubbed',
 ]
 
 # Roman numeral to digit mapping for sequels

@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Version Picker Layout (Stage 2)
-  Full screen picker for quality/source selection with preview
-  Variables: various STAGE2_* exports
+  Movie Version Picker Layout (Stage 2)
+  For movie torrent quality/source selection (line 947 in fzf_catalog.sh)
+  Uses no-select-1 and bind actions instead of expect
 -->
-<fzf-layout id="version-picker" name="Version Picker">
+<fzf-layout id="movie-version-picker" name="Movie Version Picker">
   <layout direction="reverse" height="100%" margin="1" padding="1"/>
   <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " label-pos="bottom"/>
   <prompt pointer="➤">➤ Pick Version: </prompt>

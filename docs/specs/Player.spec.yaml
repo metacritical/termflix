@@ -1,0 +1,88 @@
+---
+# AgentSpec: MPV Player Module
+# Version: 1.0
+# Last Updated: 2025-12-25
+
+feature:
+  name: "MPV Player Integration"
+  description: "Manages MPV media player for splash screen display and video playback, including IPC communication and OSD customization."
+  version: "1.0"
+
+files:
+  - modules/streaming/player.sh
+  - modules/streaming/splash_progress.sh
+
+components:
+  splash_screen:
+    function: "launch_splash_screen"
+    description: "Launches MPV with a backdrop image as splash screen during buffering"
+    args:
+      - "$1: Backdrop/poster image path"
+      - "$2: Movie title (default: TermFlix™)"
+    returns: "PID|SOCKET_PATH (pipe-separated)"
+    features:
+      - "IPC socket for real-time control"
+      - "Fullscreen display with panscan fill"
+      - "Keep-open mode for indefinite display"
+      - "Pre-configured cache for seamless video transition"
+
+  osd_config:
+    description: "Customized On-Screen Display for buffering status"
+    settings:
+      position: "bottom-left"
+      font: "Avenir Next Heavy"
+      size: "72px"
+      color: "#CCFFFFFF (white with 80% opacity)"
+      border: "3px, semi-transparent black (#80000000)"
+      margin_x: "30px"
+      margin_y: "50px"
+      initial_text: "⏳ Buffering..."
+
+  progress_updater:
+    function: "update_splash_progress"
+    description: "Updates MPV OSD with live buffering progress via IPC"
+    args:
+      - "$1: IPC socket path"
+      - "$2: Status file path"
+      - "$3: Movie title"
+    features:
+      - "Reads status from buffer status file"
+      - "Formats: Title, Percentage, Speed (MB/s), Peers"
+      - "Shows 'Starting playback...' when READY"
+
+  progress_monitor:
+    function: "monitor_splash_progress"
+    description: "Continuous monitoring loop that updates splash OSD"
+    interval: "0.5 seconds"
+    exit_conditions:
+      - "Socket no longer exists"
+      - "Status is READY or PLAYING"
+
+  video_player:
+    function: "play_video"
+    description: "Transitions splash screen to video playback"
+    ipc_commands:
+      - 'loadfile: Replace splash with video stream'
+      - 'set fullscreen yes'
+      - 'set pause no'
+
+mpv_args:
+  splash:
+    - "--input-ipc-server: Enable IPC control"
+    - "--image-display-duration=inf: Keep showing indefinitely"
+    - "--keep-open=yes: Don't close when image ends"
+    - "--fullscreen: Display fullscreen"
+    - "--panscan=1.0: Zoom to fill screen"
+  cache:
+    - "--cache=yes"
+    - "--cache-secs=300 (5 minutes)"
+    - "--demuxer-max-bytes=512M"
+    - "--demuxer-max-back-bytes=256M"
+
+integration:
+  sources_from:
+    - modules/streaming/buffer_ui.sh (backdrop image, title)
+  exports_to:
+    - modules/torrent.sh (video transition)
+  uses:
+    - socat (IPC communication)

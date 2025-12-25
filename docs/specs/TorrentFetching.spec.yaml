@@ -1,0 +1,80 @@
+# Machine-Readable Specification for Torrent Fetching & Grouping
+# defined_in: scripts/python/fetch_multi_source_catalog.py
+
+feature:
+  name: Torrent Fetching & Grouping
+  version: 1.0.0
+  purpose: "Aggregate, clean, and group torrents from multiple providers (YTS, TPB, EZTV) into a unified catalog."
+
+pipeline:
+  stages:
+    - fetch: "Retrieve raw torrent data from APIs"
+    - normalize: "Clean titles and extract metadata"
+    - group: "Combine duplicates and variations under a single display title"
+    - output: "Generate pipe-delimited COMBINED format strings"
+
+data_sources:
+  - provider: YTS
+    type: Movie
+    domains: ["yts.lt", "yts.do", "yts.mx"]
+    endpoint: "/api/v2/list_movies.json"
+    fields: ["title", "torrents", "language", "year"]
+    notes: "Primary source for verified movie torrents"
+
+  - provider: TPB (ThePirateBay)
+    type: Movie/TV
+    url: "https://apibay.org/q.php"
+    endpoint: "apibay.org/precompiled/data_top100_{cat}.json"
+    categories:
+      201: "Movies"
+      207: "HD Movies"
+      205: "TV Shows"
+      208: "HD TV Shows"
+    notes: "Fallback source. Uses precompiled Top 100 lists for catalog."
+
+  - provider: EZTV
+    type: TV
+    domains: ["eztv.yt", "eztv1.xyz"]
+    endpoint: "/api/get-torrents"
+    notes: "Dedicated source for TV shows, fetched in parallel with TPB."
+
+logic_flow:
+  normalization:
+    function: "normalize_movie_title"
+    strategy:
+      - "Remove tech specs (1080p, x265, etc.)"
+      - "Strip release groups (-YIFY, -ETHEL)"
+      - "Remove punctuation ensuring cross-source matching"
+      - "Extract and standardize Year (YYYY)"
+    example_input: "Predator.Badlands.2025.1080p.WEBRip-YTS"
+    example_output: "predator badlands 2025"
+
+  grouping_movies:
+    function: "group_movies_by_title"
+    key: "Title + Year"
+    logic: "Group items where normalized title matches. Sort group by highest seed count."
+    aggregation:
+      sources: "List of all providers (e.g. YTS^TPB)"
+      qualities: "List of available resolutions"
+      magnets: "List of all magnet links"
+
+  grouping_tv:
+    function: "group_shows_by_series"
+    key: "Series Name"
+    logic: "Extract series name (before SxxExx). Group all episodes/seasons under Series Name."
+    
+outputs:
+  format: "COMBINED"
+  delimiter: "|"
+  schema:
+    0: "Marker (COMBINED)"
+    1: "Display Title"
+    2: "Sources (^-separated)"
+    3: "Qualities (^-separated)"
+    4: "Seeds (^-separated)"
+    5: "Sizes (^-separated)"
+    6: "Magnets (^-separated)"
+    7: "Poster URL (or N/A)"
+    8: "IMDB ID"
+    9: "Type (Movies/Shows)"
+    10: "Torrent Count"
