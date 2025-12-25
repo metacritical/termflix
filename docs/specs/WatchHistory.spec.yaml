@@ -1,12 +1,12 @@
 ---
 # AgentSpec: Watch History Module
-# Version: 1.1
-# Last Updated: 2025-12-25
+# Version: 1.2
+# Last Updated: 2025-12-26
 
 feature:
   name: "Watch History"
   description: "Tracks user watch progress for movies and shows, displaying resume indicators in Stage 2 version picker."
-  version: "1.1"
+  version: "1.2"
 
 files:
   - modules/torrent.sh (record_watch_progress function)
@@ -30,54 +30,48 @@ position_extraction:
     description: "MPV watch_later file"
     path: "~/.config/termflix/watch_later/{md5(url)}.conf"
     field: "start="
+    status: "Not created for HTTP streams"
     
   method_2:
-    description: "MPV terminal log parsing (fallback)"
+    description: "MPV terminal log parsing"
     log_file: "$TMPDIR/termflix_mpv_debug.log"
     pattern: "AV: HH:MM:SS / HH:MM:SS"
-    mpv_flags_required:
+    mpv_flags:
       - "--terminal=yes"
       - "--msg-level=all=status"
+    status: "Works for direct peerflix path only"
+    
+  method_3:
+    description: "IPC socket position capture during playback"
+    implementation: "Playback loop polls every 5 seconds via socat"
+    env_vars:
+      - "TERMFLIX_IPC_POSITION"
+      - "TERMFLIX_IPC_DURATION"
+    status: "Implemented - needs verification"
 
 pipeline:
   - stage: set_globals
-    description: "Set global variables for watch tracking"
-    vars:
-      - TERMFLIX_WATCH_SOURCE
-      - TERMFLIX_WATCH_STREAM_URL
-      - TERMFLIX_MPV_LOG
+    vars: [TERMFLIX_WATCH_SOURCE, TERMFLIX_WATCH_STREAM_URL, TERMFLIX_MPV_LOG]
       
   - stage: playback
     description: "User watches video via MPV"
     
+  - stage: ipc_capture
+    description: "Poll MPV via IPC every 5 seconds during playback"
+    condition: "TERMFLIX_SPLASH_SOCKET exists"
+    
   - stage: record_progress
-    trigger: "MPV exit (normal 'q' or signal INT/TERM)"
+    trigger: "MPV exit"
     function: "record_watch_progress"
-    logic:
-      - "Extract torrent hash from magnet link"
-      - "Try Method 1: read MPV watch_later file"
-      - "Fallback Method 2: parse MPV log for AV: timestamps"
-      - "Save to watch_history.json"
 
 display:
   location: "Stage 2 version picker (right column)"
-  format: "👀 icon + percentage + progress bar"
-  visibility_threshold: "Only show if percentage > 0"
+  format: "👀 icon + percentage"
 
-resilience:
-  - issue: "MPV log not capturing AV: timestamps"
-    solution: "Added --terminal=yes --msg-level=all=status flags"
-  - issue: "HTTP streams don't create watch_later files"
-    solution: "Method 2 fallback parses MPV terminal output"
-  - issue: "Position always 5 seconds"
-    solution: "Fixed MPV launch to capture terminal output to log file"
+known_issues:
+  - issue: "Position shows 0% for splash screen path"
+    root_cause: "MPV via IPC transition doesn't output to log file"
+    status: "INVESTIGATING - IPC capture method added"
 
 debug:
   log_file: "/tmp/termflix_history_debug.log"
-  contents:
-    - "Source magnet link"
-    - "Torrent hash extraction"
-    - "Watch file path and existence"
-    - "Method used (1 or 2)"
-    - "Position and duration extracted"
-    - "Save confirmation"

@@ -1,0 +1,53 @@
+From 2d9829f4ca3f52afcbd9606034109ab81f55f1a9 Mon Sep 17 00:00:00 2001
+From: metacritical <pankajdoharey@gmail.com>
+Date: Tue, 23 Dec 2025 20:01:19 +0530
+Subject: [PATCH] fix(tml): Remove expect/delimiter from main-catalog.xml to
+ prevent conflict
+
+The inline fzf call already has --expect and --delimiter.
+Having them in both TML layout and inline call caused conflicts.
+Now TML provides only static styling (layout, border, colors, bindings).
+---
+ modules/ui/layouts/main-catalog.xml | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/modules/ui/layouts/main-catalog.xml b/modules/ui/layouts/main-catalog.xml
+index 356229d..3377519 100644
+--- a/modules/ui/layouts/main-catalog.xml
++++ b/modules/ui/layouts/main-catalog.xml
+@@ -2,7 +2,7 @@
+ <!--
+   Main Catalog Layout (Stage 1)
+   Complete FZF configuration combining FZF_DEFAULT_OPTS and fzf call
+-  Variables: menu_header, current_page, total_pages, page_suffix
++  Note: expect, delimiter, with-nth handled inline in fzf call
+ -->
+ <fzf-layout id="main-catalog" name="Main Catalog">
+   <!-- Layout from FZF_DEFAULT_OPTS -->
+@@ -10,18 +10,18 @@
+   <border style="rounded"
+           label=" ⌨ Enter:Select  Ctrl+J/K:Nav  &lt;/&gt;:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season "
+           label-pos="bottom"/>
+-  <prompt pointer="➤">&lt; Page ${current_page:-1}/${total_pages:-1}${page_suffix:-} &gt; </prompt>
+-  <header first="true">${menu_header:-}</header>
++  <prompt pointer="➤"/>
++  <header first="true"/>
+   <preview position="right" size="50%" wrap="true" border="border-left"/>
+
+   <!-- Colors: theme integration -->
+   <colors theme="dynamic"/>
+
+-  <!-- Bindings from both FZF_DEFAULT_OPTS and fzf call -->
+-  <bindings delimiter="&#x09;" with-nth="1"
+-            expect="ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,&gt;,&lt;,ctrl-right,ctrl-left">
++  <!-- Static bindings only - expect/delimiter handled inline -->
++  <bindings>
+     <bind key="ctrl-/" action="toggle-preview"/>
+     <bind key="ctrl-d" action="preview-down"/>
+     <bind key="ctrl-u" action="preview-up"/>
+   </bindings>
+ </fzf-layout>
++
+--
+2.50.1 (Apple Git-155)
+

@@ -129,6 +129,21 @@ record_watch_progress() {
             fi
         else
             echo "MPV log file not found: $mpv_log" >> "$h_log"
+            
+            # ===== METHOD 3: Use IPC-captured position from playback loop =====
+            # Position is captured periodically during playback and stored in env vars
+            if [[ -n "${TERMFLIX_IPC_POSITION:-}" ]] && [[ "${TERMFLIX_IPC_POSITION:-0}" -gt 0 ]]; then
+                position="$TERMFLIX_IPC_POSITION"
+                echo "Method 3 - IPC Position: $position" >> "$h_log"
+            fi
+            if [[ -n "${TERMFLIX_IPC_DURATION:-}" ]] && [[ "${TERMFLIX_IPC_DURATION:-0}" -gt 0 ]]; then
+                duration="$TERMFLIX_IPC_DURATION"
+                echo "Method 3 - IPC Duration: $duration" >> "$h_log"
+            fi
+            
+            if [[ "$position" -eq 0 ]] && [[ "$duration" -eq 0 ]]; then
+                echo "Method 3 - No IPC position captured (was splash screen used?)" >> "$h_log"
+            fi
         fi
     fi
     
@@ -1690,10 +1705,24 @@ EOF
     # IMPORTANT: If player_pid is the splash screen (IPC transition), it is NOT a child process of this shell.
     # The 'wait' command will return immediately for non-child processes.
     # We must use a polling loop to wait for the process to exit.
+    # Also capture position periodically via IPC for watch history (splash screen path)
+    local last_ipc_position=0
+    local last_ipc_duration=0
     while kill -0 "$player_pid" 2>/dev/null; do
-        sleep 1
+        # Capture position via IPC every 5 seconds for splash screen path
+        if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]] && command -v socat &>/dev/null; then
+            local ipc_pos=$(echo '{ "command": ["get_property", "time-pos"] }' | socat - "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
+            local ipc_dur=$(echo '{ "command": ["get_property", "duration"] }' | socat - "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
+            [[ -n "$ipc_pos" ]] && last_ipc_position="$ipc_pos"
+            [[ -n "$ipc_dur" ]] && last_ipc_duration="$ipc_dur"
+        fi
+        sleep 5
     done
     local player_exit=$?
+    
+    # Save IPC-captured position to global vars for record_watch_progress
+    export TERMFLIX_IPC_POSITION="${last_ipc_position:-0}"
+    export TERMFLIX_IPC_DURATION="${last_ipc_duration:-0}"
     
     # Player finished - UNIFIED CLEANUP PATH
     echo -e "${CYAN}Playback finished. Saving progress and cleaning up...${RESET}"

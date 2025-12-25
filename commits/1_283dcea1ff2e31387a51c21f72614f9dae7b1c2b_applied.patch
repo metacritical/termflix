@@ -1,0 +1,1914 @@
+From 283dcea1ff2e31387a51c21f72614f9dae7b1c2b Mon Sep 17 00:00:00 2001
+From: metacritical <pankajdoharey@gmail.com>
+Date: Tue, 23 Dec 2025 19:22:36 +0530
+Subject: [PATCH] feat(tml): Integrate unified TML parser for FZF pickers
+
+- Created unified TML parser combining V1 (FZF args) and V2 (rich components)
+- Migrated pickers to TML layouts:
+ - season_picker.sh -> season-picker.xml
+ - episode_picker.sh -> episode-picker.xml
+ - fzf_catalog.sh episode version -> episode-version-picker.xml
+ - fzf_catalog.sh movie version -> movie-version-picker.xml
+- Old hardcoded FZF configs preserved as comments
+- Added parser documentation (README.md, FZF_PLUS_FUTURE.md)
+---
+ modules/ui/catalog/fzf_catalog.sh             | 106 ++--
+ modules/ui/layouts/episode-picker.xml         |  25 +-
+ modules/ui/layouts/episode-version-picker.xml |  16 +
+ modules/ui/layouts/main-catalog.tml           |  71 +++
+ modules/ui/layouts/movie-version-picker.xml   |  18 +
+ modules/ui/layouts/season-picker.xml          |   3 +-
+ modules/ui/layouts/version-picker.xml         |  32 +-
+ modules/ui/pickers/episode_picker.sh          |  59 +-
+ modules/ui/pickers/season_picker.sh           |  49 +-
+ modules/ui/tml/PARSER_COMPARISON.md           | 127 ++++
+ modules/ui/tml/parser/FZF_PLUS_FUTURE.md      |  90 +++
+ modules/ui/tml/parser/README.md               |  74 +++
+ modules/ui/tml/parser/tml_parser.sh           | 499 +++++++++++++++
+ modules/ui/tml/schema/tml-1.0.xsd             | 576 ++++++++++++++++++
+ 14 files changed, 1631 insertions(+), 114 deletions(-)
+ create mode 100644 modules/ui/layouts/episode-version-picker.xml
+ create mode 100644 modules/ui/layouts/main-catalog.tml
+ create mode 100644 modules/ui/layouts/movie-version-picker.xml
+ create mode 100644 modules/ui/tml/PARSER_COMPARISON.md
+ create mode 100644 modules/ui/tml/parser/FZF_PLUS_FUTURE.md
+ create mode 100644 modules/ui/tml/parser/README.md
+ create mode 100755 modules/ui/tml/parser/tml_parser.sh
+ create mode 100644 modules/ui/tml/schema/tml-1.0.xsd
+
+diff --git a/modules/ui/catalog/fzf_catalog.sh b/modules/ui/catalog/fzf_catalog.sh
+index c559916..b57a927 100644
+--- a/modules/ui/catalog/fzf_catalog.sh
++++ b/modules/ui/catalog/fzf_catalog.sh
+@@ -622,21 +624,32 @@ handle_fzf_selection() {
+
+                         local preview_script="${UI_DIR}/previews/preview_stage2.sh"
+
+-                        # Use theme colors for consistency with Movies Stage 2
+-                        local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
++                        # ════════════════════════════════════════════════════════════════
++                        # TML Parser Integration (Episode Version Picker)
++                        # ════════════════════════════════════════════════════════════════
++                        export ep_title
++                        source "${UI_DIR}/tml/parser/tml_parser.sh"
++                        tml_parse "${UI_DIR}/layouts/episode-version-picker.xml"
++                        local fzf_args=$(tml_get_fzf_args)
+
+-                        local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
+-                            --margin=1 --padding=1 \
+-                            --pointer='➤' \
+-                            --prompt="> " \
+-                            --header="Episode: ${ep_title}" \
+-                            --header-first \
+-                            --border-label=" ⌨ Enter:Stream  Ctrl+H:Back " \
+-                            --border-label-pos=bottom \
+-                            --color="$fzf_colors" \
+-                            --preview "$preview_script" --preview-window=left:55%:wrap:border-right \
+-                            --delimiter='|' --with-nth=2 \
+-                            --expect=ctrl-h,esc)
++                        local v_pick=$(printf '%s' "$options" | eval "fzf --ansi $fzf_args --preview \"$preview_script\"")
++
++                        # ════════════════════════════════════════════════════════════════
++                        # OLD HARDCODED FZF CONFIG (commented for reference)
++                        # ════════════════════════════════════════════════════════════════
++                        # local fzf_colors="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')"
++                        # local v_pick=$(printf '%s' "$options" | fzf --ansi --layout=reverse --border=rounded \
++                        #     --margin=1 --padding=1 \
++                        #     --pointer='➤' \
++                        #     --prompt="> " \
++                        #     --header="Episode: ${ep_title}" \
++                        #     --header-first \
++                        #     --border-label=" ⌨ Enter:Stream  Ctrl+H:Back " \
++                        #     --border-label-pos=bottom \
++                        #     --color="$fzf_colors" \
++                        #     --preview "$preview_script" --preview-window=left:55%:wrap:border-right \
++                        #     --delimiter='|' --with-nth=2 \
++                        #     --expect=ctrl-h,esc)
+
+                         local key_press=$(echo "$v_pick" | head -1)
+                         local sel_line=$(echo "$v_pick" | tail -1)
+@@ -936,31 +949,52 @@ handle_fzf_selection() {
+                   # Must pass env vars explicitly since FZF subprocess doesn't inherit them
+                   local stage2_preview="${UI_DIR}/previews/preview_stage2.sh"
+
++                  # ════════════════════════════════════════════════════════════════
++                  # TML Parser Integration (Movie Version Picker)
++                  # ════════════════════════════════════════════════════════════════
++                  source "${UI_DIR}/tml/parser/tml_parser.sh"
++                  tml_parse "${UI_DIR}/layouts/movie-version-picker.xml"
++                  local fzf_args=$(tml_get_fzf_args)
++
++                  # Build preview command with env vars
++                  local preview_cmd="TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_GENRE=\"${c_genre//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview"
++
+                   ver_pick=$(STAGE2_POSTER="$poster_file" \
+                              STAGE2_TITLE="$c_name" \
+                              STAGE2_SOURCES="$s_badges" \
+                              STAGE2_AVAIL="$q_disp" \
+                              STAGE2_GENRE="$c_genre" \
+                              STAGE2_IMDB="$c_imdb" \
+-                              printf "%s" "$options" | fzf \
+-                      --ansi \
+-                      --delimiter='|' \
+-                      --with-nth=2 \
+-                      --height=100% \
+-                      --layout=reverse \
+-                      --border=rounded \
+-                      --margin=1 \
+-                      --padding=1 \
+-                      --prompt="➤ Pick Version: " \
+-                      --header="🎬 Available Versions: (Ctrl+H to back)" \
+-                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
+-                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" STAGE2_POSTER=\"$poster_file\" STAGE2_TITLE=\"${c_name//\"/\\\"}\" STAGE2_SOURCES=\"$s_badges\" STAGE2_AVAIL=\"$q_disp\" STAGE2_GENRE=\"${c_genre//\"/\\\"}\" STAGE2_IMDB=\"$c_imdb\" $stage2_preview" \
+-                       --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
+-                       --border-label-pos=bottom \
+-                      --preview-window=left:55%:wrap \
+-                      --bind='ctrl-h:abort,ctrl-o:abort' \
+-                      --no-select-1 \
+-                      2>/dev/null)
++                              printf "%s" "$options" | eval "fzf --ansi $fzf_args --no-select-1 --preview \"$preview_cmd\"" 2>/dev/null)
++
++                  # ════════════════════════════════════════════════════════════════
++                  # OLD HARDCODED FZF CONFIG (commented for reference)
++                  # ════════════════════════════════════════════════════════════════
++                  # ver_pick=$(STAGE2_POSTER="$poster_file" \
++                  #            STAGE2_TITLE="$c_name" \
++                  #            STAGE2_SOURCES="$s_badges" \
++                  #            STAGE2_AVAIL="$q_disp" \
++                  #            STAGE2_GENRE="$c_genre" \
++                  #            STAGE2_IMDB="$c_imdb" \
++                  #             printf "%s" "$options" | fzf \
++                  #     --ansi \
++                  #     --delimiter='|' \
++                  #     --with-nth=2 \
++                  #     --height=100% \
++                  #     --layout=reverse \
++                  #     --border=rounded \
++                  #     --margin=1 \
++                  #     --padding=1 \
++                  #     --prompt="➤ Pick Version: " \
++                  #     --header="🎬 Available Versions: (Ctrl+H to back)" \
++                  #      --color="$(get_fzf_colors 2>/dev/null || echo '...')" \
++                  #     --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" ... $stage2_preview" \
++                  #      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
++                  #      --border-label-pos=bottom \
++                  #     --preview-window=left:55%:wrap \
++                  #     --bind='ctrl-h:abort,ctrl-o:abort' \
++                  #     --no-select-1 \
++                  #     2>/dev/null)
+               fi
+
+              if [[ -z "$ver_pick" ]]; then
+diff --git a/modules/ui/layouts/episode-picker.xml b/modules/ui/layouts/episode-picker.xml
+index 04ccfd8..1b53cc9 100644
+--- a/modules/ui/layouts/episode-picker.xml
++++ b/modules/ui/layouts/episode-picker.xml
+@@ -1,25 +1,16 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!--
+   Episode Picker Layout
+-  Shows episodes with preview on left
++  Full screen picker with preview for episode selection
++  Variables: CLEAN_TITLE, SEASON_NUM, SCRIPT_DIR
+ -->
+ <fzf-layout id="episode-picker" name="Episode Picker">
+   <layout direction="reverse" height="100%" margin="1" padding="1" info="default"/>
+-  <preview position="left" size="55%" wrap="true" border="border-right"
+-            script="${UI_DIR:-}/pickers/preview_episode.sh ${ep_no:-}"
+-            delimiter="|" with-nth="2"/>
+-  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1} →</header>
+   <border style="rounded" label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " label-pos="bottom"/>
+-  <prompt pointer="➤">&gt;</prompt>
+-  <colors theme="catppuccin">
+-    <color name="fg" value="#cdd6f4"/>
+-    <color name="bg" value="-1"/>
+-    <color name="hl" value="#f5c2e7"/>
+-    <color name="fg+" value="#cdd6f4"/>
+-    <color name="bg+" value="#5865f2"/>
+-    <color name="hl+" value="#f5c2e7"/>
+-    <color name="pointer" value="#f5c2e7"/>
+-    <color name="prompt" value="#cba6f7"/>
+-  </colors>
+-  <bindings expect="enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc"/>
++  <prompt pointer="➤">&gt; </prompt>
++  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1} →</header>
++  <preview position="left" size="55%" wrap="true" border="border-right"/>
++  <colors theme="dynamic"/>
++  <bindings delimiter="|" with-nth="2" expect="enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc">
++  </bindings>
+ </fzf-layout>
+diff --git a/modules/ui/layouts/episode-version-picker.xml b/modules/ui/layouts/episode-version-picker.xml
+new file mode 100644
+index 0000000..92613d6
+--- /dev/null
++++ b/modules/ui/layouts/episode-version-picker.xml
+@@ -0,0 +1,16 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  Episode Version Picker Layout
++  For TV show episode torrent selection (line 630 in fzf_catalog.sh)
++  Variables: ep_title
++-->
++<fzf-layout id="episode-version-picker" name="Episode Version Picker">
++  <layout direction="reverse" margin="1" padding="1"/>
++  <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back " label-pos="bottom"/>
++  <prompt pointer="➤">&gt; </prompt>
++  <header first="true">Episode: ${ep_title:-Episode}</header>
++  <preview position="left" size="55%" wrap="true" border="border-right"/>
++  <colors theme="dynamic"/>
++  <bindings delimiter="|" with-nth="2" expect="ctrl-h,esc">
++  </bindings>
++</fzf-layout>
+diff --git a/modules/ui/layouts/main-catalog.tml b/modules/ui/layouts/main-catalog.tml
+new file mode 100644
+index 0000000..0508d41
+--- /dev/null
++++ b/modules/ui/layouts/main-catalog.tml
+@@ -0,0 +1,71 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  Main Catalog Layout (TML v1.0)
++  Termflix content browser with tabs, list, and preview
++-->
++<tml version="1.0" theme="crush">
++
++  <variables>
++    <var name="category" default="movies"/>
++    <var name="page" default="1"/>
++    <var name="total_pages" default="1"/>
++  </variables>
++
++  <handlers>
++    <handler id="get_catalog" type="python" script="fetch_catalog.py"/>
++    <handler id="switch_category" type="bash" script="category.sh"/>
++    <handler id="show_preview" type="bash" script="preview.sh"/>
++  </handlers>
++
++  <layout id="main-catalog" renderer="fzf">
++
++    <menu-bar id="main-nav">
++      <logo>🍿 TERMFLIX™</logo>
++      <tab-group id="category-tabs">
++        <tab id="movies" shortcut="o" shortcut-prefix="M" active="${category=='movies'}">ovies</tab>
++        <tab id="shows" shortcut="S" active="${category=='shows'}">hows</tab>
++        <tab id="watchlist" shortcut="W" active="${category=='watchlist'}">atchlist</tab>
++      </tab-group>
++      <dropdown id="type" shortcut="T">Type ▾</dropdown>
++      <dropdown id="sort" shortcut="V">Sort [V] ▾</dropdown>
++      <dropdown id="genre" shortcut="G">Genre ▾</dropdown>
++    </menu-bar>
++
++    <list id="catalog-items" source="handler:get_catalog" empty-text="No results found">
++      <item-template>
++        <text>${index}. ${watched_icon}${title}</text>
++        <on-enter>handler:open_details($item)</on-enter>
++        <on-hover>handler:show_preview($item)</on-hover>
++      </item-template>
++      <on-empty>handler:show_no_results()</on-empty>
++    </list>
++
++    <preview id="content-preview" position="right" width="50%" scroll="true" border="left">
++      <image src="${poster}"/>
++      <text style="title">${title}</text>
++      <text style="meta">${year} • ⭐ ${rating}</text>
++      <genre-pills source="${genres}"/>
++      <text style="plot">${plot}</text>
++    </preview>
++
++    <status-bar position="bottom">
++      <text>Page ${page}/${total_pages}</text>
++    </status-bar>
++
++    <bindings>
++      <bind key="ctrl-o" handler="switch_category" args="movies" return-code="101"/>
++      <bind key="ctrl-s" handler="switch_category" args="shows" return-code="102"/>
++      <bind key="ctrl-w" handler="switch_category" args="watchlist" return-code="103"/>
++      <bind key="ctrl-t" action="show" target="#type-picker" return-code="104"/>
++      <bind key="ctrl-v" action="show" target="#sort-picker" return-code="105"/>
++      <bind key="ctrl-g" action="show" target="#genre-picker" return-code="106"/>
++      <bind key=">" handler="next_page" condition="${page &lt; total_pages}" return-code="107"/>
++      <bind key="&lt;" handler="prev_page" condition="${page &gt; 1}" return-code="108"/>
++      <bind key="ctrl-f" action="search" return-code="110"/>
++      <bind key="enter" on="#catalog-items" action="select"/>
++      <bind key="esc" action="back" fallback="quit"/>
++      <bind key="?" action="show" target="#help-modal"/>
++    </bindings>
++
++  </layout>
++</tml>
+diff --git a/modules/ui/layouts/movie-version-picker.xml b/modules/ui/layouts/movie-version-picker.xml
+new file mode 100644
+index 0000000..04a5e5c
+--- /dev/null
++++ b/modules/ui/layouts/movie-version-picker.xml
+@@ -0,0 +1,18 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  Movie Version Picker Layout (Stage 2)
++  For movie torrent quality/source selection (line 947 in fzf_catalog.sh)
++  Uses no-select-1 and bind actions instead of expect
++-->
++<fzf-layout id="movie-version-picker" name="Movie Version Picker">
++  <layout direction="reverse" height="100%" margin="1" padding="1"/>
++  <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " label-pos="bottom"/>
++  <prompt pointer="➤">➤ Pick Version: </prompt>
++  <header first="true">🎬 Available Versions: (Ctrl+H to back)</header>
++  <preview position="left" size="55%" wrap="true"/>
++  <colors theme="dynamic"/>
++  <bindings delimiter="|" with-nth="2">
++    <bind key="ctrl-h" action="abort"/>
++    <bind key="ctrl-o" action="abort"/>
++  </bindings>
++</fzf-layout>
+diff --git a/modules/ui/layouts/season-picker.xml b/modules/ui/layouts/season-picker.xml
+index 84ac55f..d450fc5 100644
+--- a/modules/ui/layouts/season-picker.xml
++++ b/modules/ui/layouts/season-picker.xml
+@@ -2,11 +2,12 @@
+ <!--
+   Season Picker Layout
+   Centered popup modal for season selection
++  Variables: CLEAN_TITLE, total_seasons, THEME_HEX_GLOW, THEME_HEX_BG_SELECTION
+ -->
+ <fzf-layout id="season-picker" name="Season Picker">
+   <layout direction="reverse" height="70%" margin="15%,20%" padding="1" info="inline"/>
+   <border style="rounded" label=" [ Enter:Select | Esc:Back ] " label-pos="bottom"/>
+-  <prompt pointer="➜">Select Season ➜</prompt>
++  <prompt pointer="➜">Select Season ➜ </prompt>
+   <header first="true">Series: ${CLEAN_TITLE:-Series Name} (${total_seasons:-1} seasons)</header>
+   <colors theme="dynamic">
+     <color name="fg" value="#ffffff"/>
+diff --git a/modules/ui/layouts/version-picker.xml b/modules/ui/layouts/version-picker.xml
+index de74e96..14c4e67 100644
+--- a/modules/ui/layouts/version-picker.xml
++++ b/modules/ui/layouts/version-picker.xml
+@@ -1,33 +1,17 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!--
+   Version Picker Layout (Stage 2)
+-  For selecting quality/source versions with preview
++  Full screen picker for quality/source selection with preview
++  Variables: various STAGE2_* exports
+ -->
+ <fzf-layout id="version-picker" name="Version Picker">
+-  <layout direction="reverse" height="100%" margin="1" padding="1" info="hidden"/>
+-  <preview position="left" size="55%" wrap="true"
+-            script="TERMFLIX_STAGE2_CONTEXT=&quot;${stage2_context:-}&quot; ${STAGE2_PREVIEW_SCRIPT:-}"
+-            delimiter="|" with-nth="2"/>
+-  <header first="true">Pick Version - [${c_name:-Content}] →</header>
++  <layout direction="reverse" height="100%" margin="1" padding="1"/>
+   <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " label-pos="bottom"/>
+-  <prompt pointer="➤">❯</prompt>
+-  <colors theme="default">
+-    <color name="fg" value="#6b7280"/>
+-    <color name="bg" value="#1e1e2e"/>
+-    <color name="hl" value="#818cf8"/>
+-    <color name="fg+" value="#ffffff"/>
+-    <color name="bg+" value="#5865f2"/>
+-    <color name="hl+" value="#c4b5fd"/>
+-    <color name="info" value="#6b7280"/>
+-    <color name="prompt" value="#5eead4"/>
+-    <color name="pointer" value="#818cf8"/>
+-    <color name="marker" value="#818cf8"/>
+-    <color name="spinner" value="#818cf8"/>
+-    <color name="header" value="#a78bfa"/>
+-    <color name="border" value="#5865f2"/>
+-    <color name="gutter" value="#1e1e2e"/>
+-  </colors>
+-  <bindings expect="ctrl-h,ctrl-o">
++  <prompt pointer="➤">➤ Pick Version: </prompt>
++  <header first="true">🎬 Available Versions: (Ctrl+H to back)</header>
++  <preview position="left" size="55%" wrap="true"/>
++  <colors theme="dynamic"/>
++  <bindings delimiter="|" with-nth="2">
+     <bind key="ctrl-h" action="abort"/>
+     <bind key="ctrl-o" action="abort"/>
+   </bindings>
+diff --git a/modules/ui/pickers/episode_picker.sh b/modules/ui/pickers/episode_picker.sh
+index a6d80a6..2259049 100755
+--- a/modules/ui/pickers/episode_picker.sh
++++ b/modules/ui/pickers/episode_picker.sh
+@@ -108,26 +108,45 @@ source "${LIB_DIR}/image_display.sh"
+ # Export additional series metadata for preview
+ export SERIES_METADATA="$metadata_json"
+
+-RESULTS=$(printf '%s' "$episode_list" | fzf \
+-    --height=100% \
+-    --layout=reverse \
+-    --border=rounded \
+-    --margin=1 \
+-    --padding=1 \
+-    --delimiter='|' \
+-    --with-nth=2 \
+-    --pointer='➤' \
+-    --prompt="> " \
+-    --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
+-    --header-first \
+-    --info=default \
+-    --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
+-    --border-label-pos=bottom \
+-    --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
+-    --ansi \
+-    --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')" \
+-    --preview-window=left:55%:wrap:border-right \
+-    --preview "ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\"")
++# ════════════════════════════════════════════════════════════════
++# TML Parser Integration
++# ════════════════════════════════════════════════════════════════
++export CLEAN_TITLE
++export SEASON_NUM
++export SCRIPT_DIR
++
++source "${UI_DIR}/tml/parser/tml_parser.sh"
++tml_parse "${UI_DIR}/layouts/episode-picker.xml"
++FZF_ARGS=$(tml_get_fzf_args)
++
++# Preview script added inline (can't be in XML due to special chars)
++PREVIEW_CMD="ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\""
++
++RESULTS=$(printf '%s' "$episode_list" | eval "fzf --ansi $FZF_ARGS --preview \"$PREVIEW_CMD\"")
++
++# ════════════════════════════════════════════════════════════════
++# OLD HARDCODED FZF CONFIG (preserved for reference)
++# ════════════════════════════════════════════════════════════════
++# RESULTS=$(printf '%s' "$episode_list" | fzf \
++#     --height=100% \
++#     --layout=reverse \
++#     --border=rounded \
++#     --margin=1 \
++#     --padding=1 \
++#     --delimiter='|' \
++#     --with-nth=2 \
++#     --pointer='➤' \
++#     --prompt="> " \
++#     --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
++#     --header-first \
++#     --info=default \
++#     --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
++#     --border-label-pos=bottom \
++#     --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
++#     --ansi \
++#     --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#cdd6f4,bg:-1,hl:#f5c2e7,fg+:#cdd6f4,bg+:#5865f2,hl+:#f5c2e7,pointer:#f5c2e7,prompt:#cba6f7')" \
++#     --preview-window=left:55%:wrap:border-right \
++#     --preview "ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\"")
+
+ KEY=$(echo "$RESULTS" | head -1)
+ SELECTED=$(echo "$RESULTS" | tail -1)
+diff --git a/modules/ui/pickers/season_picker.sh b/modules/ui/pickers/season_picker.sh
+index 7891046..df3b9ff 100755
+--- a/modules/ui/pickers/season_picker.sh
++++ b/modules/ui/pickers/season_picker.sh
+@@ -95,22 +95,39 @@ echo "[$(date)] season_list generated: $total_seasons items" >> /tmp/season_pick
+ # Override inherited FZF_DEFAULT_OPTS to avoid catalog shortcuts
+ export FZF_DEFAULT_OPTS=""
+
+-SELECTED=$(printf "$season_list" | fzf \
+-    --height=70% \
+-    --margin=15%,20% \
+-    --layout=reverse \
+-    --border=rounded \
+-    --padding=1 \
+-    --info=inline \
+-    --prompt="Select Season ➜ " \
+-    --header="Series: $CLEAN_TITLE (${total_seasons} seasons)" \
+-    --border-label=" [ Enter:Select | Esc:Back ] " \
+-    --border-label-pos=bottom \
+-    --pointer="➜" \
+-    --color="fg:#ffffff,fg+:#ffffff,hl:${THEME_HEX_GLOW:-#e879f9},hl+:${THEME_HEX_GLOW:-#e879f9},pointer:${THEME_HEX_GLOW:-#e879f9},border:${THEME_HEX_GLOW:-#e879f9},prompt:${THEME_HEX_GLOW:-#e879f9},info:${THEME_HEX_GLOW:-#e879f9},bg+:${THEME_HEX_BG_SELECTION:-#374151}" \
+-    --bind "esc:abort" \
+-    --header-first \
+-    2>>/tmp/season_picker.log)
++# ════════════════════════════════════════════════════════════════
++# TML Parser Integration
++# ════════════════════════════════════════════════════════════════
++# Export variables for TML expression evaluation
++export CLEAN_TITLE
++export total_seasons
++
++# Source TML parser and generate FZF args from layout
++source "${UI_DIR}/tml/parser/tml_parser.sh"
++tml_parse "${UI_DIR}/layouts/season-picker.xml"
++FZF_ARGS=$(tml_get_fzf_args)
++
++SELECTED=$(printf "$season_list" | eval "fzf $FZF_ARGS" 2>>/tmp/season_picker.log)
++
++# ════════════════════════════════════════════════════════════════
++# OLD HARDCODED FZF CONFIG (preserved for reference)
++# ════════════════════════════════════════════════════════════════
++# SELECTED=$(printf "$season_list" | fzf \
++#     --height=70% \
++#     --margin=15%,20% \
++#     --layout=reverse \
++#     --border=rounded \
++#     --padding=1 \
++#     --info=inline \
++#     --prompt="Select Season ➜ " \
++#     --header="Series: $CLEAN_TITLE (${total_seasons} seasons)" \
++#     --border-label=" [ Enter:Select | Esc:Back ] " \
++#     --border-label-pos=bottom \
++#     --pointer="➜" \
++#     --color="fg:#ffffff,fg+:#ffffff,hl:${THEME_HEX_GLOW:-#e879f9},hl+:${THEME_HEX_GLOW:-#e879f9},pointer:${THEME_HEX_GLOW:-#e879f9},border:${THEME_HEX_GLOW:-#e879f9},prompt:${THEME_HEX_GLOW:-#e879f9},info:${THEME_HEX_GLOW:-#e879f9},bg+:${THEME_HEX_BG_SELECTION:-#374151}" \
++#     --bind "esc:abort" \
++#     --header-first \
++#     2>>/tmp/season_picker.log)
+
+ echo "[$(date)] FZF returned, SELECTED='$SELECTED'" >> /tmp/season_picker.log 2>/dev/null
+
+diff --git a/modules/ui/tml/PARSER_COMPARISON.md b/modules/ui/tml/PARSER_COMPARISON.md
+new file mode 100644
+index 0000000..bbcecab
+--- /dev/null
++++ b/modules/ui/tml/PARSER_COMPARISON.md
+@@ -0,0 +1,127 @@
++# TML Parser Comparison: V1 vs V2
++
++## Summary
++
++**V1 (`ui_parser.sh`)** = Production-ready FZF configuration
++**V2 (`tml_parser.sh`)** = Experimental rich components
++
++---
++
++## V1: FZF Layout Parser ✅ PRODUCTION
++
++**File:** `modules/ui/lib/ui_parser.sh` (381 lines)
++
++### Schema: `<fzf-layout>`
++```xml
++<fzf-layout id="season-picker">
++  <layout direction="reverse" height="70%"/>
++  <border style="rounded" label="..."/>
++  <header first="true">Title</header>
++  <prompt pointer="➜">Select ➜</prompt>
++  <colors><color name="fg" value="#fff"/></colors>
++  <bindings expect="enter,esc">
++    <bind key="esc" action="abort"/>
++  </bindings>
++</fzf-layout>
++```
++
++### Output: Complete FZF args
++```
++--layout reverse --height 70% --margin 15%,20% --border rounded
++--header "..." --prompt "Select ➜" --pointer ➜ --color "..." --bind=esc:abort
++```
++
++### What It Supports
++| Feature | Supported |
++|---------|-----------|
++| Layout (reverse/height/margin/padding) | ✅ |
++| Preview (position/size/script) | ✅ |
++| Header | ✅ |
++| Border (style/label) | ✅ |
++| Prompt/Pointer | ✅ |
++| Colors (theme integration) | ✅ |
++| Bindings (action/return-code) | ✅ |
++
++### Usage
++```bash
++source modules/ui/lib/ui_parser.sh
++build_fzf_cmd "season-picker"  # Returns FZF args
++run_fzf_layout "season-picker" # Runs FZF directly
++```
++
++---
++
++## V2: TML Parser ⚠️ EXPERIMENTAL
++
++**File:** `modules/ui/tml/parser/tml_parser.sh` (400+ lines)
++
++### Schema: `<tml>`
++```xml
++<tml version="1.0" theme="crush">
++  <variables><var name="category" default="movies"/></variables>
++  <handlers><handler id="fetch" type="bash"/></handlers>
++  <layout id="app">
++    <menu-bar>
++      <tab-group><tab id="movies" active="true">Movies</tab></tab-group>
++    </menu-bar>
++    <list source="handler:fetch"/>
++    <bindings><bind key="ctrl-o" return-code="101"/></bindings>
++  </layout>
++</tml>
++```
++
++### What It Adds (Beyond V1)
++| Feature | V1 | V2 |
++|---------|----|----|
++| Menu-bar with tabs | ❌ | ✅ |
++| Tab groups | ❌ | ✅ |
++| Dropdowns | ❌ | ✅ |
++| Expression eval `${var}` | ❌ | ✅ |
++| Handler declarations | ❌ | ✅ |
++| Variables section | ❌ | ✅ |
++
++### What V2 CAN'T Do (FZF Limitation)
++- Dynamic re-rendering
++- Multiple focus areas
++- Modals/popups
++- State updates without restart
++
++---
++
++## Recommendation
++
++| Use Case | Parser |
++|----------|--------|
++| Season picker, episode picker | **V1** |
++| Simple menus | **V1** |
++| Version picker | **V1** |
++| Main catalog (just FZF args) | **V1** |
++| Rich header with tabs | **V2** (header only) |
++| Full interactive TUI | Go TML (future) |
++
++---
++
++## Files
++
++```
++modules/ui/
++├── lib/
++│   └── ui_parser.sh        # V1 - Production FZF parser
++├── tml/
++│   └── parser/
++│       └── tml_parser.sh   # V2 - Experimental rich components
++├── layouts/
++│   ├── *.xml               # V1 layouts
++│   └── *.tml               # V2 layouts (experiment)
++```
++
++---
++
++## Archive Note
++
++V2 TML parser remains in codebase for:
++1. Header generation experiments
++2. Future FZF++ development
++3. Reference for Go TML implementation
++
++V1 is the **recommended parser** for all current Termflix UI work.
+diff --git a/modules/ui/tml/parser/FZF_PLUS_FUTURE.md b/modules/ui/tml/parser/FZF_PLUS_FUTURE.md
+new file mode 100644
+index 0000000..af67db7
+--- /dev/null
++++ b/modules/ui/tml/parser/FZF_PLUS_FUTURE.md
+@@ -0,0 +1,90 @@
++# FZF++ Future Concept
++
++Ideas for a future "FZF++" that would enable true TML-driven interactive TUIs.
++
++---
++
++## The Problem
++
++FZF is a **single-run fuzzy finder**, not a stateful UI framework:
++- No re-rendering without restart
++- No multiple focusable areas
++- No modals/popups
++- No dynamic header updates
++
++TML describes rich UIs that FZF can't fully render.
++
++---
++
++## FZF++ Vision
++
++A wrapper/replacement that adds:
++
++### 1. Stateful Mode
++```bash
++fzf++ --mode stateful --layout app.tml
++```
++- Persists state between interactions
++- Re-renders without full restart
++- Supports `tml_update "#element-id" "$new_content"`
++
++### 2. Multiple Panes
++```
++┌─────────────────────────────────────────┐
++│ Header (menu-bar)                       │
++├──────────────────────┬──────────────────┤
++│ Sidebar              │ Main List        │
++│ (focusable)          │ (focusable)      │
++├──────────────────────┴──────────────────┤
++│ Status Bar                              │
++└─────────────────────────────────────────┘
++```
++Tab between panes, each with own bindings.
++
++### 3. Modal Dialogs
++```bash
++# Pop up over current view
++tml_modal "#confirm-dialog"
++```
++
++### 4. Dynamic Updates
++```bash
++# From handler, update specific element
++tml_update "#status-text" "Loading..."
++tml_refresh "#item-list"
++```
++
++---
++
++## Implementation Approaches
++
++### A) Pure Bash (Hard)
++- Use `tput` for cursor positioning
++- Manual ANSI rendering
++- Complex, error-prone
++
++### B) Go Wrapper (Recommended)
++- Go binary that wraps FZF or replaces it
++- Uses Bubble Tea for rendering
++- TML → Bubble Tea components
++
++### C) Enhanced FZF Fork
++- Fork FZF, add multi-pane support
++- Significant C effort
++
++---
++
++## For Now
++
++The current bash TML parser works for:
++- ✅ Header generation
++- ✅ Bindings extraction
++- ✅ Color configuration
++
++Full TML support requires FZF++ or the Go TML runtime.
++
++---
++
++## Related
++
++See `~/Development/tml` for the Go-based TML project that can support full interactive TUIs via Bubble Tea.
+diff --git a/modules/ui/tml/parser/README.md b/modules/ui/tml/parser/README.md
+new file mode 100644
+index 0000000..a3de017
+--- /dev/null
++++ b/modules/ui/tml/parser/README.md
+@@ -0,0 +1,74 @@
++# TML Parser - How It Fits In
++
++How the bash TML parser integrates with FZF-based UIs.
++
++---
++
++## Architecture
++
++```
++┌─────────────────────────────────────────────────────────────┐
++│                    .tml Layout File                          │
++│    (menu-bar, bindings, colors - declarative config)        │
++└─────────────────────────────────────────────────────────────┘
++                              │
++                              ▼ (Runtime - Dynamic)
++┌─────────────────────────────────────────────────────────────┐
++│                    tml_parser.sh                             │
++│    source tml_parser.sh                                      │
++│    tml_parse "main-catalog.tml"                              │
++│    header=$(tml_render_header)                               │
++│    expect=$(tml_get_expect_keys)                             │
++└─────────────────────────────────────────────────────────────┘
++                              │
++                              ▼
++┌─────────────────────────────────────────────────────────────┐
++│                    fzf_catalog.sh                            │
++│    fzf --header "$header" --expect "$expect" ...             │
++└─────────────────────────────────────────────────────────────┘
++```
++
++---
++
++## Dynamic vs Precomputed
++
++### Dynamic (Current) ✅
++```bash
++source "$UI_DIR/tml/parser/tml_parser.sh"
++tml_parse "$LAYOUTS_DIR/main-catalog.tml"
++menu_header=$(tml_render_header)
++```
++- Edit XML → immediate changes
++- ~10-50ms xmllint overhead
++
++### Precomputed (Future)
++```bash
++# Build: ./tml_compile layout.tml > generated/ui.sh
++source generated/ui.sh
++menu_header=$(render_header)
++```
++- Zero runtime parsing
++- Requires rebuild after changes
++
++---
++
++## Integration Points
++
++| Component | Before | After (TML) |
++|-----------|--------|-------------|
++| Header | Hardcoded bash | `tml_render_header` |
++| Bindings | String literal | `tml_get_expect_keys` |
++| Colors | Environment vars | `tml_get_colors` (future) |
++
++---
++
++## Usage
++
++```bash
++source "modules/ui/tml/parser/tml_parser.sh"
++tml_parse "modules/ui/layouts/main-catalog.tml"
++
++fzf --header "$(tml_render_header)" \
++    --expect "$(tml_get_expect_keys)" \
++    --preview "preview.sh {}"
++```
+diff --git a/modules/ui/tml/parser/tml_parser.sh b/modules/ui/tml/parser/tml_parser.sh
+new file mode 100755
+index 0000000..fa06e80
+--- /dev/null
++++ b/modules/ui/tml/parser/tml_parser.sh
+@@ -0,0 +1,499 @@
++#!/usr/bin/env bash
++#
++# Unified TML Parser v2.0
++# Combines V1 FZF args generation with V2 rich component rendering
++#
++# Usage:
++#   source tml_parser.sh
++#   tml_parse "layout.tml"
++#   fzf $(tml_get_fzf_args) --header "$(tml_render_header)"
++#
++# Or:
++#   ./tml_parser.sh fzf-args layout.tml
++#   ./tml_parser.sh render-header layout.tml
++
++set -euo pipefail
++
++# ═══════════════════════════════════════════════════════════════
++# INITIALIZATION
++# ═══════════════════════════════════════════════════════════════
++
++_TML_PARSER_SCRIPT="${BASH_SOURCE[0]:-${(%):-%x}}"
++TML_PARSER_DIR="$(cd "$(dirname "$_TML_PARSER_SCRIPT")" && pwd)"
++TML_UI_DIR="$(cd "${TML_PARSER_DIR}/../.." && pwd)"
++TML_LAYOUTS_DIR="${TML_UI_DIR}/layouts"
++TML_SCHEMA="${TML_PARSER_DIR}/../schema/tml-1.0.xsd"
++
++# Source theme if available
++THEME_SCRIPT="${TML_UI_DIR}/../core/theme.sh"
++[[ -f "$THEME_SCRIPT" ]] && source "$THEME_SCRIPT" 2>/dev/null || true
++
++# Export for preview scripts
++export TML_UI_DIR
++
++# ═══════════════════════════════════════════════════════════════
++# STATE (bash 3.2 compatible - no associative arrays)
++# ═══════════════════════════════════════════════════════════════
++
++TML_CURRENT_FILE=""
++TML_FZF_ARGS=""
++TML_EXPECT_KEYS=""
++TML_BINDINGS=""
++
++# ═══════════════════════════════════════════════════════════════
++# XML PARSING HELPERS
++# ═══════════════════════════════════════════════════════════════
++
++tml_attr() {
++    local xml_file="$1"
++    local xpath="$2"
++    xmllint --xpath "string($xpath)" "$xml_file" 2>/dev/null || echo ""
++}
++
++tml_text() {
++    local xml_file="$1"
++    local xpath="$2"
++    xmllint --xpath "$xpath/text()" "$xml_file" 2>/dev/null || echo ""
++}
++
++tml_count() {
++    local xml_file="$1"
++    local xpath="$2"
++    xmllint --xpath "count($xpath)" "$xml_file" 2>/dev/null || echo "0"
++}
++
++tml_exists() {
++    local xml_file="$1"
++    local xpath="$2"
++    local result
++    result=$(xmllint --xpath "boolean($xpath)" "$xml_file" 2>/dev/null || echo "false")
++    [[ "$result" == "true" ]]
++}
++
++# ═══════════════════════════════════════════════════════════════
++# EXPRESSION EVALUATOR
++# ═══════════════════════════════════════════════════════════════
++
++tml_eval() {
++    local input="$1"
++    local result="$input"
++
++    # ${var_name}
++    while [[ "$result" =~ \$\{([a-zA-Z_][a-zA-Z0-9_]*)\} ]]; do
++        local var_name="${BASH_REMATCH[1]}"
++        local tml_var="TML_VAR_${var_name}"
++        local var_value="${!tml_var:-${!var_name:-}}"
++        result="${result//\$\{$var_name\}/$var_value}"
++    done
++
++    # ${VAR:-default}
++    while [[ "$result" =~ \$\{([a-zA-Z_][a-zA-Z0-9_]*):-([^}]*)\} ]]; do
++        local var_name="${BASH_REMATCH[1]}"
++        local default_val="${BASH_REMATCH[2]}"
++        local tml_var="TML_VAR_${var_name}"
++        local var_value="${!tml_var:-${!var_name:-$default_val}}"
++        result="${result//\$\{$var_name:-$default_val\}/$var_value}"
++    done
++
++    echo "$result"
++}
++
++tml_eval_bool() {
++    local expr="$1"
++    expr="${expr#\$\{}"
++    expr="${expr%\}}"
++
++    if [[ "$expr" =~ ^([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*==[[:space:]]*[\'\"]?([^\'\"]*)[\'\"]?$ ]]; then
++        local var_name="${BASH_REMATCH[1]}"
++        local compare_val="${BASH_REMATCH[2]}"
++        local tml_var="TML_VAR_${var_name}"
++        local var_value="${!tml_var:-${!var_name:-}}"
++        [[ "$var_value" == "$compare_val" ]] && return 0 || return 1
++    fi
++
++    local val
++    val=$(tml_eval "\${$expr}")
++    [[ -n "$val" && "$val" != "false" && "$val" != "0" ]]
++}
++
++# ═══════════════════════════════════════════════════════════════
++# VARIABLES PARSER
++# ═══════════════════════════════════════════════════════════════
++
++_parse_variables() {
++    local xml_file="$1"
++    local var_count
++    var_count=$(tml_count "$xml_file" "//variables/var")
++
++    for ((i=1; i<=var_count; i++)); do
++        local name default_val
++        name=$(tml_attr "$xml_file" "//variables/var[$i]/@name")
++        default_val=$(tml_attr "$xml_file" "//variables/var[$i]/@default")
++
++        local tml_var="TML_VAR_${name}"
++        if [[ -z "${!tml_var:-}" ]]; then
++            eval "export ${tml_var}=\"${default_val}\""
++        fi
++    done
++}
++
++# ═══════════════════════════════════════════════════════════════
++# FZF ARGS GENERATION (from V1)
++# ═══════════════════════════════════════════════════════════════
++
++_parse_fzf_layout() {
++    local xml_file="$1"
++    local args=""
++
++    # Detect schema: <tml> or <fzf-layout>
++    local root_xpath
++    if tml_exists "$xml_file" "//tml"; then
++        root_xpath="//tml/layout"
++    elif tml_exists "$xml_file" "//fzf-layout"; then
++        root_xpath="//fzf-layout"
++    else
++        echo "Error: Unknown schema" >&2
++        return 1
++    fi
++
++    # Layout
++    local direction height margin padding info
++    direction=$(tml_attr "$xml_file" "${root_xpath}/layout/@direction")
++    [[ -z "$direction" ]] && direction=$(tml_attr "$xml_file" "${root_xpath}/@layout-direction")
++    [[ -z "$direction" ]] && direction="reverse"
++
++    height=$(tml_attr "$xml_file" "${root_xpath}/layout/@height")
++    [[ -z "$height" ]] && height=$(tml_attr "$xml_file" "${root_xpath}/@layout-height")
++
++    margin=$(tml_attr "$xml_file" "${root_xpath}/layout/@margin")
++    [[ -z "$margin" ]] && margin=$(tml_attr "$xml_file" "${root_xpath}/@layout-margin")
++
++    padding=$(tml_attr "$xml_file" "${root_xpath}/layout/@padding")
++    [[ -z "$padding" ]] && padding=$(tml_attr "$xml_file" "${root_xpath}/@layout-padding")
++
++    info=$(tml_attr "$xml_file" "${root_xpath}/layout/@info")
++    [[ -z "$info" ]] && info=$(tml_attr "$xml_file" "${root_xpath}/@layout-info")
++
++    args+="--layout $direction "
++    [[ -n "$height" && "$height" != "100%" ]] && args+="--height $height "
++    [[ -n "$margin" ]] && args+="--margin $margin "
++    [[ -n "$padding" ]] && args+="--padding $padding "
++
++    case "$info" in
++        hidden) args+="--info=hidden " ;;
++        inline) args+="--info=inline " ;;
++    esac
++
++    # Border
++    local border_style border_label label_pos
++    border_style=$(tml_attr "$xml_file" "${root_xpath}/border/@style")
++    [[ -z "$border_style" ]] && border_style="rounded"
++    border_label=$(tml_attr "$xml_file" "${root_xpath}/border/@label")
++    label_pos=$(tml_attr "$xml_file" "${root_xpath}/border/@label-pos")
++
++    args+="--border $border_style "
++    [[ -n "$border_label" ]] && args+="--border-label '$border_label' "
++    [[ -n "$label_pos" ]] && args+="--border-label-pos $label_pos "
++
++    # Prompt
++    local prompt_text pointer
++    prompt_text=$(tml_text "$xml_file" "${root_xpath}/prompt")
++    pointer=$(tml_attr "$xml_file" "${root_xpath}/prompt/@pointer")
++
++    [[ -n "$prompt_text" ]] && args+="--prompt '$prompt_text' "
++    [[ -n "$pointer" ]] && args+="--pointer '$pointer' "
++
++    # Header (raw or TML menu-bar)
++    local header_content header_first
++    header_content=$(tml_text "$xml_file" "${root_xpath}/header")
++    header_first=$(tml_attr "$xml_file" "${root_xpath}/header/@first")
++    [[ -z "$header_first" ]] && header_first="true"
++
++    # Note: For TML with menu-bar, we don't include --header here
++    # The caller should use tml_render_header separately
++    if [[ -n "$header_content" ]]; then
++        header_content=$(tml_eval "$header_content")
++        args+="--header '$header_content' "
++    fi
++    [[ "$header_first" == "true" ]] && args+="--header-first "
++
++    # Preview
++    if tml_exists "$xml_file" "${root_xpath}/preview"; then
++        local pos size wrap border script
++        pos=$(tml_attr "$xml_file" "${root_xpath}/preview/@position")
++        [[ -z "$pos" ]] && pos="right"
++        size=$(tml_attr "$xml_file" "${root_xpath}/preview/@size")
++        [[ -z "$size" ]] && size="50%"
++        wrap=$(tml_attr "$xml_file" "${root_xpath}/preview/@wrap")
++        border=$(tml_attr "$xml_file" "${root_xpath}/preview/@border")
++        script=$(tml_attr "$xml_file" "${root_xpath}/preview/@script")
++
++        local preview_spec="${pos}:${size}"
++        [[ "$wrap" == "true" ]] && preview_spec+=":wrap"
++        [[ -n "$border" ]] && preview_spec+=":${border}"
++
++        args+="--preview-window '$preview_spec' "
++        [[ -n "$script" ]] && args+="--preview '$(tml_eval "$script")' "
++    fi
++
++    # Colors
++    if declare -F get_fzf_colors &>/dev/null; then
++        local theme_colors
++        theme_colors=$(get_fzf_colors 2>/dev/null || echo "")
++        [[ -n "$theme_colors" ]] && args+="--color '$theme_colors' "
++    else
++        # Parse from XML
++        local color_parts=""
++        for color_name in fg bg hl "fg+" "bg+" "hl+" info prompt pointer marker spinner header border gutter; do
++            local color_value
++            color_value=$(tml_attr "$xml_file" "${root_xpath}/colors/color[@name='$color_name']/@value")
++            if [[ -n "$color_value" ]]; then
++                color_value=$(tml_eval "$color_value")
++                [[ -n "$color_parts" ]] && color_parts+=","
++                color_parts+="${color_name}:${color_value}"
++            fi
++        done
++        [[ -n "$color_parts" ]] && args+="--color '$color_parts' "
++    fi
++
++    # Bindings
++    local bindings_xpath="${root_xpath}/bindings"
++    if tml_exists "$xml_file" "$bindings_xpath"; then
++        local delimiter with_nth expect
++        delimiter=$(tml_attr "$xml_file" "$bindings_xpath/@delimiter")
++        with_nth=$(tml_attr "$xml_file" "$bindings_xpath/@with-nth")
++        expect=$(tml_attr "$xml_file" "$bindings_xpath/@expect")
++
++        [[ -n "$delimiter" ]] && args+="--delimiter '$delimiter' "
++        [[ -n "$with_nth" ]] && args+="--with-nth $with_nth "
++
++        # Individual binds
++        local bind_count expect_keys=""
++        bind_count=$(tml_count "$xml_file" "$bindings_xpath/bind")
++
++        for ((i=1; i<=bind_count; i++)); do
++            local key action return_code script reload
++            key=$(tml_attr "$xml_file" "$bindings_xpath/bind[$i]/@key")
++            action=$(tml_attr "$xml_file" "$bindings_xpath/bind[$i]/@action")
++            return_code=$(tml_attr "$xml_file" "$bindings_xpath/bind[$i]/@return-code")
++            script=$(tml_attr "$xml_file" "$bindings_xpath/bind[$i]/@script")
++
++            [[ -z "$key" ]] && continue
++
++            # Collect expect keys
++            if [[ -n "$return_code" ]]; then
++                [[ -n "$expect_keys" ]] && expect_keys+=","
++                expect_keys+="$key"
++            fi
++
++            # Add bindings for actions
++            case "$action" in
++                execute)
++                    [[ -n "$script" ]] && args+="--bind='${key}:execute(${script})' "
++                    ;;
++                abort|accept|toggle-preview|preview-down|preview-up)
++                    args+="--bind='${key}:${action}' "
++                    ;;
++            esac
++        done
++
++        # Merge expect from attribute and collected
++        [[ -n "$expect" && -n "$expect_keys" ]] && expect_keys="${expect},${expect_keys}"
++        [[ -z "$expect" && -n "$expect_keys" ]] && expect="$expect_keys"
++        [[ -n "$expect" ]] && args+="--expect '$expect' "
++
++        TML_EXPECT_KEYS="$expect"
++    fi
++
++    TML_FZF_ARGS="$args"
++}
++
++# ═══════════════════════════════════════════════════════════════
++# MENU BAR RENDERER (from V2)
++# ═══════════════════════════════════════════════════════════════
++
++_render_tab() {
++    local xml_file="$1"
++    local index="$2"
++
++    local id shortcut shortcut_prefix label active
++    id=$(tml_attr "$xml_file" "//tab-group/tab[$index]/@id")
++    shortcut=$(tml_attr "$xml_file" "//tab-group/tab[$index]/@shortcut")
++    shortcut_prefix=$(tml_attr "$xml_file" "//tab-group/tab[$index]/@shortcut-prefix")
++    label=$(tml_text "$xml_file" "//tab-group/tab[$index]")
++    active=$(tml_attr "$xml_file" "//tab-group/tab[$index]/@active")
++
++    local is_active="false"
++    [[ -n "$active" ]] && tml_eval_bool "$active" && is_active="true"
++
++    local H_RESET=$'\e[0m'
++    local H_BG_ACTIVE="${THEME_HEX_BG_SELECTION:+$'\e[48;2;88;101;242m'}"
++    [[ -z "$H_BG_ACTIVE" ]] && H_BG_ACTIVE=$'\e[48;2;88;101;242m'
++    local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
++    local H_WHITE=$'\e[97m'
++    local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
++    local H_UL=$'\e[4m'
++
++    local formatted_label=""
++    [[ -n "$shortcut_prefix" ]] && formatted_label="${shortcut_prefix}"
++
++    if [[ "$is_active" == "true" ]]; then
++        echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${formatted_label}${shortcut}${label#*$shortcut} ${H_RESET}"
++    else
++        echo -ne "${H_BG_INACTIVE} ${formatted_label}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${label#*$shortcut} ${H_RESET}"
++    fi
++}
++
++_render_dropdown() {
++    local xml_file="$1"
++    local index="$2"
++
++    local id shortcut label
++    id=$(tml_attr "$xml_file" "//menu-bar/dropdown[$index]/@id")
++    shortcut=$(tml_attr "$xml_file" "//menu-bar/dropdown[$index]/@shortcut")
++    label=$(tml_text "$xml_file" "//menu-bar/dropdown[$index]")
++    label=$(tml_eval "$label")
++
++    local H_RESET=$'\e[0m'
++    local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
++    local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
++    local H_UL=$'\e[4m'
++
++    local before_shortcut="" after_shortcut=""
++    if [[ "$label" =~ ^(.*)${shortcut}(.*)$ ]]; then
++        before_shortcut="${BASH_REMATCH[1]}"
++        after_shortcut="${BASH_REMATCH[2]}"
++    else
++        before_shortcut="$label"
++    fi
++
++    echo -ne "${H_BG_INACTIVE} ${before_shortcut}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${after_shortcut} ${H_RESET}"
++}
++
++tml_render_header() {
++    local xml_file="${1:-$TML_CURRENT_FILE}"
++    local output=""
++
++    # Check for menu-bar
++    if tml_exists "$xml_file" "//menu-bar"; then
++        # Logo
++        local logo
++        logo=$(tml_text "$xml_file" "//menu-bar/logo")
++        if [[ -n "$logo" ]]; then
++            logo=$(tml_eval "$logo")
++            local H_PINK="${THEME_GLOW:-$'\e[38;2;232;121;249m'}"
++            local H_PURPLE="${THEME_PURPLE:-$'\e[38;2;139;92;246m'}"
++            local H_RESET=$'\e[0m'
++
++            [[ "$logo" == *"TERMFLIX"* ]] && logo="${logo/TERMFLIX/${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}}"
++            output+="$logo  "
++        fi
++
++        # Tabs
++        local tab_count
++        tab_count=$(tml_count "$xml_file" "//tab-group/tab")
++        for ((i=1; i<=tab_count; i++)); do
++            output+="$(_render_tab "$xml_file" "$i") "
++        done
++
++        # Dropdowns
++        local dropdown_count
++        dropdown_count=$(tml_count "$xml_file" "//menu-bar/dropdown")
++        for ((i=1; i<=dropdown_count; i++)); do
++            output+="$(_render_dropdown "$xml_file" "$i") "
++        done
++    fi
++
++    echo -ne "$output"
++}
++
++# ═══════════════════════════════════════════════════════════════
++# MAIN API
++# ═══════════════════════════════════════════════════════════════
++
++tml_parse() {
++    local tml_file="$1"
++
++    # Handle both .tml and .xml
++    if [[ ! -f "$tml_file" ]]; then
++        # Try layouts directory
++        if [[ -f "${TML_LAYOUTS_DIR}/${tml_file}" ]]; then
++            tml_file="${TML_LAYOUTS_DIR}/${tml_file}"
++        elif [[ -f "${TML_LAYOUTS_DIR}/${tml_file}.tml" ]]; then
++            tml_file="${TML_LAYOUTS_DIR}/${tml_file}.tml"
++        elif [[ -f "${TML_LAYOUTS_DIR}/${tml_file}.xml" ]]; then
++            tml_file="${TML_LAYOUTS_DIR}/${tml_file}.xml"
++        else
++            echo "Error: File not found: $tml_file" >&2
++            return 1
++        fi
++    fi
++
++    TML_CURRENT_FILE="$tml_file"
++
++    # Reset state
++    for var in $(compgen -v TML_VAR_ 2>/dev/null || true); do
++        unset "$var"
++    done
++    TML_FZF_ARGS=""
++    TML_EXPECT_KEYS=""
++
++    # Parse variables (TML only)
++    _parse_variables "$tml_file"
++
++    # Parse FZF args
++    _parse_fzf_layout "$tml_file"
++}
++
++tml_get_fzf_args() {
++    echo "$TML_FZF_ARGS"
++}
++
++tml_get_expect_keys() {
++    echo "$TML_EXPECT_KEYS"
++}
++
++# ═══════════════════════════════════════════════════════════════
++# CLI
++# ═══════════════════════════════════════════════════════════════
++
++if [[ "${BASH_SOURCE[0]:-$0}" == "${0:-}" ]]; then
++    case "${1:-}" in
++        fzf-args)
++            [[ -z "${2:-}" ]] && { echo "Usage: $0 fzf-args <file>"; exit 1; }
++            tml_parse "$2"
++            tml_get_fzf_args
++            ;;
++        render-header)
++            [[ -z "${2:-}" ]] && { echo "Usage: $0 render-header <file>"; exit 1; }
++            tml_parse "$2"
++            tml_render_header
++            echo ""
++            ;;
++        expect)
++            [[ -z "${2:-}" ]] && { echo "Usage: $0 expect <file>"; exit 1; }
++            tml_parse "$2"
++            tml_get_expect_keys
++            ;;
++        --help|-h)
++            echo "Unified TML Parser v2.0"
++            echo ""
++            echo "Usage:"
++            echo "  $0 fzf-args <file>      Generate FZF command args"
++            echo "  $0 render-header <file> Render menu-bar header"
++            echo "  $0 expect <file>        Get expect keys"
++            echo ""
++            echo "As library:"
++            echo "  source tml_parser.sh"
++            echo "  tml_parse 'layout.tml'"
++            echo "  fzf \$(tml_get_fzf_args) --header \"\$(tml_render_header)\""
++            ;;
++        *)
++            echo "Use --help for usage" >&2
++            exit 1
++            ;;
++    esac
++fi
++
++export -f tml_attr tml_text tml_count tml_exists tml_eval tml_eval_bool
++export -f tml_parse tml_get_fzf_args tml_get_expect_keys tml_render_header
+diff --git a/modules/ui/tml/schema/tml-1.0.xsd b/modules/ui/tml/schema/tml-1.0.xsd
+new file mode 100644
+index 0000000..8df09e7
+--- /dev/null
++++ b/modules/ui/tml/schema/tml-1.0.xsd
+@@ -0,0 +1,576 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!--
++  TML (Terminal Markup Language) Schema v1.0
++  Defines the structure for declarative terminal UI layouts
++-->
++<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
++           targetNamespace="http://termflix.app/tml"
++           xmlns:tml="http://termflix.app/tml"
++           elementFormDefault="qualified">
++
++  <!-- Root element -->
++  <xs:element name="tml">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element ref="tml:imports" minOccurs="0"/>
++        <xs:element ref="tml:variables" minOccurs="0"/>
++        <xs:element ref="tml:handlers" minOccurs="0"/>
++        <xs:element ref="tml:layout"/>
++      </xs:sequence>
++      <xs:attribute name="version" type="xs:string" default="1.0"/>
++      <xs:attribute name="theme" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Imports -->
++  <xs:element name="imports">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="import" maxOccurs="unbounded">
++          <xs:complexType>
++            <xs:attribute name="src" type="xs:string" use="required"/>
++            <xs:attribute name="as" type="xs:string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Variables -->
++  <xs:element name="variables">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="var" maxOccurs="unbounded">
++          <xs:complexType>
++            <xs:attribute name="name" type="xs:string" use="required"/>
++            <xs:attribute name="default" type="xs:string"/>
++            <xs:attribute name="type" type="xs:string" default="string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Handlers -->
++  <xs:element name="handlers">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="handler" maxOccurs="unbounded">
++          <xs:complexType mixed="true">
++            <xs:attribute name="id" type="xs:string" use="required"/>
++            <xs:attribute name="type" type="tml:handlerType" use="required"/>
++            <xs:attribute name="script" type="xs:string"/>
++            <xs:attribute name="function" type="xs:string"/>
++            <xs:attribute name="args" type="xs:string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="handlerType">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="bash"/>
++      <xs:enumeration value="bash-inline"/>
++      <xs:enumeration value="python"/>
++      <xs:enumeration value="return-code"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Layout container -->
++  <xs:element name="layout">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element ref="tml:menu-bar" minOccurs="0"/>
++        <xs:element ref="tml:list" minOccurs="0"/>
++        <xs:element ref="tml:preview" minOccurs="0"/>
++        <xs:element ref="tml:status-bar" minOccurs="0"/>
++        <xs:element ref="tml:bindings" minOccurs="0"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="renderer" type="xs:string" default="fzf"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Menu Bar -->
++  <xs:element name="menu-bar">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="logo" type="xs:string" minOccurs="0"/>
++        <xs:element ref="tml:tab-group" minOccurs="0"/>
++        <xs:element ref="tml:dropdown" minOccurs="0" maxOccurs="unbounded"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="position" type="xs:string" default="header"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Tab Group -->
++  <xs:element name="tab-group">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element ref="tml:tab" maxOccurs="unbounded"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Tab -->
++  <xs:element name="tab">
++    <xs:complexType mixed="true">
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="shortcut" type="xs:string"/>
++      <xs:attribute name="shortcut-prefix" type="xs:string"/>
++      <xs:attribute name="active" type="xs:string"/>
++      <xs:attribute name="on-select" type="xs:string"/>
++      <xs:attribute name="style" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Dropdown -->
++  <xs:element name="dropdown">
++    <xs:complexType mixed="true">
++      <xs:sequence>
++        <xs:element name="option" minOccurs="0" maxOccurs="unbounded">
++          <xs:complexType mixed="true">
++            <xs:attribute name="value" type="xs:string" use="required"/>
++            <xs:attribute name="icon" type="xs:string"/>
++            <xs:attribute name="disabled" type="xs:string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="shortcut" type="xs:string"/>
++      <xs:attribute name="on-select" type="xs:string"/>
++      <xs:attribute name="on-open" type="xs:string"/>
++      <xs:attribute name="on-close" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- List -->
++  <xs:element name="list">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element ref="tml:item-template"/>
++        <xs:element name="on-empty" type="xs:string" minOccurs="0"/>
++        <xs:element name="on-load" type="xs:string" minOccurs="0"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="source" type="xs:string"/>
++      <xs:attribute name="empty-text" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Item Template -->
++  <xs:element name="item-template">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element ref="tml:text" minOccurs="0" maxOccurs="unbounded"/>
++        <xs:element name="on-enter" type="xs:string" minOccurs="0"/>
++        <xs:element name="on-hover" type="xs:string" minOccurs="0"/>
++      </xs:sequence>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Text -->
++  <xs:element name="text">
++    <xs:complexType mixed="true">
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="format" type="xs:string"/>
++      <xs:attribute name="visible" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Preview -->
++  <xs:element name="preview">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="position" type="xs:string" default="right"/>
++      <xs:attribute name="width" type="xs:string" default="50%"/>
++      <xs:attribute name="scroll" type="xs:boolean" default="true"/>
++      <xs:attribute name="border" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Status Bar -->
++  <xs:element name="status-bar">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="position" type="xs:string" default="bottom"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Bindings -->
++  <xs:element name="bindings">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="bind" maxOccurs="unbounded">
++          <xs:complexType>
++            <xs:attribute name="key" type="xs:string" use="required"/>
++            <xs:attribute name="handler" type="xs:string"/>
++            <xs:attribute name="action" type="xs:string"/>
++            <xs:attribute name="args" type="xs:string"/>
++            <xs:attribute name="on" type="xs:string"/>
++            <xs:attribute name="target" type="xs:string"/>
++            <xs:attribute name="alias" type="xs:string"/>
++            <xs:attribute name="condition" type="xs:string"/>
++            <xs:attribute name="return-code" type="xs:integer"/>
++          </xs:complexType>
++        </xs:element>
++        <xs:element ref="tml:bind-layer" minOccurs="0" maxOccurs="unbounded"/>
++      </xs:sequence>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Bind Layer -->
++  <xs:element name="bind-layer">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="bind" maxOccurs="unbounded">
++          <xs:complexType>
++            <xs:attribute name="key" type="xs:string" use="required"/>
++            <xs:attribute name="action" type="xs:string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="enabled" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- ═══════════════════════════════════════════════════════════════
++       BROWSER MODE ELEMENTS
++       For terminal browser / free-form layout rendering
++       ═══════════════════════════════════════════════════════════════ -->
++
++  <!-- Box - Positioned container for free-form layout -->
++  <xs:element name="box">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="x" type="xs:string" default="0"/>
++      <xs:attribute name="y" type="xs:string" default="0"/>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="height" type="xs:string"/>
++      <xs:attribute name="border" type="tml:borderStyle"/>
++      <xs:attribute name="padding" type="xs:string"/>
++      <xs:attribute name="margin" type="xs:string"/>
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="visible" type="xs:string" default="true"/>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="borderStyle">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="none"/>
++      <xs:enumeration value="single"/>
++      <xs:enumeration value="double"/>
++      <xs:enumeration value="rounded"/>
++      <xs:enumeration value="bold"/>
++      <xs:enumeration value="dashed"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Link - Hyperlink for navigation -->
++  <xs:element name="link">
++    <xs:complexType mixed="true">
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="url" type="xs:string"/>
++      <xs:attribute name="href" type="xs:string"/>
++      <xs:attribute name="target" type="xs:string"/>
++      <xs:attribute name="on-select" type="xs:string"/>
++      <xs:attribute name="on-hover" type="xs:string"/>
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="focusable" type="xs:boolean" default="true"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Viewport - Scrollable content region -->
++  <xs:element name="viewport">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="height" type="xs:string"/>
++      <xs:attribute name="scroll" type="tml:scrollType" default="vertical"/>
++      <xs:attribute name="scroll-x" type="xs:string" default="0"/>
++      <xs:attribute name="scroll-y" type="xs:string" default="0"/>
++      <xs:attribute name="on-scroll" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="scrollType">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="none"/>
++      <xs:enumeration value="vertical"/>
++      <xs:enumeration value="horizontal"/>
++      <xs:enumeration value="both"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Focusable - Element that can receive keyboard focus -->
++  <xs:element name="focusable">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="order" type="xs:integer"/>
++      <xs:attribute name="group" type="xs:string"/>
++      <xs:attribute name="on-focus" type="xs:string"/>
++      <xs:attribute name="on-blur" type="xs:string"/>
++      <xs:attribute name="on-enter" type="xs:string"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Image - Terminal image display -->
++  <xs:element name="image">
++    <xs:complexType>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="src" type="xs:string" use="required"/>
++      <xs:attribute name="alt" type="xs:string"/>
++      <xs:attribute name="fallback" type="xs:string"/>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="height" type="xs:string"/>
++      <xs:attribute name="display" type="tml:imageDisplay" default="auto"/>
++      <xs:attribute name="align" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="imageDisplay">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="auto"/>
++      <xs:enumeration value="kitty"/>
++      <xs:enumeration value="sixel"/>
++      <xs:enumeration value="iterm"/>
++      <xs:enumeration value="ascii"/>
++      <xs:enumeration value="braille"/>
++      <xs:enumeration value="block"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Form - Container for input elements -->
++  <xs:element name="form">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="on-submit" type="xs:string"/>
++      <xs:attribute name="on-change" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Input - Text input field -->
++  <xs:element name="input">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="validation" minOccurs="0">
++          <xs:complexType>
++            <xs:attribute name="pattern" type="xs:string"/>
++            <xs:attribute name="message" type="xs:string"/>
++            <xs:attribute name="required" type="xs:boolean"/>
++            <xs:attribute name="min-length" type="xs:integer"/>
++            <xs:attribute name="max-length" type="xs:integer"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="type" type="tml:inputType" default="text"/>
++      <xs:attribute name="name" type="xs:string"/>
++      <xs:attribute name="value" type="xs:string"/>
++      <xs:attribute name="placeholder" type="xs:string"/>
++      <xs:attribute name="autofocus" type="xs:boolean"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++      <xs:attribute name="on-change" type="xs:string"/>
++      <xs:attribute name="on-submit" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="inputType">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="text"/>
++      <xs:enumeration value="password"/>
++      <xs:enumeration value="number"/>
++      <xs:enumeration value="search"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Button - Clickable button -->
++  <xs:element name="button">
++    <xs:complexType mixed="true">
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="type" type="xs:string" default="button"/>
++      <xs:attribute name="on-click" type="xs:string"/>
++      <xs:attribute name="on-focus" type="xs:string"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="shortcut" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Select - Dropdown select -->
++  <xs:element name="select">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="option" maxOccurs="unbounded">
++          <xs:complexType mixed="true">
++            <xs:attribute name="value" type="xs:string" use="required"/>
++            <xs:attribute name="selected" type="xs:boolean"/>
++            <xs:attribute name="disabled" type="xs:string"/>
++            <xs:attribute name="icon" type="xs:string"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="name" type="xs:string"/>
++      <xs:attribute name="default" type="xs:string"/>
++      <xs:attribute name="on-change" type="xs:string"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Toggle - On/off switch -->
++  <xs:element name="toggle">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="chars" minOccurs="0">
++          <xs:complexType>
++            <xs:attribute name="on" type="xs:string" default="◉"/>
++            <xs:attribute name="off" type="xs:string" default="○"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="label" type="xs:string"/>
++      <xs:attribute name="value" type="xs:string"/>
++      <xs:attribute name="on-toggle" type="xs:string"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Checkbox -->
++  <xs:element name="checkbox">
++    <xs:complexType>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="label" type="xs:string"/>
++      <xs:attribute name="checked" type="xs:string"/>
++      <xs:attribute name="on-change" type="xs:string"/>
++      <xs:attribute name="disabled" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Modal - Popup dialog -->
++  <xs:element name="modal">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:any minOccurs="0" maxOccurs="unbounded" processContents="lax"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="title" type="xs:string"/>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="height" type="xs:string"/>
++      <xs:attribute name="backdrop" type="xs:string"/>
++      <xs:attribute name="closable" type="xs:boolean" default="true"/>
++      <xs:attribute name="on-open" type="xs:string"/>
++      <xs:attribute name="on-close" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Confirm - Confirmation dialog -->
++  <xs:element name="confirm">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="button-yes" type="xs:string" minOccurs="0"/>
++        <xs:element name="button-no" type="xs:string" minOccurs="0"/>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="title" type="xs:string"/>
++      <xs:attribute name="message" type="xs:string"/>
++      <xs:attribute name="on-yes" type="xs:string"/>
++      <xs:attribute name="on-no" type="xs:string"/>
++      <xs:attribute name="on-cancel" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Prompt - Input dialog -->
++  <xs:element name="prompt">
++    <xs:complexType>
++      <xs:attribute name="id" type="xs:string" use="required"/>
++      <xs:attribute name="title" type="xs:string"/>
++      <xs:attribute name="placeholder" type="xs:string"/>
++      <xs:attribute name="default" type="xs:string"/>
++      <xs:attribute name="on-submit" type="xs:string"/>
++      <xs:attribute name="on-cancel" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Progress Bar -->
++  <xs:element name="progress-bar">
++    <xs:complexType>
++      <xs:sequence>
++        <xs:element name="chars" minOccurs="0">
++          <xs:complexType>
++            <xs:element name="filled" type="xs:string" minOccurs="0"/>
++            <xs:element name="empty" type="xs:string" minOccurs="0"/>
++            <xs:element name="partial" type="xs:string" minOccurs="0"/>
++          </xs:complexType>
++        </xs:element>
++      </xs:sequence>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="value" type="xs:string" default="0"/>
++      <xs:attribute name="max" type="xs:string" default="100"/>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="show-percent" type="xs:boolean" default="true"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Spinner - Loading indicator -->
++  <xs:element name="spinner">
++    <xs:complexType>
++      <xs:attribute name="id" type="xs:string"/>
++      <xs:attribute name="style" type="tml:spinnerStyle" default="dots"/>
++      <xs:attribute name="text" type="xs:string"/>
++      <xs:attribute name="visible" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <xs:simpleType name="spinnerStyle">
++    <xs:restriction base="xs:string">
++      <xs:enumeration value="dots"/>
++      <xs:enumeration value="line"/>
++      <xs:enumeration value="circle"/>
++      <xs:enumeration value="bounce"/>
++      <xs:enumeration value="bar"/>
++    </xs:restriction>
++  </xs:simpleType>
++
++  <!-- Divider / Horizontal Rule -->
++  <xs:element name="hr">
++    <xs:complexType>
++      <xs:attribute name="style" type="xs:string"/>
++      <xs:attribute name="char" type="xs:string" default="─"/>
++      <xs:attribute name="width" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++  <!-- Spacer - Empty space -->
++  <xs:element name="spacer">
++    <xs:complexType>
++      <xs:attribute name="width" type="xs:string"/>
++      <xs:attribute name="height" type="xs:string"/>
++    </xs:complexType>
++  </xs:element>
++
++</xs:schema>
+--
+2.50.1 (Apple Git-155)

@@ -1,0 +1,42 @@
+From 0aa4ef9a4fe39c18b3d4dfa739c9f6b44033532c Mon Sep 17 00:00:00 2001
+From: metacritical <pankajdoharey@gmail.com>
+Date: Tue, 23 Dec 2025 23:13:23 +0530
+Subject: [PATCH] fix(catalog): Correct spinner text - pages 1-10, then 11-20
+
+Reverted initial_pages to 10 for better startup experience.
+Updated spinner text to dynamically show pages 1-${initial_pages}.
+---
+ modules/catalog.sh | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/modules/catalog.sh b/modules/catalog.sh
+index d6f703a..f67bb9a 100644
+--- a/modules/catalog.sh
++++ b/modules/catalog.sh
+@@ -109,7 +109,7 @@ display_catalog() {
+         # Phase 2: Background fetch pages 6-15 (10 more pages)
+         # Midpoint triggers: At page 10→fetch 16-25, page 20→fetch 26-35, etc.
+         
+-        local initial_pages=5           # Load 5 pages upfront (250 results)
++        local initial_pages=10          # Load 10 pages upfront (500 results)
+         local batch_size=10
+         local page_pids=()
+         local page_files=()
+@@ -159,12 +159,12 @@ display_catalog() {
+                     fi
+                 done
+                 [ "$any_running" = false ] && break
+-                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Loading ${PINK}${source_name}${RESET} (pages 1-5)..."
++                printf "\r${MAGENTA}${spinner_chars[$spinner_idx1]}${CYAN}${spinner_chars[$spinner_idx2]}${RESET} Loading ${PINK}${source_name}${RESET} (pages 1-${initial_pages})..."
+                 spinner_idx1=$(( (spinner_idx1 - 1 + ${#spinner_chars[@]}) % ${#spinner_chars[@]} ))
+                 spinner_idx2=$(( (spinner_idx2 + 1) % ${#spinner_chars[@]} ))
+                 sleep 0.1
+             done
+-            printf "\r${GREEN}✓${RESET} Loaded ${PINK}${source_name}${RESET} (pages 1-5)                    \n"
++            printf "\r${GREEN}✓${RESET} Loaded ${PINK}${source_name}${RESET} (pages 1-${initial_pages})                    \n"
+         ) &
+         local spinner_pid=$!
+         
+-- 
+2.50.1 (Apple Git-155)
+

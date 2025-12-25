@@ -1,0 +1,125 @@
+From c2d473a2d757e14043a5f3cb9ad2517843a9af20 Mon Sep 17 00:00:00 2001
+From: metacritical <pankajdoharey@gmail.com>
+Date: Tue, 23 Dec 2025 19:39:23 +0530
+Subject: [PATCH] feat(tml): Migrate main catalog to TML parser
+
+- Created main-catalog.xml combining FZF_DEFAULT_OPTS and fzf call
+- Layout includes: layout, border, prompt, header, preview, colors, bindings
+- Replaced 20-line FZF_DEFAULT_OPTS with 9-line TML integration
+- All FZF configs now use TML parser for consistency
+---
+ modules/ui/catalog/fzf_catalog.sh   | 29 +++++-----------
+ modules/ui/layouts/main-catalog.xml | 54 ++++++++++-------------------
+ 2 files changed, 27 insertions(+), 56 deletions(-)
+
+diff --git a/modules/ui/catalog/fzf_catalog.sh b/modules/ui/catalog/fzf_catalog.sh
+index b57a927..535d259 100644
+--- a/modules/ui/catalog/fzf_catalog.sh
++++ b/modules/ui/catalog/fzf_catalog.sh
+@@ -214,26 +214,15 @@ show_fzf_catalog() {
+         page_suffix="+"  # More pages might exist
+     fi
+
+-    export FZF_DEFAULT_OPTS="
+-      --ansi
+-      --color=${fzf_colors}
+-      --layout=reverse
+-
+-      --border=rounded
+-      --margin=1
+-      --padding=1
+-      --info=hidden
+-      --prompt=\"< Page ${current_page}/${total_pages}${page_suffix} > \"
+-      --pointer='➤'
+-      --color=pointer:#ff79c6:bold
+-      --header=\"$menu_header\"
+-      --header-first
+-      --preview-window=right:50%:wrap:border-left
+-      --border-label=\" ⌨ Enter:Select  Ctrl+J/K:Nav  </>:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season \"
+-      --border-label-pos=bottom
+-      --bind='ctrl-/:toggle-preview'
+-      --bind='ctrl-d:preview-down,ctrl-u:preview-up'
+-    "
++    # ════════════════════════════════════════════════════════════════
++    # TML Parser Integration (Main Catalog)
++    # ════════════════════════════════════════════════════════════════
++    export menu_header current_page total_pages page_suffix
++    source "${UI_DIR}/tml/parser/tml_parser.sh"
++    tml_parse "${UI_DIR}/layouts/main-catalog.xml"
++    local tml_fzf_args=$(tml_get_fzf_args)
++    export FZF_DEFAULT_OPTS="--ansi --color=${fzf_colors} ${tml_fzf_args}"
++    # OLD: export FZF_DEFAULT_OPTS="--ansi --color=... --layout=reverse ..."
+
+
+
+diff --git a/modules/ui/layouts/main-catalog.xml b/modules/ui/layouts/main-catalog.xml
+index 0abbb61..356229d 100644
+--- a/modules/ui/layouts/main-catalog.xml
++++ b/modules/ui/layouts/main-catalog.xml
+@@ -1,45 +1,27 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!--
+-  Main Catalog Layout
+-  Used for browsing movies/shows with preview panel
++  Main Catalog Layout (Stage 1)
++  Complete FZF configuration combining FZF_DEFAULT_OPTS and fzf call
++  Variables: menu_header, current_page, total_pages, page_suffix
+ -->
+-<fzf-layout id="main-catalog" name="Content Catalog">
+-  <layout direction="reverse" height="100%" margin="1" padding="1" info="hidden"/>
+-  <preview position="right" size="50%" wrap="true" border="border-left"
+-            script="${UI_DIR:-}/catalog/preview_fzf.sh {2..}"/>
++<fzf-layout id="main-catalog" name="Main Catalog">
++  <!-- Layout from FZF_DEFAULT_OPTS -->
++  <layout direction="reverse" margin="1" padding="1" info="hidden"/>
++  <border style="rounded"
++          label=" ⌨ Enter:Select  Ctrl+J/K:Nav  &lt;/&gt;:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season "
++          label-pos="bottom"/>
++  <prompt pointer="➤">&lt; Page ${current_page:-1}/${total_pages:-1}${page_suffix:-} &gt; </prompt>
+   <header first="true">${menu_header:-}</header>
+-  <border style="rounded" label=" ⌨ Enter:Select  Ctrl+J/K:Nav  &lt;/&gt;:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season " label-pos="bottom"/>
+-  <prompt pointer="➤">&lt; Page ${current_page:-1}/${total_pages:-1}${page_suffix:-} &gt;</prompt>
+-  <colors theme="default">
+-    <color name="fg" value="#6b7280"/>
+-    <color name="bg" value="#1e1e2e"/>
+-    <color name="hl" value="#818cf8"/>
+-    <color name="fg+" value="#ffffff"/>
+-    <color name="bg+" value="#5865f2"/>
+-    <color name="hl+" value="#c4b5fd"/>
+-    <color name="info" value="#6b7280"/>
+-    <color name="prompt" value="#5eead4"/>
+-    <color name="pointer" value="#ff79c6"/>
+-    <color name="marker" value="#818cf8"/>
+-    <color name="spinner" value="#818cf8"/>
+-    <color name="header" value="#a78bfa"/>
+-    <color name="border" value="#5865f2"/>
+-    <color name="gutter" value="#1e1e2e"/>
+-  </colors>
+-  <bindings delimiter="&#x09;" with-nth="1" expect="ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,&gt;,&lt;,ctrl-right,ctrl-left">
+-    <bind key="ctrl-e" action="execute" script="${UI_DIR:-}/pickers/season_picker.sh {2..}" reload="true"/>
++  <preview position="right" size="50%" wrap="true" border="border-left"/>
++
++  <!-- Colors: theme integration -->
++  <colors theme="dynamic"/>
++
++  <!-- Bindings from both FZF_DEFAULT_OPTS and fzf call -->
++  <bindings delimiter="&#x09;" with-nth="1"
++            expect="ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-r,ctrl-g,ctrl-f,enter,&gt;,&lt;,ctrl-right,ctrl-left">
+     <bind key="ctrl-/" action="toggle-preview"/>
+     <bind key="ctrl-d" action="preview-down"/>
+     <bind key="ctrl-u" action="preview-up"/>
+-    <bind key="ctrl-o" return-code="101"/>
+-    <bind key="ctrl-s" return-code="102"/>
+-    <bind key="ctrl-w" return-code="103"/>
+-    <bind key="ctrl-t" return-code="104"/>
+-    <bind key="ctrl-v" return-code="105"/>
+-    <bind key="ctrl-g" return-code="106"/>
+-    <bind key="ctrl-f" return-code="110"/>
+-    <bind key="ctrl-r" return-code="109"/>
+-    <bind key="&gt;" return-code="107"/>
+-    <bind key="&lt;" return-code="108"/>
+   </bindings>
+ </fzf-layout>
+--
+2.50.1 (Apple Git-155)
+
