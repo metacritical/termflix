@@ -1651,6 +1651,8 @@ EOF
             "--cache-secs=300"         # 5 minutes cache (continuous buffering)
             "--demuxer-max-bytes=512M" # 512MB demuxer buffer
             "--demuxer-max-back-bytes=256M" # 256MB backward buffer for seeking
+            "--terminal=yes"           # Enable terminal output for AV: timestamps
+            "--msg-level=all=status"   # Output status messages (AV: HH:MM:SS)
             "$stream_url"
         )
         if [ -n "$subtitle_arg" ]; then
@@ -1664,6 +1666,7 @@ EOF
         # Use TMPDIR for logs
         local mpv_log="${TMPDIR:-/tmp}/termflix_mpv_debug.log"
         echo -e "DEBUG: Launching mpv to log: $mpv_log"
+        # Launch MPV - append output to log file for watch history tracking
         mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
         player_pid=$!
     fi
