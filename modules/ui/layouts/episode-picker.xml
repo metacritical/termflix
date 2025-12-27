@@ -7,9 +7,9 @@
 <fzf-layout id="episode-picker" name="Episode Picker">
   <layout direction="reverse" height="100%" margin="1" padding="1" info="default"/>
   <border style="rounded" label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " label-pos="bottom"/>
-  <prompt pointer="➤">&gt; </prompt>
-  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1} →</header>
-  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <prompt pointer="➤"></prompt>
+  <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1}</header>
+  <preview position="left" size="55%" wrap="true" border="border-right" script="ep_no=$(echo {} | cut -d&quot;|&quot; -f1); ${SCRIPT_DIR}/preview_episode.sh &quot;$ep_no&quot;"/>
   <colors theme="dynamic"/>
   <bindings delimiter="|" with-nth="2" expect="enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc">
   </bindings>

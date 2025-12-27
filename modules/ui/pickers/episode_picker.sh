@@ -56,6 +56,42 @@ if [[ ! -f "$eztv_cache" ]]; then
 fi
 
 # 3. Generate Episode List for FZF
+# Get preview percentage from XML template
+LAYOUT_XML="${UI_DIR}/layouts/episode-picker.xml"
+preview_pct=$(xmllint --xpath "string(//fzf-layout/preview/@size)" "$LAYOUT_XML" 2>/dev/null | tr -d '%')
+[[ -z "$preview_pct" || ! "$preview_pct" =~ ^[0-9]+$ ]] && preview_pct=55
+
+# Calculate list width: terminal_width * (100 - preview_pct) / 100
+get_term_cols() {
+    local cols=""
+    cols=$(stty size < /dev/tty 2>/dev/null | awk '{print $2}')
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols=$(tput cols 2>/dev/null)
+    fi
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols="${COLUMNS:-}"
+    fi
+    [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]] && cols=100
+    echo "$cols"
+}
+term_cols=$(get_term_cols)
+list_width=$(( (term_cols * (100 - preview_pct)) / 100 ))
+
+# Dynamic title width calculation
+# Fixed overhead: status(2) + space(1) + ep(3) + " │ "(3) + " │ "(3) + date(width) = 12 + date_width
+if [[ $list_width -lt 70 ]]; then
+    date_width=6
+    date_fmt="+%d %b"
+else
+    date_width=11
+    date_fmt="+%d %b %Y"
+fi
+FIXED_OVERHEAD=$((12 + date_width))
+
+# Title width = available - fixed overhead
+title_max=$((list_width - FIXED_OVERHEAD))
+[[ $title_max -lt 10 ]] && title_max=10
+
 today_epoch=$(date +%s)
 episode_count=$(echo "$episodes_json" | wc -l | tr -d ' ')
 episode_list=""
@@ -64,24 +100,27 @@ while read -r e; do
     e_name=$(echo "$e" | jq -r '.name // "TBA"')
     e_date=$(echo "$e" | jq -r '.air_date // ""')
     
-    # Check if aired (future = locked)
+    # Lock icon for future episodes
     lock_icon="  "
-    formatted_date=""
+    formatted_date=$(printf "%-${date_width}s" "TBA")
     if [[ -n "$e_date" && "$e_date" != "null" ]]; then
         ep_epoch=$(date -j -f "%Y-%m-%d" "$e_date" +%s 2>/dev/null || date -d "$e_date" +%s 2>/dev/null || echo "0")
-        # Format date as "06 Nov 2025"
-        formatted_date=$(date -j -f "%Y-%m-%d" "$e_date" "+%d %b %Y" 2>/dev/null || date -d "$e_date" "+%d %b %Y" 2>/dev/null || echo "$e_date")
+        formatted_date=$(date -j -f "%Y-%m-%d" "$e_date" "$date_fmt" 2>/dev/null || date -d "$e_date" "$date_fmt" 2>/dev/null || echo "$e_date")
+        formatted_date=$(printf "%-${date_width}s" "$formatted_date")
         [[ "$ep_epoch" -gt "$today_epoch" ]] && lock_icon="🔒"
     fi
     
-    # Pad episode number
+    # Episode number
     ep_str=$(printf "E%02d" "$e_num")
     
-    # Format display line: [lock] E01 | Title                    | Date
-    # Lock on left, then episode, title padded, date on right
-    display_line=$(printf "%s %-4s │ %-30s │ %s" "$lock_icon" "$ep_str" "$e_name" "$formatted_date")
+    # Truncate title only if it exceeds column width
+    if [[ ${#e_name} -gt $title_max ]]; then
+        e_name="${e_name:0:$((title_max-3))}..."
+    fi
     
-    # Store as: idx|display_line (only idx is hidden)
+    # Format with proper column widths
+    display_line=$(printf "%s %s │ %-${title_max}s │ %s" "$lock_icon" "$ep_str" "$e_name" "$formatted_date")
+    
     episode_list+="${e_num}|${display_line}"$'\n'
 done <<< "$episodes_json"
 
@@ -117,12 +156,7 @@ export SCRIPT_DIR
 
 source "${UI_DIR}/tml/parser/tml_parser.sh"
 tml_parse "${UI_DIR}/layouts/episode-picker.xml"
-FZF_ARGS=$(tml_get_fzf_args)
-
-# Preview script added inline (can't be in XML due to special chars)
-PREVIEW_CMD="ep_no=\$(echo {} | cut -d'|' -f1); ${SCRIPT_DIR}/preview_episode.sh \"\$ep_no\""
-
-RESULTS=$(printf '%s' "$episode_list" | eval "fzf --ansi $FZF_ARGS --preview \"$PREVIEW_CMD\"")
+RESULTS=$(printf '%s' "$episode_list" | tml_run_fzf --ansi)
 
 # ════════════════════════════════════════════════════════════════
 # OLD HARDCODED FZF CONFIG (preserved for reference)
