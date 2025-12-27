@@ -472,6 +472,17 @@ tml_get_expect_keys() {
     echo "$TML_EXPECT_KEYS"
 }
 
+tml_run_fzf() {
+    local extra_args="$*"
+    local fzf_args
+    fzf_args="$(tml_get_fzf_args)"
+    if [[ -n "$extra_args" ]]; then
+        eval "fzf $fzf_args $extra_args"
+    else
+        eval "fzf $fzf_args"
+    fi
+}
+
 # ═══════════════════════════════════════════════════════════════
 # CLI
 # ═══════════════════════════════════════════════════════════════
@@ -515,4 +526,4 @@ if [[ "${BASH_SOURCE[0]:-$0}" == "${0:-}" ]]; then
 fi
 
 export -f tml_attr tml_text tml_count tml_exists tml_eval tml_eval_bool tml_shell_escape
-export -f tml_parse tml_get_fzf_args tml_get_expect_keys tml_render_header
+export -f tml_parse tml_get_fzf_args tml_get_expect_keys tml_render_header tml_run_fzf

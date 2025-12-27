@@ -5,14 +5,20 @@
 
 clear
 
+RAW_INPUT="$1"
+
 if [[ "$1" == *"|"* ]]; then
     # Probably raw metadata: index|source|name|...
     TITLE=$(echo "$1" | cut -d'|' -f3)
 else
     TITLE="$1"
 fi
-# Robust IMDB ID extraction: Scan all arguments starting from $2
+# Robust IMDB ID extraction: try raw input, then scan all arguments starting from $2
 IMDB_ID=""
+if [[ "$RAW_INPUT" =~ tt[0-9]{7,} ]]; then
+    IMDB_ID="${BASH_REMATCH[0]}"
+fi
+
 shift 1
 for arg in "$@"; do
     if [[ "$arg" == tt* ]]; then
@@ -51,10 +57,19 @@ API_DIR="${UI_DIR}/../api"
 # Sanitize input for slug
 CLEAN_TITLE=$(echo "$TITLE" | sed -E 's/\[SERIES\]//gi; s/\((19|20)[0-9]{2}\)//g; s/[[:space:]]+(19|20)[0-9]{2}//g; s/[[:space:]]+$//; s/^[[:space:]]+//')
 SLUG=$(echo -n "$CLEAN_TITLE" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' | head -c 16)
-SEASON_FILE="/tmp/tf_s_${SLUG}"
+
+SEASON_FILE_LEGACY="/tmp/tf_s_${SLUG}"
+SEASON_FILE="$SEASON_FILE_LEGACY"
+if [[ -n "$IMDB_ID" ]]; then
+    SEASON_FILE="/tmp/tf_s_${IMDB_ID#tt}"
+fi
 
 # Determine current season
-CURRENT_SEASON=$(cat "$SEASON_FILE" 2>/dev/null || echo 1)
+if [[ -f "$SEASON_FILE" ]]; then
+    CURRENT_SEASON=$(cat "$SEASON_FILE" 2>/dev/null || echo 1)
+else
+    CURRENT_SEASON=$(cat "$SEASON_FILE_LEGACY" 2>/dev/null || echo 1)
+fi
 
 # Fetch total seasons from TMDB (SILENTLY to preserve background)
 if tmdb_configured; then
@@ -105,9 +120,7 @@ export total_seasons
 # Source TML parser and generate FZF args from layout
 source "${UI_DIR}/tml/parser/tml_parser.sh"
 tml_parse "${UI_DIR}/layouts/season-picker.xml"
-FZF_ARGS=$(tml_get_fzf_args)
-
-SELECTED=$(printf "$season_list" | eval "fzf $FZF_ARGS" 2>>/tmp/season_picker.log)
+SELECTED=$(printf "$season_list" | tml_run_fzf 2>>/tmp/season_picker.log)
 
 # ════════════════════════════════════════════════════════════════
 # OLD HARDCODED FZF CONFIG (preserved for reference)
@@ -135,6 +148,9 @@ if [[ -n "$SELECTED" ]]; then
     NEW_SEASON=$(echo "$SELECTED" | grep -oE '[0-9]+')
     if [[ -n "$NEW_SEASON" ]]; then
         echo "$NEW_SEASON" > "$SEASON_FILE"
+        if [[ "$SEASON_FILE" != "$SEASON_FILE_LEGACY" ]]; then
+            echo "$NEW_SEASON" > "$SEASON_FILE_LEGACY"
+        fi
         echo "$NEW_SEASON" # Output to stdout for caller
         echo "[$(date)] Saved season $NEW_SEASON to $SEASON_FILE" >> /tmp/season_picker.log 2>/dev/null
     fi

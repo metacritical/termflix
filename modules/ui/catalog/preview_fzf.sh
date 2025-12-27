@@ -10,6 +10,9 @@
 input_line="$1"
 [[ -z "$input_line" ]] && exit 0
 
+# Preview gets closed often; ignore SIGPIPE to avoid noisy errors.
+trap '' PIPE
+
 # Resolve Script Directory (always resolve, needed for module paths)
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
 # Follow symlinks if any
@@ -44,6 +47,36 @@ BLUE="${THEME_INFO:-$C_INFO}"
 GRAY="${THEME_FG_MUTED:-$C_MUTED}"
 ORANGE="${THEME_ORANGE:-$C_ORANGE}"
 PURPLE="${THEME_PURPLE:-$C_PURPLE}"
+
+get_term_cols() {
+    local cols=""
+    cols=$(stty size < /dev/tty 2>/dev/null | awk '{print $2}')
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols=$(tput cols 2>/dev/null)
+    fi
+    if [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]]; then
+        cols="${COLUMNS:-}"
+    fi
+    [[ -z "$cols" || ! "$cols" =~ ^[0-9]+$ ]] && cols=100
+    echo "$cols"
+}
+
+get_preview_cols() {
+    local cols="${FZF_PREVIEW_COLUMNS:-}"
+    if [[ -n "$cols" && "$cols" =~ ^[0-9]+$ && "$cols" -ge 20 ]]; then
+        echo "$cols"
+        return
+    fi
+    local term_cols
+    term_cols=$(get_term_cols)
+    local layout_file="${UI_DIR}/layouts/main-catalog.tml"
+    local preview_pct
+    preview_pct=$(xmllint --xpath "string(//preview/@size)" "$layout_file" 2>/dev/null | tr -d '%')
+    [[ -z "$preview_pct" || ! "$preview_pct" =~ ^[0-9]+$ ]] && preview_pct=50
+    cols=$(( (term_cols * preview_pct) / 100 ))
+    [[ "$cols" -lt 20 ]] && cols=60
+    echo "$cols"
+}
 
 # --- 3. Parse Input ---
 # Format: index|Source|Title|RestOfData... (after TAB delimiter change)
@@ -98,12 +131,11 @@ total_seasons=""
 latest_season_num=""
 episodes_list_raw=""
 movie_language=""
+preview_cols="$(get_preview_cols)"
 
-# Season Persistence in Preview (Stage 1)
-# Title-based hash to remember season selection per show
+# Season Persistence (Stage 1)
+# Title-based hash to remember season selection per show (legacy fallback)
 title_slug=$(echo -n "$clean_title_for_api" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' | head -c 16)
-season_file="/tmp/tf_s_${title_slug}"
-selected_preview_season=$(cat "$season_file" 2>/dev/null || echo "")
 
 if [[ "$source" == "COMBINED" ]]; then
     # COMBINED format: source|title|sources|qualities|seeds|sizes|magnets|poster|imdb|genre|count
@@ -119,6 +151,21 @@ else
     poster_url=$(echo "$rest" | cut -d'|' -f5)
     imdb_id=$(echo "$rest" | cut -d'|' -f6)
     [[ "$imdb_id" == tt* ]] || imdb_id=""
+fi
+
+# Prefer IMDB-based season key when available; fallback to title slug.
+season_file_legacy="/tmp/tf_s_${title_slug}"
+season_file=""
+if [[ -n "$imdb_id" ]]; then
+    season_file="/tmp/tf_s_${imdb_id#tt}"
+    if [[ -f "$season_file" ]]; then
+        selected_preview_season=$(cat "$season_file" 2>/dev/null || echo "")
+    else
+        selected_preview_season=$(cat "$season_file_legacy" 2>/dev/null || echo "")
+    fi
+else
+    season_file="$season_file_legacy"
+    selected_preview_season=$(cat "$season_file" 2>/dev/null || echo "")
 fi
 
 # Fetch Rich Metadata
@@ -147,7 +194,14 @@ if [[ -f "$TMDB_MODULE" ]]; then
                 tmdb_id=$(echo "$metadata_json" | python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))" 2>/dev/null)
                 if [[ -n "$tmdb_id" && "$tmdb_id" != "None" ]]; then
                     full_details=$(get_tv_details "$tmdb_id" 2>/dev/null)
+                    
+                    # DEBUG LOGGING
+                    echo "--- DEBUG $(date) ---" >> /tmp/termflix_debug.log
+                    echo "TMDB ID: $tmdb_id" >> /tmp/termflix_debug.log
+                    echo "Full Details Length: ${#full_details}" >> /tmp/termflix_debug.log
+                    
                     total_seasons=$(echo "$full_details" | python3 -c "import sys, json; print(json.load(sys.stdin).get('number_of_seasons', ''))" 2>/dev/null)
+                    echo "Total Seasons: $total_seasons" >> /tmp/termflix_debug.log
                     
                     # Extract genres from TMDB for TV shows
                     if [[ -z "$movie_genre" || "$movie_genre" == "N/A" || "$movie_genre" == "Shows" ]]; then
@@ -158,61 +212,173 @@ if [[ -f "$TMDB_MODULE" ]]; then
                     # Use persistent season if available, else latest
                     if [[ -n "$selected_preview_season" ]] && [ "$selected_preview_season" -le "${total_seasons:-1}" ]; then
                         latest_season_num="$selected_preview_season"
+                        echo "Using selected season: $latest_season_num" >> /tmp/termflix_debug.log
                     else
                         latest_season_num=$(echo "$full_details" | python3 -c "import sys, json; data=json.load(sys.stdin); seasons=[s for s in data.get('seasons', []) if s.get('season_number', 0) > 0]; print(seasons[-1]['season_number'] if seasons else '')" 2>/dev/null)
                         echo "$latest_season_num" > "$season_file"
+                        if [[ -n "$imdb_id" ]]; then
+                            echo "$latest_season_num" > "$season_file_legacy"
+                        fi
+                        echo "Calculated latest season: $latest_season_num" >> /tmp/termflix_debug.log
                     fi
                     
                     if [[ -n "$latest_season_num" ]]; then
                         season_details=$(get_tv_season_details "$tmdb_id" "$latest_season_num" 2>/dev/null)
+                        echo "Season Details Length: ${#season_details}" >> /tmp/termflix_debug.log
                         # Enhanced episode format with air date and potential watch status
-                        episodes_list_raw=$(echo "$season_details" | python3 -c "
-import sys, json
+                        # Force UTF-8 encoding for python to handle emojis safely
+                        export PYTHONIOENCODING=utf-8
+                        episodes_list_raw=$(FZF_COLS="${preview_cols}" python3 -c "
+import sys, json, os
 from datetime import datetime
 
 # ANSI color codes matching theme
-ORANGE = '\033[38;5;208m'  # Episode numbers
-WHITE = '\033[97m'
+ORANGE = '\033[38;5;208m'
+WHITE = '\033[97m'  
 CYAN = '\033[36m'
 GREEN = '\033[32m'
 GRAY = '\033[90m'
 RESET = '\033[0m'
 
-data = json.load(sys.stdin)
-today = datetime.now()
-lines = []
-
-for e in data.get('episodes', []):
-    ep_num = e.get('episode_number', 0)
-    name = e.get('name', 'TBA')
-    air_date_str = e.get('air_date', '')
-    
-    # Format air date
-    if air_date_str:
-        try:
-            air_date = datetime.strptime(air_date_str, '%Y-%m-%d')
-            date_display = air_date.strftime('%d %b %Y')
-            # Check if episode has aired
-            if air_date > today:
-                status = '🔒'  # Upcoming
-                date_color = GRAY
-            else:
-                status = '  '  # Aired (can be watched)
-                date_color = GREEN
-        except:
-            date_display = air_date_str
-            status = '  '
-            date_color = CYAN
+# Dynamic title width calculation
+# Fixed overhead: status(2) + space(1) + ep(3) + " │ "(3) + " │ "(3) + date(width) = 12 + date_width
+try:
+    # FZF_COLS is passed from the shell wrapper (FZF_PREVIEW_COLUMNS)
+    val = os.environ.get('FZF_COLS')
+    if val:
+        available_width = int(float(val))
     else:
-        date_display = 'TBA'
-        status = '🔒'
-        date_color = GRAY
-    
-    # Colorful format: magenta episode num, white name, colored date
-    lines.append(f'{status} {ORANGE}E{ep_num:02d}{RESET} │ {WHITE}{name[:25]:<25}{RESET} │ {date_color}{date_display}{RESET}')
+        available_width = 80
+except Exception as e:
+    # Fallback and print error to Title for debugging purposes if needed, 
+    # but for now just fallback safely
+    available_width = 80
 
-print('\\n'.join(lines))
-" 2>/dev/null)
+# Use shorter date format on narrow panes to free space for titles
+date_width = 6 if available_width < 70 else 11
+FIXED_OVERHEAD = 12 + date_width
+
+title_max = available_width - FIXED_OVERHEAD
+if title_max < 10:
+    title_max = 10
+
+try:
+    # Read entire stdin first to debug length if needed
+    raw_input = sys.stdin.read()
+    if not raw_input:
+        with open('/tmp/termflix_debug.log', 'a') as f:
+            f.write('PYTHON ERROR: Empty stdin input\n')
+        raise ValueError("Empty input")
+        
+    data = json.loads(raw_input)
+except Exception as e:
+    with open('/tmp/termflix_debug.log', 'a') as f:
+        f.write(f'PYTHON JSON ERROR: {str(e)}\n')
+        # Write first 100 chars of input to check validity
+        if 'raw_input' in locals():
+            f.write(f'Input Start: {raw_input[:100]}\n')
+    data = {}
+
+today = datetime.now()
+
+eps = data.get('episodes', [])
+with open('/tmp/termflix_debug.log', 'a') as f:
+    f.write(f'Episodes found: {len(eps)}\n')
+    if len(eps) > 0:
+        f.write(f'First ep sample: {str(eps[0])[:100]}...\n')
+
+for e in eps:
+    try:
+        ep_num = e.get('episode_number', 0)
+        name = e.get('name', 'TBA')
+        air_date_str = e.get('air_date', '')
+        
+        # Format air date
+        if air_date_str:
+            try:
+                air_date = datetime.strptime(air_date_str, '%Y-%m-%d')
+                date_display = air_date.strftime('%d %b') if date_width == 6 else air_date.strftime('%d %b %Y')
+                if air_date > today:
+                    status = '🔒'
+                    date_color = GRAY
+                else:
+                    status = '  '
+                    date_color = GREEN
+            except Exception:
+                date_display = air_date_str[:date_width].ljust(date_width)
+                status = '  '
+                date_color = CYAN
+        else:
+            date_display = 'TBA'.ljust(date_width)
+            status = '🔒'
+            date_color = GRAY
+        
+        # Truncate only if title exceeds column width
+        if len(name) > title_max:
+            name = name[:title_max-3] + '...'
+        
+        ep_display = f'E{ep_num:02d}'
+        
+        # Build line with proper columns
+        print(f'{status} {ORANGE}{ep_display}{RESET} │ {WHITE}{name:<{title_max}}{RESET} │ {date_color}{date_display:<{date_width}}{RESET}')
+    except Exception as e:
+        with open('/tmp/termflix_debug.log', 'a') as f:
+            f.write(f'Episode parse error: {e}\n')
+" <<< "$season_details" 2>&1)
+                        py_rc=$?
+                        {
+                            echo "Python exit: $py_rc"
+                            echo "Episodes output length: ${#episodes_list_raw}"
+                            echo "Episodes output head: ${episodes_list_raw:0:200}"
+                        } >> /tmp/termflix_debug.log
+                        if [[ -z "$episodes_list_raw" ]] && command -v jq &>/dev/null; then
+                            # Fallback: build episode list via jq if python output is empty
+                            preview_cols="${preview_cols:-60}"
+                            [[ "$preview_cols" =~ ^[0-9]+$ ]] || preview_cols=60
+                            if [[ "$preview_cols" -lt 70 ]]; then
+                                date_width=6
+                                date_fmt="+%d %b"
+                            else
+                                date_width=11
+                                date_fmt="+%d %b %Y"
+                            fi
+                            fixed_overhead=$((12 + date_width))
+                            title_max=$((preview_cols - fixed_overhead))
+                            [[ $title_max -lt 10 ]] && title_max=10
+
+                            today_epoch=$(date +%s)
+                            episodes_list_raw=""
+                            while read -r ep_json; do
+                                ep_num=$(echo "$ep_json" | jq -r '.episode_number // 0')
+                                ep_name=$(echo "$ep_json" | jq -r '.name // "TBA"')
+                                ep_date=$(echo "$ep_json" | jq -r '.air_date // ""')
+
+                                lock_icon="  "
+                                formatted_date=$(printf "%-${date_width}s" "TBA")
+                                date_color="$GRAY"
+                                if [[ -n "$ep_date" && "$ep_date" != "null" ]]; then
+                                    ep_epoch=$(date -j -f "%Y-%m-%d" "$ep_date" +%s 2>/dev/null || date -d "$ep_date" +%s 2>/dev/null || echo "0")
+                                    date_display=$(date -j -f "%Y-%m-%d" "$ep_date" "$date_fmt" 2>/dev/null || date -d "$ep_date" "$date_fmt" 2>/dev/null || echo "$ep_date")
+                                    if [[ "$ep_epoch" -gt "$today_epoch" ]]; then
+                                        lock_icon="🔒"
+                                        date_color="$GRAY"
+                                    else
+                                        date_color="$GREEN"
+                                    fi
+                                    formatted_date=$(printf "%-${date_width}s" "$date_display")
+                                else
+                                    lock_icon="🔒"
+                                    date_color="$GRAY"
+                                fi
+
+                                if [[ ${#ep_name} -gt $title_max ]]; then
+                                    ep_name="${ep_name:0:$((title_max-3))}..."
+                                fi
+
+                                ep_display=$(printf "E%02d" "$ep_num")
+                                episodes_list_raw+="${lock_icon} ${ORANGE}${ep_display}${RESET} │ ${WHITE}$(printf "%-${title_max}s" "$ep_name")${RESET} │ ${date_color}${formatted_date}${RESET}"$'\n'
+                            done <<< "$(echo "$season_details" | jq -c '.episodes[]' 2>/dev/null)"
+                        fi
                     fi
                 fi
             else
@@ -515,7 +681,7 @@ fi
 # Print Description (Safe wrapping)
 [[ -z "$description" || "$description" == "null" || "$description" == "N/A" ]] && description="No description available."
 # Use FZF preview width dynamically, subtract 2 for padding, default to 90 if not available
-desc_width=$((${FZF_PREVIEW_COLUMNS:-92} - 2))
+desc_width=$(( ${preview_cols:-92} - 2 ))
 wrapped_desc=$(echo -e "$description" | fold -s -w "$desc_width")
 while IFS= read -r line; do
     echo -e "${GRAY}${line}${RESET}"

@@ -106,6 +106,9 @@ show_fzf_catalog() {
     local hl_sort=" "
     local hl_genre=" "
     
+    # Debug: trace what CURRENT_CATEGORY is when building header
+    [[ "$TERMFLIX_DEBUG" == "true" ]] && echo "$(date): HEADER build CURRENT_CATEGORY='${CURRENT_CATEGORY:-}'" >> /tmp/fzf_debug.log
+
     # Determine selected tab based on CURRENT_CATEGORY (env) or Title pattern
     # CURRENT_CATEGORY takes priority since it's set by the main loop
     case "${CURRENT_CATEGORY:-}" in
@@ -204,9 +207,11 @@ show_fzf_catalog() {
     # TML Parser Integration (Main Catalog)
     # ════════════════════════════════════════════════════════════════
     export menu_header current_page total_pages page_suffix
-    export TML_VAR_category="${CURRENT_CATEGORY:-movies}"
     source "${UI_DIR}/tml/parser/tml_parser.sh"
     tml_parse "${UI_DIR}/layouts/main-catalog.tml"
+    export TML_VAR_category="${CURRENT_CATEGORY:-movies}"
+    export TML_VAR_page="${current_page}"
+    export TML_VAR_total_pages="${total_pages}"
     local tml_fzf_args=$(tml_get_fzf_args)
     # Paginator prompt - left-aligned below header
     local dynamic_prompt="< Page ${current_page}/${total_pages}${page_suffix} > "
@@ -220,7 +225,7 @@ show_fzf_catalog() {
     # Debug: show what we're sending to FZF
     if [[ "$TORRENT_DEBUG" == "true" ]]; then
         echo "=== fzf_display content (first 200 chars) ===" >&2
-        echo -ne "$fzf_display" | head -c 200 >&2
+        echo -ne "${fzf_display:0:200}" >&2
         echo "" >&2
         echo "=== Total lines: $(echo -ne "$fzf_display" | wc -l) ===" >&2
     fi
@@ -383,6 +388,8 @@ handle_fzf_selection() {
             series_details=$(get_tv_details "$tmdb_id")
             
             # Default to latest season with episodes (checking season_number > 0)
+            local total_seasons
+            total_seasons=$(echo "$series_details" | jq -r '.number_of_seasons // empty' 2>/dev/null)
             local latest_season
             latest_season=$(echo "$series_details" | jq -r '(.seasons | map(select(.season_number > 0)) | last).season_number // empty' 2>/dev/null)
             
@@ -399,6 +406,25 @@ handle_fzf_selection() {
             [[ -n "$poster_path" && "$poster_path" != "null" ]] && show_poster="https://image.tmdb.org/t/p/w500${poster_path}"
             
             local current_s_num="$latest_season"
+            # Honor persisted season selection if available
+            local title_slug
+            title_slug=$(echo -n "$series_name" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]' | head -c 16)
+            local season_file_legacy="/tmp/tf_s_${title_slug}"
+            local season_file="$season_file_legacy"
+            if [[ -n "$imdb_id" ]]; then
+                season_file="/tmp/tf_s_${imdb_id#tt}"
+            fi
+            local selected_season=""
+            if [[ -f "$season_file" ]]; then
+                selected_season=$(cat "$season_file" 2>/dev/null || echo "")
+            else
+                selected_season=$(cat "$season_file_legacy" 2>/dev/null || echo "")
+            fi
+            if [[ -n "$selected_season" && "$selected_season" =~ ^[0-9]+$ ]]; then
+                if [[ -n "$total_seasons" && "$selected_season" -le "$total_seasons" ]]; then
+                    current_s_num="$selected_season"
+                fi
+            fi
             
             # OUTER LOOP: Series Interaction (Season -> Episode -> Version -> Back)
             while true; do
