@@ -7,10 +7,11 @@
 <fzf-layout id="episode-version-picker" name="Episode Version Picker">
   <layout direction="reverse" margin="1" padding="1"/>
   <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back " label-pos="bottom"/>
-  <prompt pointer="➤">&gt; </prompt>
+  <prompt pointer="➤"></prompt>
   <header first="true">Episode: ${ep_title:-Episode}</header>
-  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <preview position="left" size="55%" wrap="true" border="border-right" script="${preview_script}"/>
   <colors theme="dynamic"/>
-  <bindings delimiter="|" with-nth="2" expect="ctrl-h,esc">
+  <bindings delimiter="|" with-nth="2" expect="ctrl-h,esc,ctrl-l">
+    <bind key="ctrl-l" action="accept"/>
   </bindings>
 </fzf-layout>

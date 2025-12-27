@@ -105,6 +105,7 @@ resilience:
 integration:
   sources_from:
     - modules/ui/catalog/fzf_catalog.sh (Stage 2 selection)
+  flow_note: "Stage 2 version selection resolves magnet/source/quality and launches Stage 3 buffer UI."
   exports_to:
     - modules/torrent.sh (stream_torrent function)
   uses:

@@ -642,12 +642,11 @@ handle_fzf_selection() {
                         # ════════════════════════════════════════════════════════════════
                         # TML Parser Integration (Episode Version Picker)
                         # ════════════════════════════════════════════════════════════════
-                        export ep_title
+                        export ep_title preview_script
                         source "${UI_DIR}/tml/parser/tml_parser.sh"
                         tml_parse "${UI_DIR}/layouts/episode-version-picker.xml"
-                        local fzf_args=$(tml_get_fzf_args)
-                        
-                        local v_pick=$(printf '%s' "$options" | eval "fzf --ansi $fzf_args --preview \"$preview_script\"")
+                        local v_pick
+                        v_pick=$(printf '%s' "$options" | tml_run_fzf --ansi)
                         
                         # ════════════════════════════════════════════════════════════════
                         # OLD HARDCODED FZF CONFIG (commented for reference)
@@ -666,9 +665,21 @@ handle_fzf_selection() {
                         #     --delimiter='|' --with-nth=2 \
                         #     --expect=ctrl-h,esc)
                             
-                        local key_press=$(echo "$v_pick" | head -1)
-                        local sel_line=$(echo "$v_pick" | tail -1)
-                        
+                        local first_line second_line key_press sel_line
+                        first_line=$(echo "$v_pick" | head -1)
+                        second_line=$(echo "$v_pick" | sed -n '2p')
+
+                        case "$first_line" in
+                            ctrl-h|esc|ctrl-l|"")
+                                key_press="$first_line"
+                                sel_line="$second_line"
+                                ;;
+                            *)
+                                key_press=""
+                                sel_line="$first_line"
+                                ;;
+                        esac
+
                         if [[ "$key_press" == "ctrl-h" ]] || [[ "$key_press" == "esc" ]] || [[ -z "$sel_line" ]]; then
                             continue # Back to Episode Listing
                         fi
@@ -936,26 +947,15 @@ handle_fzf_selection() {
                   # KITTY MODE: Poster/Sources/Exports already prepared above
                   local stage2_preview="${UI_DIR}/previews/preview_stage2.sh"
                   
-                  # 5. Run FZF w/ Left Pane Preview (Picker on Right)
-                  ver_pick=$(printf "%s" "$options" | fzf \
-                      --ansi \
-                      --delimiter='|' \
-                      --with-nth=2 \
-                      --height=100% \
-                      --layout=reverse \
-                      --border=rounded \
-                      --margin=1 \
-                      --padding=1 \
-                      --prompt='❯ ' \
-                      --pointer='➤' \
-                      --header="Pick Version - [${c_name}] →" \
-                      --header-first \
-                       --color="$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8,marker:#818cf8,spinner:#818cf8,header:#a78bfa,border:#5865f2,gutter:#1e1e2e')" \
-                      --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" $stage2_preview" \
-                      --preview-window=left:55%:wrap:border-right \
-                      --bind='ctrl-h:abort,ctrl-o:abort' \
-                      --no-select-1 \
-                      2>/dev/null)
+                  # ════════════════════════════════════════════════════════════════
+                  # TML Parser Integration (Movie Version Picker - Kitty)
+                  # ════════════════════════════════════════════════════════════════
+                  export preview_script="TERMFLIX_STAGE2_CONTEXT=\"${stage2_context}\" $stage2_preview"
+                  source "${UI_DIR}/tml/parser/tml_parser.sh"
+                  tml_parse "${UI_DIR}/layouts/movie-version-picker-kitty.xml"
+
+                  # Run FZF w/ Left Pane Preview (Picker on Right)
+                  ver_pick=$(printf "%s" "$options" | tml_run_fzf --ansi 2>/dev/null)
                       
                   # Cleanup
                   unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_GENRE
@@ -968,67 +968,17 @@ handle_fzf_selection() {
                   # ════════════════════════════════════════════════════════════════
                   # TML Parser Integration (Movie Version Picker)
                   # ════════════════════════════════════════════════════════════════
+                  export preview_script="$stage2_preview"
                   source "${UI_DIR}/tml/parser/tml_parser.sh"
                   tml_parse "${UI_DIR}/layouts/movie-version-picker.xml"
-                  local fzf_args=$(tml_get_fzf_args)
                   
                   # Debug log the options and fzf args
                   echo "$(date): Stage 2 FZF - options has $(echo "$options" | wc -l) lines" >> /tmp/termflix_stage2_debug.log
                   
-                  # NOTE: Avoid eval for FZF - it causes syntax errors with parentheses in movie titles
-                  # Instead, call fzf directly with the TML-generated args expanded inline
-                  ver_pick=$(printf "%s" "$options" | fzf \
-                      --ansi \
-                      --layout reverse \
-                      --margin 1 \
-                      --padding 1 \
-                      --border rounded \
-                      --border-label " ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
-                      --border-label-pos bottom \
-                      --prompt "➤ Pick Version: " \
-                      --pointer "➤" \
-                      --header "🎬 Available Versions: (Ctrl+H to back)" \
-                      --header-first \
-                      --preview-window "left:55%:wrap" \
-                      --color "$(get_fzf_colors 2>/dev/null || echo 'fg:#6b7280,bg:#1e1e2e,hl:#818cf8,fg+:#ffffff,bg+:#5865f2,hl+:#c4b5fd,info:#6b7280,prompt:#5eead4,pointer:#818cf8')" \
-                      --delimiter "|" \
-                      --with-nth 2 \
-                      --bind "ctrl-h:abort" \
-                      --bind "ctrl-o:abort" \
-                      --no-select-1 \
-                      --preview "$stage2_preview" \
-                      2>/dev/null)
+                  ver_pick=$(printf "%s" "$options" | tml_run_fzf --ansi 2>/dev/null)
                   
                   echo "$(date): Stage 2 FZF returned, ver_pick='${ver_pick:0:50}'" >> /tmp/termflix_stage2_debug.log
                   
-                  # ════════════════════════════════════════════════════════════════
-                  # OLD HARDCODED FZF CONFIG (commented for reference)
-                  # ════════════════════════════════════════════════════════════════
-                  # ver_pick=$(STAGE2_POSTER="$poster_file" \
-                  #            STAGE2_TITLE="$c_name" \
-                  #            STAGE2_SOURCES="$s_badges" \
-                  #            STAGE2_AVAIL="$q_disp" \
-                  #            STAGE2_GENRE="$c_genre" \
-                  #            STAGE2_IMDB="$c_imdb" \
-                  #             printf "%s" "$options" | fzf \
-                  #     --ansi \
-                  #     --delimiter='|' \
-                  #     --with-nth=2 \
-                  #     --height=100% \
-                  #     --layout=reverse \
-                  #     --border=rounded \
-                  #     --margin=1 \
-                  #     --padding=1 \
-                  #     --prompt="➤ Pick Version: " \
-                  #     --header="🎬 Available Versions: (Ctrl+H to back)" \
-                  #      --color="$(get_fzf_colors 2>/dev/null || echo '...')" \
-                  #     --preview "TERMFLIX_STAGE2_CONTEXT=\"$stage2_context\" ... $stage2_preview" \
-                  #      --border-label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " \
-                  #      --border-label-pos=bottom \
-                  #     --preview-window=left:55%:wrap \
-                  #     --bind='ctrl-h:abort,ctrl-o:abort' \
-                  #     --no-select-1 \
-                  #     2>/dev/null)
               fi
              
              if [[ -z "$ver_pick" ]]; then

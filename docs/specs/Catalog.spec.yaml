@@ -25,15 +25,29 @@ ui_components:
       "Ctrl+F": "Search Mode"
       "Ctrl+O": "Category: Movies"
       "Ctrl+S": "Category: Shows"
-      "Ctrl+L": "Next Page"
-      "Ctrl+H": "Previous Page"
+      "Ctrl+L": "Force version picker for single-source items"
+      "Ctrl+Right or >": "Next Page"
+      "Ctrl+Left or <": "Previous Page"
       "Enter": "Select Item"
+
+  - component: "Episode Picker"
+    file: "modules/ui/pickers/episode_picker.sh"
+    function: "episode_picker"
+    description: "Episode list UI for shows before version selection."
+    keybindings:
+      "Enter": "Select episode"
+      "Ctrl+L": "Select episode (same as Enter)"
+      "Ctrl+E or Ctrl+S": "Switch season"
+      "Ctrl+H or Esc": "Back to catalog"
 
   - component: "Version Picker (Stage 2)"
     file: "modules/ui/catalog/fzf_catalog.sh"
     function: "handle_fzf_selection"
-    description: "Secondary FZF interface for selecting specific qualities/sources for a title."
-    trigger: "Selecting a COMBINED entry from Main Catalog"
+    description: "Secondary FZF interface for selecting specific qualities/sources for a title (movies and episode results)."
+    trigger: "Selecting a COMBINED entry from Main Catalog or pressing Ctrl+L on a single-source entry to wrap it as COMBINED."
+    behavior:
+      - "Abort (Ctrl+H/Esc) returns to Stage 1."
+      - "Accept (Enter/Ctrl+L in episode picker) selects a version and proceeds to Stage 3 streaming."
 
 data_flow:
   fetching_strategy:
@@ -48,6 +62,23 @@ data_flow:
       CURRENT_PAGE: "Integer"
       TERMFLIX_PREFETCH_PID: "PID of background fetcher"
       TERMFLIX_STAGE1_CONTEXT: "catalog | search"
+
+logic_flow:
+  Stage1_to_Stage2:
+    goal: "Enter version selection when a title has multiple sources or user requests it."
+    function: "handle_fzf_selection (COMBINED gate)"
+    strategy:
+      - "Parse Stage 1 selection into key, index, rest_data."
+      - "If Ctrl+L on a single-source item, wrap it as COMBINED and proceed."
+      - "If rest_data is COMBINED, build version options and launch Stage 2 picker."
+      - "If not COMBINED, stream immediately (skip Stage 2)."
+  Stage2_to_Stage3:
+    goal: "Start streaming after the user selects a version."
+    function: "perform_streaming"
+    strategy:
+      - "Abort (Ctrl+H/Esc) returns to Stage 1 without streaming."
+      - "Accept (Enter/Ctrl+L for episode picker) yields a selected index."
+      - "Resolve magnet/source/quality and launch Stage 3 buffer UI."
 
 error_handling:
   - situation: "Empty Selection"

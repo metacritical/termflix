@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Movie Version Picker Layout (Stage 2, Kitty mode)
+  Mirrors the legacy Kitty fzf config for version selection.
+  Variables: preview_script, STAGE2_TITLE
+-->
+<fzf-layout id="movie-version-picker-kitty" name="Movie Version Picker (Kitty)">
+  <layout direction="reverse" height="100%" margin="1" padding="1" no-select-1="true"/>
+  <border style="rounded"/>
+  <prompt pointer="➤">❯ </prompt>
+  <header first="true">Pick Version - [${STAGE2_TITLE}] →</header>
+  <preview position="left" size="55%" wrap="true" border="border-right" script="${preview_script}"/>
+  <colors>
+    <color name="fg" value="#6b7280"/>
+    <color name="bg" value="#1e1e2e"/>
+    <color name="hl" value="#818cf8"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="bg+" value="#5865f2"/>
+    <color name="hl+" value="#c4b5fd"/>
+    <color name="info" value="#6b7280"/>
+    <color name="prompt" value="#5eead4"/>
+    <color name="pointer" value="#818cf8"/>
+    <color name="marker" value="#818cf8"/>
+    <color name="spinner" value="#818cf8"/>
+    <color name="header" value="#a78bfa"/>
+    <color name="border" value="#5865f2"/>
+    <color name="gutter" value="#1e1e2e"/>
+  </colors>
+  <bindings delimiter="|" with-nth="2">
+    <bind key="ctrl-h" action="abort"/>
+    <bind key="ctrl-o" action="abort"/>
+  </bindings>
+</fzf-layout>

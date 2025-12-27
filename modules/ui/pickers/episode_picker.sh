@@ -196,11 +196,11 @@ case "$KEY" in
     ctrl-e|ctrl-s)
         echo "SWITCH_SEASON"
         ;;
-    ctrl-h|ctrl-l|esc)
+    ctrl-h|esc)
         # explicitly signal back
         echo "BACK"
         ;;
-    enter)
+    enter|ctrl-l)
         if [[ -n "$SELECTED" ]]; then
             E_NUM=$(echo "$SELECTED" | cut -d'|' -f1)
             echo "SELECTED_EPISODE|$E_NUM"
