@@ -256,8 +256,7 @@ stream_peerflix() {
         args+=("-i" "$index")
     fi
     
-    # Add quiet flag to reduce verbose output
-    args+=("-q")
+    # Note: Removed -q flag to allow peer info output for UI display
     
     # Check for subtitles and find the subtitle file path
     local subtitle_file=""
