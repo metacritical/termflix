@@ -60,8 +60,15 @@ fi
 LAYOUT_XML="${UI_DIR}/layouts/episode-picker.xml"
 preview_pct=$(xmllint --xpath "string(//fzf-layout/preview/@size)" "$LAYOUT_XML" 2>/dev/null | tr -d '%')
 [[ -z "$preview_pct" || ! "$preview_pct" =~ ^[0-9]+$ ]] && preview_pct=55
+preview_border=$(xmllint --xpath "string(//fzf-layout/preview/@border)" "$LAYOUT_XML" 2>/dev/null)
 
-# Calculate list width: terminal_width * (100 - preview_pct) / 100
+divider_cols=0
+case "$preview_border" in
+    border-left|border-right) divider_cols=1 ;;
+esac
+
+# Calculate list width based on actual fzf content area.
+# Note: fzf reserves horizontal space for margin/border/padding and the pointer column.
 get_term_cols() {
     local cols=""
     cols=$(stty size < /dev/tty 2>/dev/null | awk '{print $2}')
@@ -75,22 +82,49 @@ get_term_cols() {
     echo "$cols"
 }
 term_cols=$(get_term_cols)
-list_width=$(( (term_cols * (100 - preview_pct)) / 100 ))
+
+# Read layout spacing settings (default to current hardcoded values if missing)
+layout_margin=$(xmllint --xpath "string(//fzf-layout/layout/@margin)" "$LAYOUT_XML" 2>/dev/null)
+layout_padding=$(xmllint --xpath "string(//fzf-layout/layout/@padding)" "$LAYOUT_XML" 2>/dev/null)
+layout_border_style=$(xmllint --xpath "string(//fzf-layout/border/@style)" "$LAYOUT_XML" 2>/dev/null)
+layout_pointer=$(xmllint --xpath "string(//fzf-layout/prompt/@pointer)" "$LAYOUT_XML" 2>/dev/null)
+
+[[ -z "$layout_margin" || ! "$layout_margin" =~ ^[0-9]+$ ]] && layout_margin=1
+[[ -z "$layout_padding" || ! "$layout_padding" =~ ^[0-9]+$ ]] && layout_padding=1
+
+border_cols=0
+if [[ -n "$layout_border_style" && "$layout_border_style" != "none" ]]; then
+    border_cols=2 # left + right border
+fi
+
+# fzf always reserves a pointer column (and a trailing space) when pointer is set
+pointer_cols=0
+if [[ -n "$layout_pointer" ]]; then
+    pointer_cols=2
+fi
+
+# Content area before preview split
+content_cols=$((term_cols - (2 * layout_margin) - (2 * layout_padding) - border_cols))
+[[ $content_cols -lt 40 ]] && content_cols=40
+
+# Split content area into list + preview
+list_width=$(( (content_cols * (100 - preview_pct)) / 100 - divider_cols ))
+[[ $list_width -lt 20 ]] && list_width=20
+list_content_width=$((list_width - pointer_cols))
+[[ $list_content_width -lt 20 ]] && list_content_width=20
 
 # Dynamic title width calculation
-# Fixed overhead: status(2) + space(1) + ep(3) + " │ "(3) + " │ "(3) + date(width) = 12 + date_width
-if [[ $list_width -lt 70 ]]; then
-    date_width=6
-    date_fmt="+%d %b"
-else
-    date_width=11
-    date_fmt="+%d %b %Y"
-fi
-FIXED_OVERHEAD=$((12 + date_width))
+# Fixed overhead uses display-width columns:
+# lock column is 2 cols in most terminals for '🔒', and we always reserve it (two spaces when unlocked).
+# lock(2) + spaces(5) + ep(3) + pipes(2) + date(11) = 23
+date_width=11
+date_fmt="+%d %b %Y"
+FIXED_OVERHEAD=23
 
-# Title width = available - fixed overhead
-title_max=$((list_width - FIXED_OVERHEAD))
+title_max=$((list_content_width - FIXED_OVERHEAD))
 [[ $title_max -lt 10 ]] && title_max=10
+clip_threshold=$((title_max - 3))
+[[ $clip_threshold -lt 1 ]] && clip_threshold=1
 
 today_epoch=$(date +%s)
 episode_count=$(echo "$episodes_json" | wc -l | tr -d ' ')
@@ -113,10 +147,8 @@ while read -r e; do
     # Episode number
     ep_str=$(printf "E%02d" "$e_num")
     
-    # Truncate title only if it exceeds column width
-    if [[ ${#e_name} -gt $title_max ]]; then
-        e_name="${e_name:0:$((title_max-3))}..."
-    fi
+    # NOTE: Title truncation intentionally disabled (2025-12-28).
+    # We rely on fzf/terminal to handle overflow.
     
     # Format with proper column widths
     display_line=$(printf "%s %s │ %-${title_max}s │ %s" "$lock_icon" "$ep_str" "$e_name" "$formatted_date")

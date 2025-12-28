@@ -241,36 +241,39 @@ GRAY = '\033[90m'
 RESET = '\033[0m'
 
 # Dynamic title width calculation
-# Fixed overhead: status(2) + space(1) + ep(3) + " │ "(3) + " │ "(3) + date(width) = 12 + date_width
+# Fixed overhead: status/space/ep/separators + date column
 try:
-    # FZF_COLS is passed from the shell wrapper (FZF_PREVIEW_COLUMNS)
-    val = os.environ.get('FZF_COLS')
+    # Prefer the actual preview width from fzf, fall back to passed hint
+    val = os.environ.get('FZF_PREVIEW_COLUMNS') or os.environ.get('FZF_COLS')
     if val:
         available_width = int(float(val))
     else:
         available_width = 80
-except Exception as e:
-    # Fallback and print error to Title for debugging purposes if needed, 
-    # but for now just fallback safely
+except Exception:
     available_width = 80
 
-# Use shorter date format on narrow panes to free space for titles
-date_width = 6 if available_width < 70 else 11
-FIXED_OVERHEAD = 12 + date_width
+# Treat FZF_PREVIEW_COLUMNS as the usable preview width (fzf already accounts for split/borders).
+content_width = max(available_width, 20)
 
-title_max = available_width - FIXED_OVERHEAD
-if title_max < 10:
-    title_max = 10
+# Table sizing based on preview content width
+date_width = 11  # DD MMM YYYY
+# Overhead uses display-width columns, not Python string length:
+# lock column is 2 cols in most terminals for '🔒', and we always reserve it (two spaces when unlocked).
+# Total overhead: lock(2) + spaces(5) + ep(3) + pipes(2) + date(11) = 23
+FIXED_OVERHEAD = 23
+max_title_col = content_width - FIXED_OVERHEAD
+if max_title_col < 10:
+    max_title_col = 10
 
 try:
     # Read entire stdin first to debug length if needed
     raw_input = sys.stdin.read()
     if not raw_input:
         with open('/tmp/termflix_debug.log', 'a') as f:
-            f.write('PYTHON ERROR: Empty stdin input\n')
-        raise ValueError("Empty input")
-        
-    data = json.loads(raw_input)
+            f.write('PYTHON WARN: Empty stdin input\n')
+        data = {}
+    else:
+        data = json.loads(raw_input)
 except Exception as e:
     with open('/tmp/termflix_debug.log', 'a') as f:
         f.write(f'PYTHON JSON ERROR: {str(e)}\n')
@@ -282,6 +285,10 @@ except Exception as e:
 today = datetime.now()
 
 eps = data.get('episodes', [])
+title_col_width = max_title_col
+clip_threshold = title_col_width - 3
+if clip_threshold < 1:
+    clip_threshold = 1
 with open('/tmp/termflix_debug.log', 'a') as f:
     f.write(f'Episodes found: {len(eps)}\n')
     if len(eps) > 0:
@@ -297,7 +304,7 @@ for e in eps:
         if air_date_str:
             try:
                 air_date = datetime.strptime(air_date_str, '%Y-%m-%d')
-                date_display = air_date.strftime('%d %b') if date_width == 6 else air_date.strftime('%d %b %Y')
+                date_display = air_date.strftime('%d %b %Y')
                 if air_date > today:
                     status = '🔒'
                     date_color = GRAY
@@ -313,14 +320,13 @@ for e in eps:
             status = '🔒'
             date_color = GRAY
         
-        # Truncate only if title exceeds column width
-        if len(name) > title_max:
-            name = name[:title_max-3] + '...'
+        # NOTE: Title truncation intentionally disabled (2025-12-28).
+        # We rely on the terminal/fzf preview to handle overflow/wrap.
         
         ep_display = f'E{ep_num:02d}'
         
         # Build line with proper columns
-        print(f'{status} {ORANGE}{ep_display}{RESET} │ {WHITE}{name:<{title_max}}{RESET} │ {date_color}{date_display:<{date_width}}{RESET}')
+        print(f'{status} {ORANGE}{ep_display}{RESET} │ {WHITE}{name:<{title_col_width}}{RESET} │ {date_color}{date_display:<{date_width}}{RESET}')
     except Exception as e:
         with open('/tmp/termflix_debug.log', 'a') as f:
             f.write(f'Episode parse error: {e}\n')
@@ -331,20 +337,19 @@ for e in eps:
                             echo "Episodes output length: ${#episodes_list_raw}"
                             echo "Episodes output head: ${episodes_list_raw:0:200}"
                         } >> /tmp/termflix_debug.log
-                        if [[ -z "$episodes_list_raw" ]] && command -v jq &>/dev/null; then
+                        if [[ $py_rc -ne 0 || -z "$episodes_list_raw" ]] && command -v jq &>/dev/null; then
                             # Fallback: build episode list via jq if python output is empty
                             preview_cols="${preview_cols:-60}"
                             [[ "$preview_cols" =~ ^[0-9]+$ ]] || preview_cols=60
-                            if [[ "$preview_cols" -lt 70 ]]; then
-                                date_width=6
-                                date_fmt="+%d %b"
-                            else
-                                date_width=11
-                                date_fmt="+%d %b %Y"
-                            fi
-                            fixed_overhead=$((12 + date_width))
-                            title_max=$((preview_cols - fixed_overhead))
-                            [[ $title_max -lt 10 ]] && title_max=10
+                            content_width=$((preview_cols))
+                            [[ $content_width -lt 20 ]] && content_width=20
+                            date_width=11
+                            date_fmt="+%d %b %Y"
+                            fixed_overhead=23 # lock(2)+spaces(5)+ep(3)+pipes(2)+date(11)
+                            title_col_width=$((content_width - fixed_overhead))
+                            [[ $title_col_width -lt 10 ]] && title_col_width=10
+                            clip_threshold=$((title_col_width - 3))
+                            [[ $clip_threshold -lt 1 ]] && clip_threshold=1
 
                             today_epoch=$(date +%s)
                             episodes_list_raw=""
@@ -371,12 +376,11 @@ for e in eps:
                                     date_color="$GRAY"
                                 fi
 
-                                if [[ ${#ep_name} -gt $title_max ]]; then
-                                    ep_name="${ep_name:0:$((title_max-3))}..."
-                                fi
+                                # NOTE: Title truncation intentionally disabled (2025-12-28).
+                                # We rely on the terminal/fzf preview to handle overflow/wrap.
 
                                 ep_display=$(printf "E%02d" "$ep_num")
-                                episodes_list_raw+="${lock_icon} ${ORANGE}${ep_display}${RESET} │ ${WHITE}$(printf "%-${title_max}s" "$ep_name")${RESET} │ ${date_color}${formatted_date}${RESET}"$'\n'
+                                episodes_list_raw+="${lock_icon} ${ORANGE}${ep_display}${RESET} │ ${WHITE}$(printf "%-${title_col_width}s" "$ep_name")${RESET} │ ${date_color}${formatted_date}${RESET}"$'\n'
                             done <<< "$(echo "$season_details" | jq -c '.episodes[]' 2>/dev/null)"
                         fi
                     fi
@@ -688,15 +692,26 @@ while IFS= read -r line; do
 done <<< "$wrapped_desc"
 echo
 
-# --- 8. UI: Dashboard (Episodes OR Sources) ---
-if [[ "$is_series" == "true" ]]; then
-    if [[ -n "$episodes_list_raw" ]]; then
-        echo -e "${BOLD}${MAGENTA}󱜙 Season ${latest_season_num} Episodes:${RESET}"
-        echo -e "${THEME_DIM:-$GRAY}────────────────────────────────────────────────────────────${RESET}"
-        # Display each episode - colors are embedded in Python output
-        while IFS= read -r ep_line; do
-            echo -e "$ep_line"
-        done <<< "$episodes_list_raw" | head -n 12
+	# --- 8. UI: Dashboard (Episodes OR Sources) ---
+	if [[ "$is_series" == "true" ]]; then
+	    if [[ -n "$episodes_list_raw" ]]; then
+	        width_note=""
+	        if [[ "${TERMFLIX_DEBUG_WIDTH:-}" == "true" || "${TORRENT_DEBUG:-}" == "true" ]]; then
+	            w="${FZF_PREVIEW_COLUMNS:-$preview_cols}"
+	            if [[ "$w" =~ ^[0-9]+$ ]]; then
+	                title_w=$((w - 23))
+	                [[ $title_w -lt 10 ]] && title_w=10
+	                width_note=" (W=${w} title=${title_w} overhead=23)"
+	            else
+	                width_note=" (W=${w})"
+	            fi
+	        fi
+	        echo -e "${BOLD}${MAGENTA}󱜙 Season ${latest_season_num} Episodes${width_note}:${RESET}"
+	        echo -e "${THEME_DIM:-$GRAY}────────────────────────────────────────────────────────────${RESET}"
+	        # Display each episode - colors are embedded in Python output
+	        while IFS= read -r ep_line; do
+	            echo -e "$ep_line"
+	        done <<< "$episodes_list_raw" | head -n 12
     else
         echo -e "${GRAY}No episode data found for this series.${RESET}"
     fi
