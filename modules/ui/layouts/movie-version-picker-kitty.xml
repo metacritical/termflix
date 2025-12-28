@@ -29,5 +29,6 @@
   <bindings delimiter="|" with-nth="2">
     <bind key="ctrl-h" action="abort"/>
     <bind key="ctrl-o" action="abort"/>
+    <bind key="ctrl-l" action="accept"/>
   </bindings>
 </fzf-layout>

@@ -9,7 +9,7 @@
   <border style="rounded" label=" Esc:Back " label-pos="bottom"/>
   <prompt pointer="➤">⬇ Buffering </prompt>
   <header first="true">Streaming: ${title:-Movie}</header>
-  <preview position="left" size="55%" wrap="true" border="border-right"/>
+  <preview position="left" size="55%" wrap="true" border="border-right" script="${preview_script}"/>
   <colors>
     <color name="fg" value="#f8f8f2"/>
     <color name="bg" value="-1"/>
@@ -24,5 +24,6 @@
   <bindings delimiter="|" with-nth="2">
     <bind key="enter" action="accept"/>
     <bind key="esc" action="abort"/>
+    <bind key="ctrl-c" action="abort"/>
   </bindings>
 </fzf-layout>

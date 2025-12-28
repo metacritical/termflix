@@ -544,6 +544,7 @@ handle_fzf_selection() {
                         local ep_plot=$(echo "$ep_details" | jq -r '.overview // "No description"')
                         local ep_rating=$(echo "$ep_details" | jq -r '.vote_average // "N/A"')
                         
+                        unset STAGE2_POSTER STAGE2_TITLE STAGE2_SOURCES STAGE2_AVAIL STAGE2_GENRE STAGE2_IMDB STAGE2_PLOT
                         export TERMFLIX_STAGE2_TITLE="${ep_title} - [${series_name}] - S$(printf '%02d' "$current_s_num")E$(printf '%02d' "$e_num_picked")"
                         export TERMFLIX_STAGE2_PLOT="${ep_plot}"
                         export TERMFLIX_STAGE2_IMDB="${ep_rating}"
@@ -933,6 +934,7 @@ handle_fzf_selection() {
               done
 
               # Export variables for BOTH preview scripts (Kitty and Block)
+              unset TERMFLIX_STAGE2_TITLE TERMFLIX_STAGE2_PLOT TERMFLIX_STAGE2_IMDB TERMFLIX_STAGE2_POSTER TERMFLIX_STAGE2_LARGE_SCREENSHOT TERMFLIX_STAGE2_AVAIL TERMFLIX_STAGE2_SOURCES
               export STAGE2_POSTER="$poster_file"
               export STAGE2_TITLE="$c_name"
               export STAGE2_SOURCES="$s_badges"

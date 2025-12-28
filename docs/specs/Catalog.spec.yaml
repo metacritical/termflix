@@ -36,7 +36,7 @@ ui_components:
     description: "Episode list UI for shows before version selection."
     keybindings:
       "Enter": "Select episode"
-      "Ctrl+L": "Select episode (same as Enter)"
+      "Ctrl+L": "Select episode (same as Enter), then open version picker"
       "Ctrl+E or Ctrl+S": "Switch season"
       "Ctrl+H or Esc": "Back to catalog"
 

@@ -172,7 +172,7 @@ show_inline_buffer_ui() {
     disown 2>/dev/null || true  # Fully detach stream process
     
     # Setup cleanup
-    local preview_script="$tmpdir/termflix_buffer_preview.sh"
+    local buffer_preview_script="$tmpdir/termflix_buffer_preview.sh"
     
     # Cleanup function
     cleanup_stream() {
@@ -193,7 +193,7 @@ show_inline_buffer_ui() {
             kill -9 "$stream_pid" 2>/dev/null
             wait "$stream_pid" 2>/dev/null
         fi
-        rm -f "$status_file" "$preview_script" 2>/dev/null
+        rm -f "$status_file" "$buffer_preview_script" 2>/dev/null
         
         # Clean torrent cache (like termflix --remove)
         local torrent_dir="/tmp/torrent-stream"
@@ -217,7 +217,7 @@ show_inline_buffer_ui() {
     export TERMFLIX_TRAILER_SCRIPT="${helper_dir}/fetch_trailers.py"
     export TERMFLIX_POSTER_CACHE="${HOME}/.cache/termflix/posters"
     
-    cat > "$preview_script" << 'PREVIEW_EOF'
+    cat > "$buffer_preview_script" << 'PREVIEW_EOF'
 #!/usr/bin/env bash
 # Buffering preview - updates continuously
 
@@ -392,14 +392,14 @@ echo -e "${GRAY}Press ESC to cancel${RESET}"
 PREVIEW_EOF
     
     # Make preview script executable and verify
-    if [[ ! -f "$preview_script" ]]; then
-        echo "ERROR: Failed to create preview script: $preview_script" >> "$stream_log"
-        echo "ERROR: Failed to create preview script at $preview_script"
+    if [[ ! -f "$buffer_preview_script" ]]; then
+        echo "ERROR: Failed to create preview script: $buffer_preview_script" >> "$stream_log"
+        echo "ERROR: Failed to create preview script at $buffer_preview_script"
         return 1
     fi
     
-    chmod +x "$preview_script"
-    echo "✓ Preview script created: $preview_script" >> "$stream_log"
+    chmod +x "$buffer_preview_script"
+    echo "✓ Preview script created: $buffer_preview_script" >> "$stream_log"
     
     # Export env vars for preview
     # Use existing STAGE2_POSTER from Stage 2 if available and valid
@@ -453,29 +453,17 @@ PREVIEW_EOF
     # ════════════════════════════════════════════════════════════════
     # FZF Buffer UI (Stage 3) with listen port for API-driven refresh
     # ════════════════════════════════════════════════════════════════
-    # NOTE: Avoid eval for FZF - it causes syntax errors with special characters
-    printf "%s" "$options" | fzf \
+    # NOTE: TML parser escapes header content to avoid eval issues in tml_run_fzf.
+    local ui_dir="${root_dir}/modules/ui"
+    export title
+    export preview_script="$buffer_preview_script"
+    source "${ui_dir}/tml/parser/tml_parser.sh"
+    tml_parse "${ui_dir}/layouts/buffer-ui.xml"
+    printf "%s" "$options" | FZF_DEFAULT_OPTS="" ESCDELAY=1000 tml_run_fzf \
         --ansi \
-        --layout reverse \
-        --height 100% \
-        --margin 1 \
-        --padding 1 \
-        --border rounded \
-        --border-label " Esc:Back " \
-        --border-label-pos bottom \
-        --prompt "⬇ Buffering " \
-        --pointer "➤" \
-        --header "Streaming: ${title:-Movie}" \
-        --header-first \
-        --preview-window "left:55%:wrap:border-right" \
-        --color "fg:#f8f8f2,bg:-1,hl:#ff79c6,fg+:#ffffff,bg+:#44475a,hl+:#ff79c6,info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6" \
-        --delimiter "|" \
-        --with-nth 2 \
+        --no-mouse \
         --listen "$fzf_port" \
-        --preview "$preview_script" \
-        --bind "enter:accept" \
-        --bind "esc:abort" \
-        --bind "ctrl-c:abort" \
+        --color "fg:#f8f8f2,bg:-1,hl:#ff79c6,fg+:#ffffff,bg+:#44475a,hl+:#ff79c6,info:#bd93f9,prompt:#50fa7b,pointer:#ff79c6" \
         >/dev/null 2>&1
     
     # ════════════════════════════════════════════════════════════════
@@ -508,6 +496,7 @@ PREVIEW_EOF
     #     >/dev/null 2>&1
     
     local fzf_exit=$?
+    unset preview_script
     
     # Cleanup exports
     unset STAGE2_POSTER STAGE2_TITLE STAGE2_PLOT STAGE2_SOURCES
@@ -515,6 +504,11 @@ PREVIEW_EOF
     # If user cancelled, cleanup and return
     if [[ $fzf_exit -ne 0 ]]; then
         cleanup_stream
+        if command -v cleanup_on_exit &>/dev/null; then
+            trap cleanup_on_exit EXIT INT TERM
+        else
+            trap - EXIT INT TERM
+        fi
         return 1
     fi
     

@@ -16,6 +16,7 @@ echo "Test 1: SEARCH Context (should hide catalog list)"
 echo "=================================================="
 export TERMFLIX_STAGE1_CONTEXT="search"
 export TERMFLIX_STAGE2_CONTEXT="search"
+export TORRENT_DEBUG="true"
 
 echo "Running preview with search context..."
 STAGE2_TITLE="The Matrix" \
@@ -33,6 +34,7 @@ echo
 # Reset
 unset TERMFLIX_STAGE1_CONTEXT
 unset TERMFLIX_STAGE2_CONTEXT
+unset TORRENT_DEBUG
 
 # Test 2: Catalog Context (should show catalog)  
 echo
@@ -40,6 +42,7 @@ echo "Test 2: CATALOG Context (should show catalog list)"
 echo "==================================================="
 export TERMFLIX_STAGE1_CONTEXT=""
 export TERMFLIX_STAGE2_CONTEXT="catalog"
+export TORRENT_DEBUG="true"
 
 echo "Running preview with catalog context..."
 STAGE2_TITLE="The Matrix" \

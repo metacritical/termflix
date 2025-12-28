@@ -12,6 +12,8 @@ echo
 echo "Test 1: Calling preview_stage2.sh directly"
 echo "-------------------------------------------"
 
+export TORRENT_DEBUG="true"
+
 TERMFLIX_STAGE2_CONTEXT="search" \
 TERMFLIX_STAGE1_CONTEXT="search" \
 STAGE2_TITLE="Test Movie" \
@@ -23,6 +25,7 @@ STAGE2_IMDB="8.5" \
 /Users/pankajdoharey/Development/termflix/modules/ui/previews/preview_stage2.sh 2>&1 | head -20
 
 echo
+echo "TORRENT_DEBUG=${TORRENT_DEBUG}"
 echo "=== Expected Debug Output ==="
 echo "[DEBUG preview_stage2] TERMFLIX_STAGE2_CONTEXT=search"
 echo "[DEBUG preview_stage2] TERMFLIX_STAGE1_CONTEXT=search"

@@ -140,6 +140,8 @@ main() {
             --debug)
                 TORRENT_DEBUG=true
                 export TORRENT_DEBUG
+                TERMFLIX_DEBUG=true
+                export TERMFLIX_DEBUG
                 shift
                 ;;
             -g|--grid)
@@ -455,7 +457,10 @@ main() {
             
             # Export category for preview script detection
             export CURRENT_CATEGORY="$current_category"
-            
+
+            # Debug: trace category state
+            [[ "$TERMFLIX_DEBUG" == "true" ]] && echo "$(date): LOOP current_category=$current_category data_func=$data_func CURRENT_CATEGORY=$CURRENT_CATEGORY" >> /tmp/termflix_trace.log
+
             display_catalog "$title_prefix" "$data_func" 50
             local ret=$?
             
@@ -468,8 +473,18 @@ main() {
             
             case $ret in
                 # ... standard navigations ...
-                101) current_category="movies"; current_context="default" ;;
-                102) current_category="shows" ;;
+                101)
+                    current_category="movies"
+                    current_context="default"
+                    export CURRENT_CATEGORY="$current_category"
+                    continue
+                    ;;
+                102)
+                    current_category="shows"
+                    current_context="default"
+                    export CURRENT_CATEGORY="$current_category"
+                    continue
+                    ;;
                 103) # Watchlist
                      # Placeholder for future Watchlist feature
                      clear
@@ -507,8 +522,7 @@ main() {
                     # Use TML layout for centered popup style
                     source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
                     tml_parse "$SCRIPT_DIR/../modules/ui/layouts/type-selector.xml"
-                    local type_fzf_args=$(tml_get_fzf_args)
-                    selected_action=$(echo -e "$menu_items" | eval "fzf $type_fzf_args" 2>/dev/null)
+                    selected_action=$(echo -e "$menu_items" | tml_run_fzf 2>/dev/null)
                     
                     # Handle Esc/Cancel (Empty selection) - Just continue to re-render without changing state
                     [[ -z "$selected_action" ]] && continue
@@ -517,7 +531,8 @@ main() {
                         *"Browse Movies") 
                             current_category="movies"; current_context="default" ;;
                         *"Browse Shows") 
-                            current_category="shows" ;;
+                            current_category="shows"
+                            current_context="default" ;;
                             
                         # Context Switching - Immediately Prompts for Filter Value
                         *"By Year (Mode)...") 
@@ -571,8 +586,7 @@ main() {
                     # Use TML layout for centered popup style
                     source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
                     tml_parse "$SCRIPT_DIR/../modules/ui/layouts/sort-selector.xml"
-                    local sort_fzf_args=$(tml_get_fzf_args)
-                    sel_sort=$(echo -e "$sort_menu" | eval "fzf $sort_fzf_args" 2>/dev/null)
+                    sel_sort=$(echo -e "$sort_menu" | tml_run_fzf 2>/dev/null)
                     
                     if [[ -n "$sel_sort" ]]; then
                         case "$sel_sort" in
@@ -637,8 +651,7 @@ main() {
                     # Use TML layout for centered popup style
                     source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
                     tml_parse "$SCRIPT_DIR/../modules/ui/layouts/genre-selector.xml"
-                    local genre_fzf_args=$(tml_get_fzf_args)
-                    selected_genre=$(echo -e "$genre_list" | eval "fzf $genre_fzf_args" 2>/dev/null)
+                    selected_genre=$(echo -e "$genre_list" | tml_run_fzf 2>/dev/null)
                     
                     if [[ -n "$selected_genre" && "$selected_genre" != "All Genres" ]]; then
                         export CURRENT_GENRE="$selected_genre" # Use export for CURRENT_GENRE

@@ -5,14 +5,15 @@
   Uses no-select-1 and bind actions instead of expect
 -->
 <fzf-layout id="movie-version-picker" name="Movie Version Picker">
-  <layout direction="reverse" height="100%" margin="1" padding="1"/>
+  <layout direction="reverse" height="100%" margin="1" padding="1" no-select-1="true"/>
   <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " label-pos="bottom"/>
   <prompt pointer="➤">➤ Pick Version: </prompt>
   <header first="true">🎬 Available Versions: (Ctrl+H to back)</header>
-  <preview position="left" size="55%" wrap="true"/>
+  <preview position="left" size="55%" wrap="true" script="${preview_script}"/>
   <colors theme="dynamic"/>
   <bindings delimiter="|" with-nth="2">
     <bind key="ctrl-h" action="abort"/>
     <bind key="ctrl-o" action="abort"/>
+    <bind key="ctrl-l" action="accept"/>
   </bindings>
 </fzf-layout>

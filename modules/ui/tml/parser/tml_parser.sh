@@ -174,7 +174,7 @@ _parse_fzf_layout() {
     fi
 
     # Layout
-    local direction height margin padding info
+    local direction height margin padding info no_select_1
     direction=$(tml_attr "$xml_file" "${root_xpath}/layout/@direction")
     [[ -z "$direction" ]] && direction=$(tml_attr "$xml_file" "${root_xpath}/@layout-direction")
     [[ -z "$direction" ]] && direction="reverse"
@@ -190,11 +190,14 @@ _parse_fzf_layout() {
 
     info=$(tml_attr "$xml_file" "${root_xpath}/layout/@info")
     [[ -z "$info" ]] && info=$(tml_attr "$xml_file" "${root_xpath}/@layout-info")
+    no_select_1=$(tml_attr "$xml_file" "${root_xpath}/layout/@no-select-1")
+    [[ -z "$no_select_1" ]] && no_select_1=$(tml_attr "$xml_file" "${root_xpath}/@no-select-1")
 
     args+="--layout $direction "
     [[ -n "$height" && "$height" != "100%" ]] && args+="--height $height "
     [[ -n "$margin" ]] && args+="--margin $margin "
     [[ -n "$padding" ]] && args+="--padding $padding "
+    [[ "$no_select_1" == "true" ]] && args+="--no-select-1 "
 
     case "$info" in
         hidden) args+="--info=hidden " ;;

@@ -24,13 +24,17 @@ Notes:
 
 ### Stage 3: Streaming Buffer UI
 - `modules/streaming/buffer_ui.sh`
-  - Direct `fzf` call (no TML layout yet).
+  - Migrated: now uses `tml_run_fzf` via `modules/ui/layouts/buffer-ui.xml`.
 
 ## Supporting Menus (not stages, but in flow)
 - `bin/termflix`
-  - Type selector, sort selector, genre selector, year/rating filters, language filter, search prompt:
-    all are direct `fzf` calls (some use TML args, some are fully inline).
+  - Type selector: migrated to `tml_run_fzf` via `modules/ui/layouts/type-selector.xml`.
+  - Sort selector: migrated to `tml_run_fzf` via `modules/ui/layouts/sort-selector.xml`.
+  - Genre selector: migrated to `tml_run_fzf` via `modules/ui/layouts/genre-selector.xml`.
+  - Year/rating filters: direct `fzf` calls (inline).
+  - Language filter: direct `fzf` call (inline).
+  - Search prompt (FZF input fallback): direct `fzf` call.
 
 ## Migration Status
 - Done: Stage 2 season picker (`modules/ui/pickers/season_picker.sh`), episode picker (`modules/ui/pickers/episode_picker.sh`), movie version picker, episode version picker.
-- Remaining: Main catalog, supporting menus, streaming buffer UI.
+- Remaining: Main catalog, supporting menus (year/rating filters, language filter, search prompt).
