@@ -90,62 +90,61 @@ record_watch_progress() {
         echo "Watch file not found (Trying Method 2)" >> "$h_log"
     fi
     
-    # ===== METHOD 2: Fallback to parsing MPV logs =====
-    # This is the CRITICAL fallback when MPV doesn't create watch_later files (common for HTTP streams)
-    if [[ -z "$position" ]] || [[ "$position" -eq 0 ]]; then
-        if [[ -f "$mpv_log" ]]; then
-            # Look for AV: HH:MM:SS / HH:MM:SS pattern in last 200 lines
-            local last_av=$(tail -200 "$mpv_log" 2>/dev/null | grep -oE "AV: +([0-9]+:)?[0-9]+:[0-9]+ / ([0-9]+:)?[0-9]+:[0-9]+" | tail -1)
-            echo "Log Last AV: $last_av" >> "$h_log"
-            
-            if [[ -n "$last_av" ]]; then
-                # Extract position (before the /)
-                local pos_str=$(echo "$last_av" | sed 's/AV: *//' | cut -d'/' -f1 | tr -d ' ')
-                
-                # Convert HH:MM:SS or MM:SS to seconds
-                local p_hours=0 p_mins=0 p_secs=0
-                local colons="${pos_str//[^:]}"
-                if [[ ${#colons} -eq 2 ]]; then
-                    IFS=: read -r p_hours p_mins p_secs <<< "$pos_str"
-                elif [[ ${#colons} -eq 1 ]]; then
-                    IFS=: read -r p_mins p_secs <<< "$pos_str"
-                fi
-                position=$((10#${p_hours:-0} * 3600 + 10#${p_mins:-0} * 60 + 10#${p_secs:-0}))
-                echo "Method 2 - Log Position: $position" >> "$h_log"
-                
-                # Extract duration (after the /)
-                local dur_str=$(echo "$last_av" | cut -d'/' -f2 | tr -d ' ')
-                local d_hours=0 d_mins=0 d_secs=0
-                local d_colons="${dur_str//[^:]}"
-                if [[ ${#d_colons} -eq 2 ]]; then
-                    IFS=: read -r d_hours d_mins d_secs <<< "$dur_str"
-                elif [[ ${#d_colons} -eq 1 ]]; then
-                    IFS=: read -r d_mins d_secs <<< "$dur_str"
-                fi
-                duration=$((10#${d_hours:-0} * 3600 + 10#${d_mins:-0} * 60 + 10#${d_secs:-0}))
-                echo "Method 2 - Log Duration: $duration" >> "$h_log"
-            else
-                echo "No AV timestamp found in MPV log" >> "$h_log"
-            fi
-        else
-            echo "MPV log file not found: $mpv_log" >> "$h_log"
-            
-            # ===== METHOD 3: Use IPC-captured position from playback loop =====
-            # Position is captured periodically during playback and stored in env vars
-            if [[ -n "${TERMFLIX_IPC_POSITION:-}" ]] && [[ "${TERMFLIX_IPC_POSITION:-0}" -gt 0 ]]; then
-                position="$TERMFLIX_IPC_POSITION"
-                echo "Method 3 - IPC Position: $position" >> "$h_log"
-            fi
-            if [[ -n "${TERMFLIX_IPC_DURATION:-}" ]] && [[ "${TERMFLIX_IPC_DURATION:-0}" -gt 0 ]]; then
-                duration="$TERMFLIX_IPC_DURATION"
-                echo "Method 3 - IPC Duration: $duration" >> "$h_log"
-            fi
-            
-            if [[ "$position" -eq 0 ]] && [[ "$duration" -eq 0 ]]; then
-                echo "Method 3 - No IPC position captured (was splash screen used?)" >> "$h_log"
-            fi
-        fi
-    fi
+	    # ===== METHOD 2: Prefer IPC-captured position from playback loop =====
+	    # IPC is captured periodically during playback and stored in env vars.
+	    if [[ -n "${TERMFLIX_IPC_POSITION:-}" ]] && [[ "${TERMFLIX_IPC_POSITION:-0}" -gt 0 ]]; then
+	        position="$TERMFLIX_IPC_POSITION"
+	        echo "Method 2 - IPC Position: $position" >> "$h_log"
+	    fi
+	    if [[ -n "${TERMFLIX_IPC_DURATION:-}" ]] && [[ "${TERMFLIX_IPC_DURATION:-0}" -gt 0 ]]; then
+	        duration="$TERMFLIX_IPC_DURATION"
+	        echo "Method 2 - IPC Duration: $duration" >> "$h_log"
+	    fi
+
+	    # ===== METHOD 3: Fallback to parsing MPV logs =====
+	    # MPV terminal status frequently updates via carriage returns; normalize CR to NL for parsing.
+	    if [[ -z "$position" || "$position" -eq 0 || -z "$duration" || "$duration" -eq 0 ]]; then
+	        if [[ -f "$mpv_log" ]]; then
+	            # Look for AV: HH:MM:SS / HH:MM:SS pattern in last 200 lines
+	            local last_av
+	            last_av=$(tail -200 "$mpv_log" 2>/dev/null | tr '\r' '\n' | grep -oE "AV: +([0-9]+:)?[0-9]+:[0-9]+ / ([0-9]+:)?[0-9]+:[0-9]+" | tail -1)
+	            echo "Log Last AV: $last_av" >> "$h_log"
+	            
+	            if [[ -n "$last_av" ]]; then
+	                # Extract position (before the /)
+	                local pos_str
+	                pos_str=$(echo "$last_av" | sed 's/AV: *//' | cut -d'/' -f1 | tr -d ' ')
+	                
+	                # Convert HH:MM:SS or MM:SS to seconds
+	                local p_hours=0 p_mins=0 p_secs=0
+	                local colons="${pos_str//[^:]}"
+	                if [[ ${#colons} -eq 2 ]]; then
+	                    IFS=: read -r p_hours p_mins p_secs <<< "$pos_str"
+	                elif [[ ${#colons} -eq 1 ]]; then
+	                    IFS=: read -r p_mins p_secs <<< "$pos_str"
+	                fi
+	                [[ -z "$position" || "$position" -eq 0 ]] && position=$((10#${p_hours:-0} * 3600 + 10#${p_mins:-0} * 60 + 10#${p_secs:-0}))
+	                echo "Method 3 - Log Position: $position" >> "$h_log"
+	                
+	                # Extract duration (after the /)
+	                local dur_str
+	                dur_str=$(echo "$last_av" | cut -d'/' -f2 | tr -d ' ')
+	                local d_hours=0 d_mins=0 d_secs=0
+	                local d_colons="${dur_str//[^:]}"
+	                if [[ ${#d_colons} -eq 2 ]]; then
+	                    IFS=: read -r d_hours d_mins d_secs <<< "$dur_str"
+	                elif [[ ${#d_colons} -eq 1 ]]; then
+	                    IFS=: read -r d_mins d_secs <<< "$dur_str"
+	                fi
+	                [[ -z "$duration" || "$duration" -eq 0 ]] && duration=$((10#${d_hours:-0} * 3600 + 10#${d_mins:-0} * 60 + 10#${d_secs:-0}))
+	                echo "Method 3 - Log Duration: $duration" >> "$h_log"
+	            else
+	                echo "No AV timestamp found in MPV log" >> "$h_log"
+	            fi
+	        else
+	            echo "MPV log file not found: $mpv_log" >> "$h_log"
+	        fi
+	    fi
     
     # ===== SAVE TO WATCH HISTORY =====
     if [[ "$position" -gt 0 ]] && [[ "$duration" -gt 0 ]]; then
@@ -440,20 +439,26 @@ stream_peerflix() {
     # Define stream URL early for UI/Logging
     local stream_url="http://localhost:$port/"
     
-    # ===== SET GLOBAL WATCH HISTORY VARIABLES =====
-    # These are used by record_watch_progress() for both normal exit and signal handlers
-    local watch_dir="${HOME}/.config/termflix/watch_later"
-    mkdir -p "$watch_dir"
-    local mpv_log="${TMPDIR:-/tmp}/termflix_mpv_debug.log"
-    
-    TERMFLIX_WATCH_SOURCE="$source"
-    TERMFLIX_WATCH_STREAM_URL="$stream_url"
-    TERMFLIX_WATCH_DIR="$watch_dir"
-    TERMFLIX_MPV_LOG="$mpv_log"
-    TERMFLIX_WATCH_QUALITY="${TERMFLIX_CURRENT_QUALITY:-unknown}"
-    TERMFLIX_WATCH_SIZE="${TERMFLIX_CURRENT_SIZE:-unknown}"
-    TERMFLIX_WATCH_VIDEO_NAME="$movie_title"
-    # ===== END WATCH HISTORY SETUP =====
+	    # ===== SET GLOBAL WATCH HISTORY VARIABLES =====
+	    # These are used by record_watch_progress() for both normal exit and signal handlers
+	    local watch_dir="${HOME}/.config/termflix/watch_later"
+	    mkdir -p "$watch_dir"
+	    local mpv_log
+	    mpv_log="$(mktemp "${TMPDIR:-/tmp}/termflix_mpv_${port}_XXXXXX.log" 2>/dev/null || echo "${TMPDIR:-/tmp}/termflix_mpv_${port}_$$.log")"
+	    : > "$mpv_log" 2>/dev/null || true
+
+	    local mpv_ipc_socket="${TMPDIR:-/tmp}/termflix_mpv_${port}_$$.sock"
+	    rm -f "$mpv_ipc_socket" 2>/dev/null || true
+	    
+	    TERMFLIX_WATCH_SOURCE="$source"
+	    TERMFLIX_WATCH_STREAM_URL="$stream_url"
+	    TERMFLIX_WATCH_DIR="$watch_dir"
+	    TERMFLIX_MPV_LOG="$mpv_log"
+	    TERMFLIX_MPV_IPC_SOCKET="$mpv_ipc_socket"
+	    TERMFLIX_WATCH_QUALITY="${TERMFLIX_CURRENT_QUALITY:-unknown}"
+	    TERMFLIX_WATCH_SIZE="${TERMFLIX_CURRENT_SIZE:-unknown}"
+	    TERMFLIX_WATCH_VIDEO_NAME="$movie_title"
+	    # ===== END WATCH HISTORY SETUP =====
     
     echo "DEBUG: Peerflix args: ${temp_args[@]}" >&2
     peerflix "$source" "${temp_args[@]}" > "$temp_output" 2>&1 &
@@ -1658,17 +1663,20 @@ EOF
             window_title="TermFlix™ - $movie_title"
         fi
         
-        # HTTP streaming with aggressive caching for continuous buffering
-        local mpv_args=(
-            "--title=$window_title"
-            "--cache=yes"              # Enable cache
-            "--cache-secs=300"         # 5 minutes cache (continuous buffering)
-            "--demuxer-max-bytes=512M" # 512MB demuxer buffer
-            "--demuxer-max-back-bytes=256M" # 256MB backward buffer for seeking
-            "--terminal=yes"           # Enable terminal output for AV: timestamps
-            "--msg-level=all=status"   # Output status messages (AV: HH:MM:SS)
-            "$stream_url"
-        )
+	        # HTTP streaming with aggressive caching for continuous buffering
+	        local mpv_args=(
+	            "--title=$window_title"
+	            "--cache=yes"              # Enable cache
+	            "--cache-secs=300"         # 5 minutes cache (continuous buffering)
+	            "--demuxer-max-bytes=512M" # 512MB demuxer buffer
+	            "--demuxer-max-back-bytes=256M" # 256MB backward buffer for seeking
+	            "--save-position-on-quit=yes"
+	            "--watch-later-directory=$watch_dir"
+	            "--input-ipc-server=${TERMFLIX_MPV_IPC_SOCKET}"
+	            "--terminal=yes"           # Enable terminal output for AV: timestamps
+	            "--msg-level=all=status"   # Output status messages (AV: HH:MM:SS)
+	            "$stream_url"
+	        )
         if [ -n "$subtitle_arg" ]; then
             local sub_path="$video_dir/$subtitle_arg"
             echo -e "${YELLOW}Command:${RESET} mpv \"$stream_url\" --sub-file=\"$sub_path\" --sid=1 --sub-visibility=yes"
@@ -1677,12 +1685,13 @@ EOF
             mpv_args+=("--sub-visibility=yes")
         fi
         
-        # Use TMPDIR for logs
-        local mpv_log="${TMPDIR:-/tmp}/termflix_mpv_debug.log"
-        echo -e "DEBUG: Launching mpv to log: $mpv_log"
-        # Launch MPV - append output to log file for watch history tracking
-        mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
-        player_pid=$!
+	        # Use per-playback log file (set during watch history setup)
+	        local mpv_log="${TERMFLIX_MPV_LOG:-${TMPDIR:-/tmp}/termflix_mpv_debug.log}"
+	        echo -e "DEBUG: Launching mpv to log: $mpv_log"
+	        : > "$mpv_log" 2>/dev/null || true
+	        # Launch MPV - append output to log file for watch history tracking
+	        mpv "${mpv_args[@]}" >> "$mpv_log" 2>&1 &
+	        player_pid=$!
     fi
     fi  # End of splash check
     
@@ -1704,19 +1713,27 @@ EOF
     # IMPORTANT: If player_pid is the splash screen (IPC transition), it is NOT a child process of this shell.
     # The 'wait' command will return immediately for non-child processes.
     # We must use a polling loop to wait for the process to exit.
-    # Also capture position periodically via IPC for watch history (splash screen path)
-    local last_ipc_position=0
-    local last_ipc_duration=0
-    while kill -0 "$player_pid" 2>/dev/null; do
-        # Capture position via IPC every 5 seconds for splash screen path
-        if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]] && command -v socat &>/dev/null; then
-            local ipc_pos=$(echo '{ "command": ["get_property", "time-pos"] }' | socat - "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
-            local ipc_dur=$(echo '{ "command": ["get_property", "duration"] }' | socat - "$TERMFLIX_SPLASH_SOCKET" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
-            [[ -n "$ipc_pos" ]] && last_ipc_position="$ipc_pos"
-            [[ -n "$ipc_dur" ]] && last_ipc_duration="$ipc_dur"
-        fi
-        sleep 5
-    done
+	    # Also capture position periodically via IPC for watch history (splash + standard mpv)
+	    local last_ipc_position=0
+	    local last_ipc_duration=0
+	    while kill -0 "$player_pid" 2>/dev/null; do
+	        local ipc_socket=""
+	        if [[ -n "${TERMFLIX_SPLASH_SOCKET:-}" ]] && [[ -S "$TERMFLIX_SPLASH_SOCKET" ]]; then
+	            ipc_socket="$TERMFLIX_SPLASH_SOCKET"
+	        elif [[ -n "${TERMFLIX_MPV_IPC_SOCKET:-}" ]] && [[ -S "$TERMFLIX_MPV_IPC_SOCKET" ]]; then
+	            ipc_socket="$TERMFLIX_MPV_IPC_SOCKET"
+	        fi
+
+	        if [[ -n "$ipc_socket" ]] && command -v socat &>/dev/null; then
+	            local ipc_pos
+	            ipc_pos=$(echo '{ "command": ["get_property", "time-pos"] }' | socat - "$ipc_socket" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
+	            local ipc_dur
+	            ipc_dur=$(echo '{ "command": ["get_property", "duration"] }' | socat - "$ipc_socket" 2>/dev/null | grep -oE '"data":[0-9.]+' | cut -d: -f2 | cut -d. -f1)
+	            [[ -n "$ipc_pos" ]] && last_ipc_position="$ipc_pos"
+	            [[ -n "$ipc_dur" ]] && last_ipc_duration="$ipc_dur"
+	        fi
+	        sleep 5
+	    done
     local player_exit=$?
     
     # Save IPC-captured position to global vars for record_watch_progress

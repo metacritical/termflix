@@ -23,35 +23,37 @@ data_model:
     quality: "Video quality (1080p, 720p, etc.)"
     size: "File size"
     last_watched: "ISO 8601 timestamp"
-    completed: "Boolean (>90% watched)"
+    completed: "Boolean (>=95% watched)"
 
 position_extraction:
   method_1:
     description: "MPV watch_later file"
     path: "~/.config/termflix/watch_later/{md5(url)}.conf"
     field: "start="
-    status: "Not created for HTTP streams"
+    status: "Primary; MPV is launched with `--watch-later-directory` + `--save-position-on-quit` so HTTP streams persist progress"
     
   method_2:
-    description: "MPV terminal log parsing"
-    log_file: "$TMPDIR/termflix_mpv_debug.log"
-    pattern: "AV: HH:MM:SS / HH:MM:SS"
-    mpv_flags:
-      - "--terminal=yes"
-      - "--msg-level=all=status"
-    status: "Works for direct peerflix path only"
-    
-  method_3:
-    description: "IPC socket position capture during playback"
+    description: "MPV IPC polling during playback"
     implementation: "Playback loop polls every 5 seconds via socat"
     env_vars:
       - "TERMFLIX_IPC_POSITION"
       - "TERMFLIX_IPC_DURATION"
-    status: "Implemented - needs verification"
+    status: "Primary fallback when watch_later file is missing"
+
+  method_3:
+    description: "MPV terminal log parsing (last resort)"
+    log_file: "$TMPDIR/termflix_mpv_<port>_<random>.log"
+    pattern: "AV: HH:MM:SS / HH:MM:SS"
+    mpv_flags:
+      - "--terminal=yes"
+      - "--msg-level=all=status"
+    notes:
+      - "MPV status lines often use carriage returns; log parsing normalizes CR->NL."
+    status: "Fallback only"
 
 pipeline:
   - stage: set_globals
-    vars: [TERMFLIX_WATCH_SOURCE, TERMFLIX_WATCH_STREAM_URL, TERMFLIX_MPV_LOG]
+    vars: [TERMFLIX_WATCH_SOURCE, TERMFLIX_WATCH_STREAM_URL, TERMFLIX_MPV_LOG, TERMFLIX_MPV_IPC_SOCKET]
       
   - stage: playback
     description: "User watches video via MPV"
@@ -69,9 +71,9 @@ display:
   format: "👀 icon + percentage"
 
 known_issues:
-  - issue: "Position shows 0% for splash screen path"
-    root_cause: "MPV via IPC transition doesn't output to log file"
-    status: "INVESTIGATING - IPC capture method added"
+  - issue: "Multiple titles show identical progress (stale MPV log parse)"
+    root_cause: "Shared/append-only MPV log and status lines written with carriage returns"
+    status: "FIXED - use per-playback log + prefer watch_later/IPC"
 
 debug:
   log_file: "/tmp/termflix_history_debug.log"
