@@ -20,6 +20,7 @@ Notes:
 - `modules/ui/catalog/fzf_catalog.sh`
   - Kitty mode: migrated to `tml_run_fzf` via `modules/ui/layouts/movie-version-picker-kitty.xml`.
   - Non-kitty mode: migrated to `tml_run_fzf` via `modules/ui/layouts/movie-version-picker.xml`.
+  - Stage 2 left pane uses a static Stage 1 list snapshot from `${TMPDIR:-/tmp}/termflix_stage1_fzf_display.txt` (header snapshot rendering removed to prevent stale headers like “Harry Potter …”).
 
 ### Stage 2: Shows (Episodes / Versions / Season)
 - `modules/ui/pickers/episode_picker.sh`
