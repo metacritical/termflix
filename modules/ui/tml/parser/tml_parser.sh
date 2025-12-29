@@ -475,6 +475,25 @@ tml_get_expect_keys() {
     echo "$TML_EXPECT_KEYS"
 }
 
+tml_get_options() {
+    local xml_file="${1:-$TML_CURRENT_FILE}"
+    local options_xpath="//fzf-layout/options/option"
+
+    if [[ -z "$xml_file" ]] || [[ ! -f "$xml_file" ]]; then
+        return 0
+    fi
+
+    # Fast path: extract options with grep/sed instead of xmllint for hardcoded options
+    # This is instant compared to spawning multiple xmllint processes
+    grep -E '<option>.*</option>' "$xml_file" 2>/dev/null | \
+        sed 's/.*<option>\(.*\)<\/option>.*/\1/' | \
+        while IFS= read -r opt; do
+            [[ -z "$opt" ]] && continue
+            opt=$(tml_eval "$opt")
+            printf "%s\n" "$opt"
+        done
+}
+
 tml_run_fzf() {
     local extra_args="$*"
     local fzf_args
@@ -529,4 +548,4 @@ if [[ "${BASH_SOURCE[0]:-$0}" == "${0:-}" ]]; then
 fi
 
 export -f tml_attr tml_text tml_count tml_exists tml_eval tml_eval_bool tml_shell_escape
-export -f tml_parse tml_get_fzf_args tml_get_expect_keys tml_render_header tml_run_fzf
+export -f tml_parse tml_get_fzf_args tml_get_expect_keys tml_get_options tml_render_header tml_run_fzf

@@ -511,21 +511,25 @@ main() {
                     local ind_ctx_peer=" "; [[ "$current_context" == "peers" ]] && ind_ctx_peer="●"
                     local ind_ctx_title=" "; [[ "$current_context" == "title" ]] && ind_ctx_title="●"
 
-                    local menu_items="${ind_mov} 🎬 Browse Movies\n${ind_sho} 📺 Browse Shows\n"
-                    menu_items+="\n-- 🔍 Switch Context --\n"
-                    menu_items+="${ind_ctx_year} 📅 By Year (Mode)...\n"
-                    menu_items+="${ind_ctx_rate} ⭐ By Rating (Mode)...\n"
-                    menu_items+="${ind_ctx_peer} 🌱 By Peers (Mode)...\n"
-                    menu_items+="${ind_ctx_title} 🔤 By Title (Mode)...\n"
-                    
-                    local selected_action
-                    # Use TML layout for centered popup style
-                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
-                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/type-selector.xml"
-                    selected_action=$(echo -e "$menu_items" | tml_run_fzf 2>/dev/null)
-                    
-                    # Handle Esc/Cancel (Empty selection) - Just continue to re-render without changing state
-                    [[ -z "$selected_action" ]] && continue
+	                    local menu_items="${ind_mov} 🎬 Browse Movies\n${ind_sho} 📺 Browse Shows\n"
+	                    menu_items+="\n-- 🔍 Switch Context --\n"
+	                    menu_items+="${ind_ctx_year} 📅 By Year (Mode)...\n"
+	                    menu_items+="${ind_ctx_rate} ⭐ By Rating (Mode)...\n"
+	                    menu_items+="${ind_ctx_peer} 🌱 By Peers (Mode)...\n"
+	                    menu_items+="${ind_ctx_title} 🔤 By Title (Mode)...\n"
+	                    
+	                    local selected_action
+	                    # Prevent main catalog FZF_DEFAULT_OPTS (preview/binds) from leaking into popups.
+	                    local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                    export FZF_DEFAULT_OPTS=""
+	                    # Use TML layout for centered popup style
+	                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+	                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/type-selector.xml"
+	                    selected_action=$(echo -e "$menu_items" | tml_run_fzf 2>/dev/null)
+	                    export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                    
+	                    # Handle Esc/Cancel (Empty selection) - Just continue to re-render without changing state
+	                    [[ -z "$selected_action" ]] && continue
 
                     case "$selected_action" in
                         *"Browse Movies") 
@@ -535,21 +539,31 @@ main() {
                             current_context="default" ;;
                             
                         # Context Switching - Immediately Prompts for Filter Value
-                        *"By Year (Mode)...") 
-                            current_context="year"; current_sort="desc" 
-                            # Initial Prompt
-                            local yr_list=$(seq $(date +%Y) -1 1950)
-                            local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " --header="Set Initial Year" 2>/dev/null)
-                            [[ -n "$sel_yr" ]] && current_query="$sel_yr"
-                            ;;
-                        *"By Rating (Mode)...") 
-                            current_context="rating"; current_sort="desc"
-                            local rat_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\nAny Rating"
-                            local sel_rat=$(echo -e "$rat_opts" | fzf --height=10 --layout=reverse --border --prompt="Min Rating: " --header="Set Initial Rating" 2>/dev/null)
-                            case "$sel_rat" in
-                                "9+ Stars") current_min_rating=9 ;;
-                                "8+ Stars") current_min_rating=8 ;;
-                                "7+ Stars") current_min_rating=7 ;;
+	                        *"By Year (Mode)...") 
+	                            current_context="year"; current_sort="desc" 
+	                            # Initial Prompt
+	                            local yr_list=$(seq $(date +%Y) -1 1950)
+	                            local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                            export FZF_DEFAULT_OPTS=""
+	                            tml_parse "$SCRIPT_DIR/../modules/ui/layouts/year-selector-initial.xml"
+	                            local sel_yr
+	                            sel_yr=$(echo "$yr_list" | tml_run_fzf 2>/dev/null)
+	                            export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                            [[ -n "$sel_yr" ]] && current_query="$sel_yr"
+	                            ;;
+	                        *"By Rating (Mode)...") 
+	                            current_context="rating"; current_sort="desc"
+	                            local rat_opts="9+ Stars\n8+ Stars\n7+ Stars\n6+ Stars\n5+ Stars\nAny Rating"
+	                            local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                            export FZF_DEFAULT_OPTS=""
+	                            tml_parse "$SCRIPT_DIR/../modules/ui/layouts/rating-selector-initial.xml"
+	                            local sel_rat
+	                            sel_rat=$(echo -e "$rat_opts" | tml_run_fzf 2>/dev/null)
+	                            export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                            case "$sel_rat" in
+	                                "9+ Stars") current_min_rating=9 ;;
+	                                "8+ Stars") current_min_rating=8 ;;
+	                                "7+ Stars") current_min_rating=7 ;;
                                 "6+ Stars") current_min_rating=6 ;;
                                 "5+ Stars") current_min_rating=5 ;;
                                 *) current_min_rating=0 ;;
@@ -564,7 +578,7 @@ main() {
                     ;;
                 105) 
                     # Smart Sort Menu (^V) - Context Aware + Tweaker
-                    local sort_menu=""
+	                    local sort_menu=""
                     
                     case "$current_context" in
                         default)
@@ -582,36 +596,50 @@ main() {
                             sort_menu="⬇️ Sort: A-Z\n⬆️ Sort: Z-A" ;;
                     esac
                     
-                    local sel_sort
-                    # Use TML layout for centered popup style
-                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
-                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/sort-selector.xml"
-                    sel_sort=$(echo -e "$sort_menu" | tml_run_fzf 2>/dev/null)
-                    
-                    if [[ -n "$sel_sort" ]]; then
-                        case "$sel_sort" in
+	                    local sel_sort
+	                    # Prevent main catalog FZF_DEFAULT_OPTS (preview/binds) from leaking into popups.
+	                    local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                    export FZF_DEFAULT_OPTS=""
+	                    # Use TML layout for centered popup style
+	                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+	                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/sort-selector.xml"
+	                    sel_sort=$(echo -e "$sort_menu" | tml_run_fzf 2>/dev/null)
+	                    export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                    
+	                    if [[ -n "$sel_sort" ]]; then
+	                        case "$sel_sort" in
                             # DEFAULT
                             *"Latest Uploads"*) current_sort="date_added"; current_order="desc" ;;
                             *"Trending Now"*)   current_sort="trending";   current_order="desc" ;; # Trending usually implies desc
                             *"Popular All Time"*) current_sort="rating"; current_order="desc" ;;
                             
                             # YEAR TWEAKS
-                            *"Change Year"*)
-                                local yr_list=$(seq $(date +%Y) -1 1950)
-                                local sel_yr=$(echo "$yr_list" | fzf --height=15 --layout=reverse --border --prompt="Year: " 2>/dev/null)
-                                [[ -n "$sel_yr" ]] && current_query="$sel_yr"
-                                ;;
+	                            *"Change Year"*)
+	                                local yr_list=$(seq $(date +%Y) -1 1950)
+	                                local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                                export FZF_DEFAULT_OPTS=""
+	                                tml_parse "$SCRIPT_DIR/../modules/ui/layouts/year-selector.xml"
+	                                local sel_yr
+	                                sel_yr=$(echo "$yr_list" | tml_run_fzf 2>/dev/null)
+	                                export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                                [[ -n "$sel_yr" ]] && current_query="$sel_yr"
+	                                ;;
                             *"Newest First"*) current_sort="desc" ;;
                             *"Oldest First"*) current_sort="asc" ;;
                             
                             # RATING TWEAKS
-                            *"Change Min Rating"*)
-                                local r_opts="9+\n8+\n7+\n6+\nAny"
-                                local r_sel=$(echo -e "$r_opts" | fzf --height=8 --layout=reverse --border --prompt="Min Rating: " 2>/dev/null)
-                                case "$r_sel" in
-                                    "9+") current_min_rating=9 ;;
-                                    "8+") current_min_rating=8 ;;
-                                    "7+") current_min_rating=7 ;;
+	                            *"Change Min Rating"*)
+	                                local r_opts="9+\n8+\n7+\n6+\nAny"
+	                                local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                                export FZF_DEFAULT_OPTS=""
+	                                tml_parse "$SCRIPT_DIR/../modules/ui/layouts/rating-selector.xml"
+	                                local r_sel
+	                                r_sel=$(echo -e "$r_opts" | tml_run_fzf 2>/dev/null)
+	                                export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                                case "$r_sel" in
+	                                    "9+") current_min_rating=9 ;;
+	                                    "8+") current_min_rating=8 ;;
+	                                    "7+") current_min_rating=7 ;;
                                     "6+") current_min_rating=6 ;;
                                     *)    current_min_rating=0 ;;
                                 esac
@@ -626,18 +654,32 @@ main() {
                             *"Z-A"*)           current_sort="desc" ;;
                             
                             # LANGUAGE FILTER
-                            *"By Language"*)
-                                # Source languages module and show picker
-                                source "$SCRIPT_DIR/../modules/core/languages.sh" 2>/dev/null
-                                local lang_list="All Languages\n🇬🇧 English (en)\n🇪🇸 Spanish (es)\n🇫🇷 French (fr)\n🇩🇪 German (de)\n🇮🇹 Italian (it)\n🇯🇵 Japanese (ja)\n🇰🇷 Korean (ko)\n🇨🇳 Chinese (zh)\n🇮🇳 Hindi (hi)\n🇷🇺 Russian (ru)\n🇵🇹 Portuguese (pt)\n🇹🇷 Turkish (tr)"
-                                local sel_lang
-                                sel_lang=$(echo -e "$lang_list" | fzf --height=15 --layout=reverse --border --prompt="Language: " --header="Filter by Language" 2>/dev/null)
-                                if [[ -n "$sel_lang" && "$sel_lang" != "All Languages" ]]; then
-                                    # Extract language code from selection (e.g., "🇬🇧 English (en)" -> "en")
-                                    local lang_code=$(echo "$sel_lang" | grep -oE '\([a-z]{2}\)' | tr -d '()')
-                                    [[ -n "$lang_code" ]] && export CURRENT_LANGUAGE="$lang_code"
-                                else
-                                    export CURRENT_LANGUAGE=""
+	                            *"By Language"*)
+	                                local sel_lang
+	                                local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                                local _saved_lc_all="${LC_ALL:-}"
+	                                local _saved_lang="${LANG:-}"
+	                                local _saved_runewidth_eastasian="${RUNEWIDTH_EASTASIAN:-}"
+	                                # Set UTF-8 locale BEFORE sourcing parser to ensure multi-byte emojis are handled correctly
+	                                export LC_ALL=C.UTF-8
+	                                export LANG=C.UTF-8
+	                                export RUNEWIDTH_EASTASIAN=1
+	                                export FZF_DEFAULT_OPTS=""
+	                                source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+	                                local lang_layout="$SCRIPT_DIR/../modules/ui/layouts/language-selector.xml"
+	                                tml_parse "$lang_layout"
+	                                # Use process substitution to preserve multi-byte emoji sequences
+	                                sel_lang=$(tml_run_fzf --no-hscroll --no-scrollbar 2>/dev/null < <(tml_get_options "$lang_layout"))
+	                                export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                                if [[ -n "$_saved_lc_all" ]]; then export LC_ALL="$_saved_lc_all"; else unset LC_ALL; fi
+	                                if [[ -n "$_saved_lang" ]]; then export LANG="$_saved_lang"; else unset LANG; fi
+	                                if [[ -n "$_saved_runewidth_eastasian" ]]; then export RUNEWIDTH_EASTASIAN="$_saved_runewidth_eastasian"; else unset RUNEWIDTH_EASTASIAN; fi
+	                                if [[ -n "$sel_lang" && "$sel_lang" != "All Languages" ]]; then
+	                                    # Extract language code from selection (e.g., "🇬🇧 English (en)" -> "en")
+	                                    local lang_code=$(echo "$sel_lang" | grep -oE '\([a-z]{2}\)' | tr -d '()')
+	                                    [[ -n "$lang_code" ]] && export CURRENT_LANGUAGE="$lang_code"
+	                                else
+	                                    export CURRENT_LANGUAGE=""
                                 fi
                                 ;;
                         esac
@@ -646,16 +688,20 @@ main() {
                     ;;
                 106)
                     # Genre dropdown: show FZF popup with genre list
-                    local genre_list="All Genres\nAction\nAdventure\nAnimation\nComedy\nCrime\nDocumentary\nDrama\nFamily\nFantasy\nHorror\nMusic\nMystery\nRomance\nSci-Fi\nThriller\nWar\nWestern"
-                    local selected_genre
-                    # Use TML layout for centered popup style
-                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
-                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/genre-selector.xml"
-                    selected_genre=$(echo -e "$genre_list" | tml_run_fzf 2>/dev/null)
-                    
-                    if [[ -n "$selected_genre" && "$selected_genre" != "All Genres" ]]; then
-                        export CURRENT_GENRE="$selected_genre" # Use export for CURRENT_GENRE
-                    else
+	                    local genre_list="All Genres\nAction\nAdventure\nAnimation\nComedy\nCrime\nDocumentary\nDrama\nFamily\nFantasy\nHorror\nMusic\nMystery\nRomance\nSci-Fi\nThriller\nWar\nWestern"
+	                    local selected_genre
+	                    # Prevent main catalog FZF_DEFAULT_OPTS (preview/binds) from leaking into popups.
+	                    local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                    export FZF_DEFAULT_OPTS=""
+	                    # Use TML layout for centered popup style
+	                    source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+	                    tml_parse "$SCRIPT_DIR/../modules/ui/layouts/genre-selector.xml"
+	                    selected_genre=$(echo -e "$genre_list" | tml_run_fzf 2>/dev/null)
+	                    export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                    
+	                    if [[ -n "$selected_genre" && "$selected_genre" != "All Genres" ]]; then
+	                        export CURRENT_GENRE="$selected_genre" # Use export for CURRENT_GENRE
+	                    else
                         export CURRENT_GENRE=""
                     fi
                     continue
@@ -668,13 +714,18 @@ main() {
                 110)
                     # Search UI
                     local search_query=""
-                    if command -v gum &> /dev/null; then
-                        search_query=$(gum input --placeholder "Search Movies/Shows..." --prompt "🔍 " --width 60 --header "Search Termflix Catalog")
-                    else
-                         # Fallback: Use FZF as an input box
-                         # We pipe dummy input, use print-query to get user typing, and capture first line
-                         search_query=$(echo "" | fzf --print-query --prompt="Search > " --header="Type and press Enter" --height=8 --layout=reverse --border | head -1)
-                    fi
+	                    if command -v gum &> /dev/null; then
+	                        search_query=$(gum input --placeholder "Search Movies/Shows..." --prompt "🔍 " --width 60 --header "Search Termflix Catalog")
+	                    else
+	                         # Fallback: Use FZF as an input box
+	                         # We pipe dummy input, use print-query to get user typing, and capture first line
+	                         source "$SCRIPT_DIR/../modules/ui/tml/parser/tml_parser.sh"
+	                         local _saved_fzf_default_opts="${FZF_DEFAULT_OPTS:-}"
+	                         export FZF_DEFAULT_OPTS=""
+	                         tml_parse "$SCRIPT_DIR/../modules/ui/layouts/search-input.xml"
+	                         search_query=$(echo "" | tml_run_fzf --print-query | head -1)
+	                         export FZF_DEFAULT_OPTS="$_saved_fzf_default_opts"
+	                    fi
                     
                     if [[ -n "$search_query" ]]; then
                         current_query="$search_query"

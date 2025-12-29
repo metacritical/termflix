@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Language Selector Layout
+  Centered popup modal for language filtering
+  Matches other selector styling (type/genre/sort)
+-->
+<fzf-layout id="language-selector" name="Language Selector">
+  <layout direction="reverse" height="60%" margin="15%,25%" padding="1" info="inline"/>
+  <border style="rounded" label=" [ Enter:Select | Esc:Back ] " label-pos="bottom"/>
+  <prompt pointer=">">Language: </prompt>
+  <header first="true">Filter by Language</header>
+  <options>
+    <option>All Languages</option>
+    <option>🇨🇳 Chinese (zh)</option>
+    <option>🇬🇧 English (en)</option>
+    <option>🇫🇷 French (fr)</option>
+    <option>🇩🇪 German (de)</option>
+    <option>🇮🇳 Hindi (hi)</option>
+    <option>🇮🇹 Italian (it)</option>
+    <option>🇯🇵 Japanese (ja)</option>
+    <option>🇰🇷 Korean (ko)</option>
+    <option>🇷🇺 Russian (ru)</option>
+    <option>🇪🇸 Spanish (es)</option>
+    <option>🌐 Unknown (xx)</option>
+    <option>🏴 Welsh (cy)</option>
+  </options>
+  <colors theme="dynamic">
+    <color name="fg" value="#ffffff"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="hl" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="hl+" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="pointer" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="border" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="prompt" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="info" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="bg+" value="${THEME_HEX_BG_SELECTION:-#374151}"/>
+  </colors>
+  <bindings>
+    <bind key="esc" action="abort"/>
+  </bindings>
+</fzf-layout>

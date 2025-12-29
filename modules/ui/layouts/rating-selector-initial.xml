@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Rating Selector (Initial) Layout
+  Used when switching into "By Rating (Mode)" for the first time.
+-->
+<fzf-layout id="rating-selector-initial" name="Rating Selector (Initial)">
+  <layout direction="reverse" height="10" margin="15%,25%" padding="1" info="inline"/>
+  <border style="rounded" label=" [ Enter:Select | Esc:Back ] " label-pos="bottom"/>
+  <prompt pointer="➜">Min Rating: </prompt>
+  <header first="true">Set Initial Rating</header>
+  <colors theme="dynamic">
+    <color name="fg" value="#ffffff"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="hl" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="hl+" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="pointer" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="border" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="prompt" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="info" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="bg+" value="${THEME_HEX_BG_SELECTION:-#374151}"/>
+  </colors>
+  <bindings>
+    <bind key="esc" action="abort"/>
+  </bindings>
+</fzf-layout>

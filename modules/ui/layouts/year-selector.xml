@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Year Selector Layout
+  Used for "Change Year" within the sort menu (no header previously).
+-->
+<fzf-layout id="year-selector" name="Year Selector">
+  <layout direction="reverse" height="15" margin="15%,25%" padding="1" info="inline"/>
+  <border style="rounded" label=" [ Enter:Select | Esc:Back ] " label-pos="bottom"/>
+  <prompt pointer="➜">Year: </prompt>
+  <colors theme="dynamic">
+    <color name="fg" value="#ffffff"/>
+    <color name="fg+" value="#ffffff"/>
+    <color name="hl" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="hl+" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="pointer" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="border" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="prompt" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="info" value="${THEME_HEX_GLOW:-#e879f9}"/>
+    <color name="bg+" value="${THEME_HEX_BG_SELECTION:-#374151}"/>
+  </colors>
+  <bindings>
+    <bind key="esc" action="abort"/>
+  </bindings>
+</fzf-layout>

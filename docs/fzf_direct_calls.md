@@ -39,10 +39,11 @@ Notes:
   - Type selector: migrated to `tml_run_fzf` via `modules/ui/layouts/type-selector.xml`.
   - Sort selector: migrated to `tml_run_fzf` via `modules/ui/layouts/sort-selector.xml`.
   - Genre selector: migrated to `tml_run_fzf` via `modules/ui/layouts/genre-selector.xml`.
-  - Year/rating filters: direct `fzf` calls (inline).
-  - Language filter: direct `fzf` call (inline).
-  - Search prompt (FZF input fallback): direct `fzf` call.
+  - Year filter: migrated to `tml_run_fzf` via `modules/ui/layouts/year-selector.xml` and `modules/ui/layouts/year-selector-initial.xml`.
+  - Rating filter: migrated to `tml_run_fzf` via `modules/ui/layouts/rating-selector.xml` and `modules/ui/layouts/rating-selector-initial.xml`.
+  - Language filter: migrated to `tml_run_fzf` via `modules/ui/layouts/language-selector.xml`.
+  - Search prompt (FZF input fallback): migrated to `tml_run_fzf` via `modules/ui/layouts/search-input.xml` (still uses `--print-query`).
 
 ## Migration Status
 - Done: Stage 2 season picker (`modules/ui/pickers/season_picker.sh`), episode picker (`modules/ui/pickers/episode_picker.sh`), movie version picker, episode version picker.
-- Remaining: Main catalog, supporting menus (year/rating filters, language filter, search prompt).
+- Remaining: Main catalog.
