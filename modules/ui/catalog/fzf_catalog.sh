@@ -95,7 +95,9 @@ show_fzf_catalog() {
     local snap_file="${snap_dir}/termflix_stage1_fzf_display.txt"
     local snap_header_file="${snap_dir}/termflix_stage1_fzf_header.txt"
     printf "%s\n" "$fzf_display" > "$snap_file" 2>/dev/null
-    echo "$title - [$len results]" > "$snap_header_file" 2>/dev/null
+    # Stage 2 preview no longer renders the Stage 1 header snapshot; keep the
+    # file empty to avoid stale headers leaking into the UI.
+    : > "$snap_header_file" 2>/dev/null
 
     # 2. Configure FZF with enhanced options
     # Header showing navigation options - New Design with LOGO

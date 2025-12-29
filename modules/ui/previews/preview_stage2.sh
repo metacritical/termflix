@@ -59,14 +59,7 @@ genre="${STAGE2_GENRE:-${TERMFLIX_STAGE2_GENRE:-}}"
 large_screenshot="${TERMFLIX_STAGE2_LARGE_SCREENSHOT:-}"
 
 # Try environment first, otherwise fall back to snapshot files
-header="${TERMFLIX_LAST_FZF_HEADER:-}"
 catalog="${TERMFLIX_LAST_FZF_DISPLAY:-}"
-
-if [[ -z "$header" ]]; then
-    snap_dir="${TMPDIR:-/tmp}"
-    snap_header_file="${snap_dir}/termflix_stage1_fzf_header.txt"
-    [[ -f "$snap_header_file" ]] && header="$(cat "$snap_header_file" 2>/dev/null)"
-fi
 
 if [[ -z "$catalog" ]]; then
     snap_dir="${TMPDIR:-/tmp}"
@@ -88,22 +81,6 @@ fi
 # ═══════════════════════════════════════════════════════════════
 
 stage2_context="${TERMFLIX_STAGE2_CONTEXT:-${TERMFLIX_STAGE1_CONTEXT:-}}"
-
-# Only render header when NOT in search/shows context AND title is known
-# Shows workflow doesn't set context properly, so also check for TERMFLIX_STAGE2_TITLE
-should_show_header=true
-if [[ "$stage2_context" == "search" || "$stage2_context" == "shows" || "$stage2_context" == "tv" ]]; then
-    should_show_header=false
-elif [[ -n "${TERMFLIX_STAGE2_TITLE:-}" ]]; then
-    should_show_header=false
-elif [[ "$title" == "Unknown Title" ]]; then
-    should_show_header=false
-fi
-
-if [[ "$should_show_header" == "true" && -n "$header" ]]; then
-    echo -e "${BOLD}${CYAN}${header}${RESET}"
-    echo
-fi
 
 # DEBUG: Log resolved context (only when --debug flag is set)
 if [[ "${TORRENT_DEBUG:-false}" == "true" ]]; then
