@@ -3,11 +3,18 @@
 Notes:
 - "Direct" means a script invokes `fzf` itself (even if it parses TML args).
 - TML layouts exist for some, but are not fully used to run `fzf`.
+- Preview scripts are not "direct" calls, but are still part of the UI surface (invoked by fzf via `--preview`).
 
 ### Stage 1: Catalog (Movies/Shows list)
 - `modules/ui/catalog/fzf_catalog.sh`
   - Direct `fzf` call for the main catalog list.
   - TML (`modules/ui/layouts/main-catalog.tml`) is used to build args, but `fzf` is still invoked inline.
+
+#### Stage 1 Preview: Shows Episode Table (not a direct call)
+- `modules/ui/catalog/preview_fzf.sh`
+  - Renders the "Season X Episodes" table inside the Stage 1 preview pane.
+  - Uses fzf-provided `FZF_PREVIEW_COLUMNS` to size columns and keeps a fixed-width lock column so locked episodes don't shift/clobber the date column.
+  - Title rendering does not truncate; note that some episode titles may already include `...` upstream (TMDB data).
 
 ### Stage 2: Movie Version Picker
 - `modules/ui/catalog/fzf_catalog.sh`

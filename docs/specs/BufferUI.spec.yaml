@@ -105,10 +105,18 @@ resilience:
 integration:
   sources_from:
     - modules/ui/catalog/fzf_catalog.sh (Stage 2 selection)
-  flow_note: "Stage 2 version selection resolves magnet/source/quality and launches Stage 3 buffer UI."
   exports_to:
     - modules/torrent.sh (stream_torrent function)
   uses:
     - modules/ui/tml/parser/tml_parser.sh (layout parsing)
     - modules/ui/layouts/buffer-ui.xml (FZF layout)
     - scripts/python/fetch_trailers.py (trailer links)
+
+logic_flow:
+  Stage2_to_Stage3:
+    goal: "Start buffering UI after a version is selected."
+    function: "buffer_ui.sh (Stage 3 entry)"
+    strategy:
+      - "Stage 2 version picker resolves magnet/source/quality."
+      - "Stage 2 exports Stage 2 metadata (title, poster, plot, sources) for Stage 3."
+      - "Stage 3 launches the buffer UI via the TML layout and begins streaming/progress monitoring."

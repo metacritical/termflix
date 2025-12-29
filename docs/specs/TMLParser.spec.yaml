@@ -77,3 +77,13 @@ integration:
     - modules/ui/pickers/*.sh
   sources:
     - modules/core/theme.sh (optional color scheme)
+
+environment:
+  description: "Runtime environment conventions for fzf/TML usage."
+  variables:
+    - "FZF_PREVIEW_COLUMNS (fzf-provided: preview pane width in columns for --preview commands)"
+    - "FZF_PREVIEW_LINES (fzf-provided: preview pane height in lines for --preview commands)"
+    - "TML_VAR_* (exported variables used by tml_eval/tml_eval_bool)"
+  dependencies:
+    - "xmllint"
+    - "fzf"

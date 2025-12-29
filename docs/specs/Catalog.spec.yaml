@@ -30,6 +30,15 @@ ui_components:
       "Ctrl+Left or <": "Previous Page"
       "Enter": "Select Item"
 
+  - component: "Show Preview (Episode Table)"
+    file: "modules/ui/catalog/preview_fzf.sh"
+    function: "N/A (fzf preview script)"
+    description: "Stage 1 preview pane renderer for TV shows; includes a Season Episodes table."
+    notes:
+      - "Uses `FZF_PREVIEW_COLUMNS` for preview pane width when available (fzf-provided)."
+      - "Episode table reserves a fixed-width lock column so locked episodes don't shift/clobber the date column."
+      - "Titles are not truncated by Termflix; some titles may contain `...` upstream (TMDB season data)."
+
   - component: "Episode Picker"
     file: "modules/ui/pickers/episode_picker.sh"
     function: "episode_picker"
@@ -91,3 +100,5 @@ resilience:
     solution: "Removed --exit-0 from FZF command to prevent silent exits on empty selection"
   - issue: "Single quotes in movie titles breaking eval"
     solution: "TML parser uses tml_shell_escape for double-quote safe embedding"
+  - issue: "Locked episodes misalign/clobber date column"
+    solution: "Reserve a fixed-width lock column (2 cols) even when unlocked, and size the table using the preview/list pane width."
