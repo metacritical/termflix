@@ -210,19 +210,12 @@ show_fzf_catalog() {
     # ════════════════════════════════════════════════════════════════
     export menu_header current_page total_pages page_suffix
     source "${UI_DIR}/tml/parser/tml_parser.sh"
-    tml_parse "${UI_DIR}/layouts/main-catalog.tml"
-    export TML_VAR_category="${CURRENT_CATEGORY:-movies}"
-    export TML_VAR_page="${current_page}"
-    export TML_VAR_total_pages="${total_pages}"
-    local tml_fzf_args=$(tml_get_fzf_args)
+    tml_parse "${UI_DIR}/layouts/main-catalog.xml"
     # Paginator prompt - left-aligned below header
     local dynamic_prompt="< Page ${current_page}/${total_pages}${page_suffix} > "
     local dynamic_header
     dynamic_header=$(tml_render_header)
     [[ -z "$dynamic_header" ]] && dynamic_header="$menu_header"
-    
-    export FZF_DEFAULT_OPTS="--ansi --color=${fzf_colors} ${tml_fzf_args} --prompt=\"${dynamic_prompt}\" --header=\"${dynamic_header}\" --info=right --border-label-pos=bottom --border-label=' Enter:Select   Ctrl+L/K:Nav   </\>:Page   Ctrl+F:Search   Ctrl+E:Season   ?:Help '"
-    # OLD: export FZF_DEFAULT_OPTS="--ansi --color=... --layout=reverse ..."
 
     # Debug: show what we're sending to FZF
     if [[ "$TORRENT_DEBUG" == "true" ]]; then
@@ -244,9 +237,9 @@ show_fzf_catalog() {
     fi
     
     # Build start position binding if provided
-    local pos_bind=""
+    local start_bind_args=()
     if [[ $start_pos -gt 1 ]]; then
-        pos_bind="--bind=start:pos($start_pos)"
+        start_bind_args=(--bind "start:pos($start_pos)")
     fi
     
     # Season picker path (for Ctrl+E binding)
@@ -261,14 +254,19 @@ show_fzf_catalog() {
     local async_loader="${FZF_CATALOG_DIR}/async_catalog_loader.sh"
     local reload_cmd="$async_loader ${CURRENT_CATEGORY:-movies} 1 53 true"
     
-    selection=$(printf "%s" "$fzf_display" | fzf \
+    selection=$(printf "%s" "$fzf_display" | tml_run_fzf \
+        --ansi \
+        --color="$fzf_colors" \
+        --prompt "$dynamic_prompt" \
+        --header "$dynamic_header" \
+        --info=right \
         --delimiter=$'\t' \
         --with-nth=1 \
         --preview "$preview_script {2..}" \
         --expect=ctrl-l,ctrl-o,ctrl-s,ctrl-w,ctrl-t,ctrl-v,ctrl-g,ctrl-f,enter,\>,\<,ctrl-right,ctrl-left \
-        --bind "ctrl-e:execute(${UI_DIR}/pickers/season_picker.sh {2..})+reload(printf '%s' \"$fzf_display\")" \
+        --bind "ctrl-e:execute(${season_picker} {2..})+reload(cat '$snap_file')" \
         --bind "ctrl-r:reload($reload_cmd)+first" \
-        $pos_bind \
+        "${start_bind_args[@]}" \
         2>/dev/null)
     fzf_exit_code=$?
         

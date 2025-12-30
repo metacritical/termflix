@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Main Catalog Layout (Stage 1)
-  Complete FZF configuration combining FZF_DEFAULT_OPTS and fzf call
-  Note: expect, delimiter, with-nth handled inline in fzf call
+  Base FZF layout args for Stage 1 (used via `tml_run_fzf`)
+  Note: expect, delimiter, with-nth, preview script are passed inline by `show_fzf_catalog`
 -->
 <fzf-layout id="main-catalog" name="Main Catalog">
   <!-- Layout from FZF_DEFAULT_OPTS -->
-  <layout direction="reverse" margin="1" padding="1" info="hidden"/>
+  <layout direction="reverse"/>
   <border style="rounded"
-          label=" ⌨ Enter:Select  Ctrl+J/K:Nav  &lt;/&gt;:Page  Ctrl+T:Type  Ctrl+V:Sort  Ctrl+F:Search  Ctrl+E:Season "
+          label=" Enter:Select   Ctrl+L/K:Nav   &lt;/&gt;:Page   Ctrl+F:Search   Ctrl+E:Season   ?:Help "
           label-pos="bottom"/>
-  <prompt pointer="➤"/>
+  <prompt/>
   <header first="true"/>
   <preview position="right" size="50%" wrap="true" border="border-left"/>
 
@@ -24,4 +24,3 @@
     <bind key="ctrl-u" action="preview-up"/>
   </bindings>
 </fzf-layout>
-

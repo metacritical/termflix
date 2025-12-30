@@ -495,14 +495,15 @@ tml_get_options() {
 }
 
 tml_run_fzf() {
-    local extra_args="$*"
     local fzf_args
     fzf_args="$(tml_get_fzf_args)"
-    if [[ -n "$extra_args" ]]; then
-        eval "fzf $fzf_args $extra_args"
-    else
-        eval "fzf $fzf_args"
+
+    local parsed_args=()
+    if [[ -n "$fzf_args" ]]; then
+        eval "parsed_args=( $fzf_args )"
     fi
+
+    command fzf "${parsed_args[@]}" "$@"
 }
 
 # ═══════════════════════════════════════════════════════════════
