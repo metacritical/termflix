@@ -60,4 +60,4 @@ Notes:
 ## Remaining / TODO (TML Migration)
 - Deprecate or remove `modules/ui/lib/ui_parser.sh` once all documentation/examples reference `modules/ui/tml/parser/tml_parser.sh`.
 - Audit docs/examples that still show `printf ... | fzf ...` (keep examples small, but prefer `tml_run_fzf` in production docs).
-- Add a lightweight CI/test grep that fails on new production `fzf` direct calls outside `tests/`, `modules/ui/tests/`, and `modules/ui/scratch/` (optional).
+- Guardrail: `tests/ui/test_no_direct_fzf_calls.sh` fails on new production `fzf` direct calls outside `tests/`, `modules/ui/tests/`, `modules/ui/scratch/`, and `modules/ui/debug/`.
