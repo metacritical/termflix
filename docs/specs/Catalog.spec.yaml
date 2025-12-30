@@ -21,6 +21,8 @@ ui_components:
     file: "modules/ui/catalog/fzf_catalog.sh"
     function: "show_fzf_catalog"
     description: "Primary FZF interface showing list of titles."
+    implementation_notes:
+      - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args."
     keybindings:
       "Ctrl+F": "Search Mode"
       "Ctrl+O": "Category: Movies"
@@ -29,6 +31,15 @@ ui_components:
       "Ctrl+Right or >": "Next Page"
       "Ctrl+Left or <": "Previous Page"
       "Enter": "Select Item"
+
+  - component: "Filter Pickers (Popups)"
+    file: "bin/termflix"
+    function: "main (sort/type/genre flows)"
+    description: "Centered popup pickers for Year/Rating/Language and search input; launched from the Stage 1 header dropdowns."
+    implementation_notes:
+      - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with XML layouts in `modules/ui/layouts/*-selector*.xml`."
+      - "Temporarily clears `FZF_DEFAULT_OPTS` before launching to prevent main-catalog preview/binds leaking into the popup."
+      - "Language picker forces UTF-8 locale and sets `RUNEWIDTH_EASTASIAN=1` and runs fzf with `--no-hscroll --no-scrollbar` to reduce unicode redraw issues in tmux."
 
   - component: "Show Preview (Episode Table)"
     file: "modules/ui/catalog/preview_fzf.sh"
@@ -71,6 +82,8 @@ data_flow:
       CURRENT_PAGE: "Integer"
       TERMFLIX_PREFETCH_PID: "PID of background fetcher"
       TERMFLIX_STAGE1_CONTEXT: "catalog | search"
+      CURRENT_LANGUAGE: "ISO 639-1 code used by language filter (empty means no filter)"
+      CURRENT_MIN_RATING: "Minimum rating threshold (0 means no filter)"
 
 logic_flow:
   Stage1_to_Stage2:

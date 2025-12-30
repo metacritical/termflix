@@ -4,7 +4,7 @@
 feature:
   name: Request Protocol
   version: 1.0.0
-  purpose: "Formalize the debugging task for language flag display inconsistencies."
+  purpose: "Formalize the debugging task for language flag rendering inconsistencies in the language filter picker."
 
 request:
   type: "Bugfix"
@@ -15,14 +15,20 @@ request:
 goal: "Ensure language flags (emojis) are displayed correctly in Termflix Text Mode, matching functionality in Kitty Mode."
 
 context:
-  description: "Language flags currently appear in Kitty icat mode but are missing in Text Mode preview."
+  description: "In the 'Filter by Language' popup (tmux + text mode), regional-indicator flags (e.g. 🇬🇧) may appear after a delay and can vanish/reappear while navigating the list."
   files:
-    - "modules/ui/catalog/preview_fzf.sh"
-    - "modules/core/languages.sh"
+    - "bin/termflix"
+    - "modules/ui/layouts/language-selector.xml"
+    - "modules/ui/tml/parser/tml_parser.sh"
   memory:
     - "2c85626e-0996-4435-91dc-e9c80e24505e" # Debug Language Flag Display conversation
 
 success_criteria:
-  - "Flag emoji is visible in the Preview Pane header in Text Mode."
-  - "No regression in Kitty Mode display."
-  - "Correct mapping of ISO 639-1 codes to emojis."
+  - "Flag emoji is visible immediately when the language picker opens."
+  - "Flags do not flicker/disappear while navigating the list."
+  - "No regression in non-tmux environments (direct terminal)."
+
+known_mitigations:
+  - "Language picker forces UTF-8 locale (LC_ALL/LANG=C.UTF-8)."
+  - "Sets RUNEWIDTH_EASTASIAN=1 for fzf inside tmux."
+  - "Runs fzf with --no-hscroll --no-scrollbar for the language picker."

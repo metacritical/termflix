@@ -4,11 +4,12 @@ Notes:
 - "Direct" means a script invokes `fzf` itself (even if it parses TML args).
 - TML layouts exist for some, but are not fully used to run `fzf`.
 - Preview scripts are not "direct" calls, but are still part of the UI surface (invoked by fzf via `--preview`).
+- Popup pickers launched from `bin/termflix` clear `FZF_DEFAULT_OPTS` before running so main-catalog preview/binds do not leak into centered modals.
 
 ### Stage 1: Catalog (Movies/Shows list)
 - `modules/ui/catalog/fzf_catalog.sh`
-  - Direct `fzf` call for the main catalog list.
-  - TML (`modules/ui/layouts/main-catalog.tml`) is used to build args, but `fzf` is still invoked inline.
+  - Main catalog list uses `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args, and passes preview/expect/binds as explicit fzf args.
+  - `modules/ui/layouts/main-catalog.tml` is currently kept as a conceptual layout reference, but Stage 1 runtime uses the `.xml`.
 
 #### Stage 1 Preview: Shows Episode Table (not a direct call)
 - `modules/ui/catalog/preview_fzf.sh`
@@ -43,7 +44,7 @@ Notes:
   - Rating filter: migrated to `tml_run_fzf` via `modules/ui/layouts/rating-selector.xml` and `modules/ui/layouts/rating-selector-initial.xml`.
   - Language filter: migrated to `tml_run_fzf` via `modules/ui/layouts/language-selector.xml`.
   - Search prompt (FZF input fallback): migrated to `tml_run_fzf` via `modules/ui/layouts/search-input.xml` (still uses `--print-query`).
+  - Language flags note (tmux/text mode): the language picker forces `LC_ALL=C.UTF-8`, `LANG=C.UTF-8`, `RUNEWIDTH_EASTASIAN=1` and runs `fzf` with `--no-hscroll --no-scrollbar` to reduce unicode-width redraw issues.
 
 ## Migration Status
-- Done: Stage 2 season picker (`modules/ui/pickers/season_picker.sh`), episode picker (`modules/ui/pickers/episode_picker.sh`), movie version picker, episode version picker.
-- Remaining: Main catalog.
+- Done: Main catalog (Stage 1), season picker, episode picker, movie version picker, episode version picker, buffer UI.

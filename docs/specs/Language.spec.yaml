@@ -12,12 +12,12 @@ data_sources:
     priority: 1
     field: "original_language"
     format: "ISO 639-1 (2-letter code)"
-    example: "en", "ko", "ja", "es"
+    examples: ["en", "ko", "ja", "es"]
   - source: "OMDB"
     priority: 2
     field: "Language"
     format: "Full English Name (comma-separated)"
-    example: "English", "Korean", "Spanish"
+    examples: ["English", "Korean", "Spanish"]
     note: "Used as fallback if TMDB data is missing."
 
 mapping_logic:
@@ -59,3 +59,8 @@ sorting:
   trigger: "Ctrl+V"
   action: "Filter by Language"
   environment_variable: "CURRENT_LANGUAGE"
+  picker:
+    file: "modules/ui/layouts/language-selector.xml"
+    notes:
+      - "Picker UI is driven by the TML parser (`tml_run_fzf`)."
+      - "Options are currently a small, curated list (not dynamically generated)."

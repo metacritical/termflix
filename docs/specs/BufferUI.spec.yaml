@@ -105,6 +105,8 @@ resilience:
 integration:
   sources_from:
     - modules/ui/catalog/fzf_catalog.sh (Stage 2 selection)
+  cross_references:
+    - docs/specs/Catalog.spec.yaml (logic_flow.Stage2_to_Stage3)
   exports_to:
     - modules/torrent.sh (stream_torrent function)
   uses:

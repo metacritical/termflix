@@ -38,6 +38,10 @@ helper_functions:
   - name: "tml_shell_escape"
     description: "Escape special characters for safe shell embedding in double-quoted strings"
     escapes: ["\\", "`", "$", "\"", "!"]
+  - name: "tml_get_options"
+    description: "Extract newline-separated <options><option> values from a <fzf-layout> XML file"
+  - name: "tml_run_fzf"
+    description: "Invoke fzf with the currently-parsed TML args (parses `TML_FZF_ARGS` into an argv array, then executes `fzf` without eval)"
   - name: "tml_attr"
     description: "Extract XML attribute via xmllint"
   - name: "tml_text"
@@ -84,6 +88,9 @@ environment:
     - "FZF_PREVIEW_COLUMNS (fzf-provided: preview pane width in columns for --preview commands)"
     - "FZF_PREVIEW_LINES (fzf-provided: preview pane height in lines for --preview commands)"
     - "TML_VAR_* (exported variables used by tml_eval/tml_eval_bool)"
+    - "FZF_DEFAULT_OPTS (callers may temporarily clear this to prevent main-catalog preview/binds leaking into popup pickers)"
+    - "LC_ALL/LANG (callers may force UTF-8 for unicode-heavy menus)"
+    - "RUNEWIDTH_EASTASIAN (fzf respects this; callers may set to 1 for more stable unicode width handling in tmux)"
   dependencies:
     - "xmllint"
     - "fzf"
