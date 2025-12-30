@@ -59,6 +59,5 @@ Notes:
 - Theme listing: `bin/termflix themes --list` prints a 5-color palette swatch + name; swatches are extracted from `bg`, `bg-selection`, `glow`, `purple`, `success` and reordered for visibility (dark colors not on the edges).
 
 ## Remaining / TODO (TML Migration)
-- Deprecate or remove `modules/ui/lib/ui_parser.sh` once all documentation/examples reference `modules/ui/tml/parser/tml_parser.sh`.
-- Audit docs/examples that still show `printf ... | fzf ...` (keep examples small, but prefer `tml_run_fzf` in production docs).
+- Deprecate or remove `modules/ui/lib/ui_parser.sh` after `modules/ui/tests/*` and `modules/ui/debug/*` migrate to `modules/ui/tml/parser/tml_parser.sh`.
 - Guardrail: `tests/ui/test_no_direct_fzf_calls.sh` fails on new production `fzf` direct calls outside `tests/`, `modules/ui/tests/`, `modules/ui/scratch/`, and `modules/ui/debug/`.

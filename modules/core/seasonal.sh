@@ -35,6 +35,9 @@ termflix_is_christmas_season() {
 # Best-effort Buddha Purnima date table (India). Override supported:
 #   TERMFLIX_BUDDHA_PURNIMA_DATE=YYYY-MM-DD
 #   TERMFLIX_SPECIAL_DAY=buddha_purnima
+#
+# TODO(seasonal): Optionally resolve Buddha Purnima via an online calendar API and cache the
+# date per-year in a local config file; keep the built-in table as the offline fallback.
 termflix_is_buddha_purnima() {
   [[ "${TERMFLIX_SPECIAL_DAY:-}" == "buddha_purnima" ]] && return 0
 

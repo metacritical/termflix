@@ -43,11 +43,7 @@
 | Bindings (action/return-code) | ✅ |
 
 ### Usage
-```bash
-source modules/ui/lib/ui_parser.sh
-build_fzf_cmd "season-picker"  # Returns FZF args
-run_fzf_layout "season-picker" # Runs FZF directly
-```
+V1 is deprecated and is kept only for older docs/tests/debug scripts. New code should use V2 (`tml_parser.sh`) and `tml_run_fzf`.
 
 ---
 
@@ -117,6 +113,7 @@ modules/ui/
 ---
 
 ## Archive Note
+Once debug/tests are migrated off V1, `modules/ui/lib/ui_parser.sh` can be removed.
 
 V1 remains in the repo for compatibility with older docs/tests and as a reference implementation.
 New work should target V2 layouts and `tml_parser.sh`.

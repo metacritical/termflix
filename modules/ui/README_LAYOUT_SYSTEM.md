@@ -8,22 +8,7 @@ Termflix currently supports two layout parsers:
 
 ## Overview
 
-Instead of hardcoding fzf command-line arguments in bash scripts:
-
-```bash
-# Before: Hardcoded fzf calls
-selection=$(printf "%s" "$data" | fzf \
-    --ansi \
-    --layout=reverse \
-    --border=rounded \
-    --margin=1 \
-    --padding=1 \
-    --header="$menu_header" \
-    --preview="$preview_script" \
-    --preview-window=left:55%:wrap:border-right \
-    --color="fg:#6b7280,bg:#1e1e2e,hl:#818cf8,..." \
-    --bind="ctrl-e:execute($season_picker_script)+reload(...)")
-```
+Instead of hardcoding long fzf command-line strings in bash scripts, Termflix defines UI layouts declaratively (XML + optional TML header templates) and runs them via the v2 parser.
 
 Define layouts declaratively in XML:
 
@@ -97,9 +82,9 @@ tml_parse modules/ui/layouts/episode-picker.xml
 # Run fzf with parsed args
 selection=$(printf "%s" "$data" | tml_run_fzf)
 
-# Or just build the arguments
+# Or inspect the generated args (debugging)
 args=$(tml_get_fzf_args)
-selection=$(printf "%s" "$data" | fzf $args)
+echo "$args"
 ```
 
 ## Themes (TSS)
@@ -258,46 +243,19 @@ modules/ui/tml/parser/tml_parser.sh fzf-args modules/ui/layouts/main-catalog.xml
 
 ## Migration Guide
 
-### Before (Hardcoded)
-
-```bash
-selection=$(printf "%s" "$episode_list" | fzf \
-    --height=100% \
-    --layout=reverse \
-    --border=rounded \
-    --margin=1 \
-    --padding=1 \
-    --delimiter='|' \
-    --with-nth=2 \
-    --pointer='➤' \
-    --prompt="> " \
-    --header="Pick Episode - [$CLEAN_TITLE] Season ${SEASON_NUM} →" \
-    --header-first \
-    --info=default \
-    --border-label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " \
-    --border-label-pos=bottom \
-    --expect=enter,ctrl-e,ctrl-s,ctrl-h,ctrl-l,esc \
-    --ansi \
-    --color="$(get_fzf_colors)" \
-    --preview-window=left:55%:wrap:border-right \
-    --preview "ep_no=\$(echo {} | cut -d'|' -f1); ${UI_DIR}/pickers/preview_episode.sh \"\$ep_no\"")
-
-KEY=$(echo "$RESULTS" | head -1)
-SELECTED=$(echo "$RESULTS" | tail -1)
-```
-
 ### After (XML + Parser)
 
 ```bash
 # Define layout in episode_picker.xml (already done)
 
 # Use in script
-source "${UI_DIR}/lib/ui_parser.sh"
+source modules/ui/tml/parser/tml_parser.sh
 export CLEAN_TITLE="Series Name"
 export SEASON_NUM="1"
 export UI_DIR="/path/to/modules/ui"
 
-RESULTS=$(printf "%s" "$episode_list" | run_fzf_layout "episode-picker")
+tml_parse modules/ui/layouts/episode-picker.xml
+RESULTS=$(printf "%s" "$episode_list" | tml_run_fzf)
 
 KEY=$(echo "$RESULTS" | head -1)
 SELECTED=$(echo "$RESULTS" | tail -1)
@@ -345,7 +303,7 @@ See `examples/example_usage.sh` for complete examples:
 ## Requirements
 
 - `xmllint` (libxml2-utils)
-- `bash` 4.0+
+- `bash`
 - `fzf`
 
 ### Installing xmllint
@@ -387,7 +345,7 @@ To add a new layout:
 
 1. Create XML file in `layouts/`
 2. Follow schema in `schema/layout_schema.xml`
-3. Test with `./lib/ui_parser.sh --validate your-layout`
+3. Smoke test parse with `modules/ui/tml/parser/tml_parser.sh fzf-args modules/ui/layouts/your-layout.xml`
 4. Add to documentation
 
 ## License

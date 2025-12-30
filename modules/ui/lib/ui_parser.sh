@@ -3,6 +3,10 @@
 # FZF Layout Parser
 # Parses XML layout definitions and generates fzf command-line arguments
 # Usage: source ui_parser.sh; build_fzf_cmd "layout_id"
+#
+# DEPRECATED:
+# - New code should use `modules/ui/tml/parser/tml_parser.sh` (V2) and `tml_run_fzf`.
+# - This legacy parser is kept only for older docs/tests/debug scripts.
 
 # Script directory - safer sourcing
 _UI_PARSER_SCRIPT="${BASH_SOURCE[0]:-${(%):-%x}}"
