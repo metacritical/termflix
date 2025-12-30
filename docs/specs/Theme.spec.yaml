@@ -1,0 +1,77 @@
+# Machine-Readable Specification for Termflix Themes (TSS)
+# defined_in:
+#   - modules/core/theme.sh
+#   - modules/core/seasonal.sh
+#   - bin/termflix (theme/themes --list)
+
+feature:
+  name: Theme System (TSS)
+  version: 1.0.0
+  purpose: "Load terminal style sheets (TSS) to control colors and UI symbols across Termflix."
+
+local_resources:
+  - path: "themes/*.tss"
+    format: "TSS (CSS-like)"
+    purpose: "Bundled themes"
+    persistence: "Permanent"
+  - path: "~/.config/termflix/themes/*.tss"
+    format: "TSS (CSS-like)"
+    purpose: "User themes (override bundled)"
+    persistence: "Permanent"
+  - path: "~/.config/termflix/themes/*.css"
+    format: "CSS-like"
+    purpose: "Back-compat user themes"
+    persistence: "Permanent"
+
+format:
+  description: "CSS-like variables; `--` prefix is optional. Values support hex colors and quoted strings."
+  examples:
+    - "bg: #1a1b26;"
+    - "--glow: #bb9af7;"
+    - "icon-dropdown: \"▾\";"
+  parsing_rules:
+    - "Hex colors (#RRGGBB) export THEME_HEX_* and THEME_* (ANSI) variants."
+    - "Non-hex values export THEME_STR_* (string tokens)."
+
+data_flow:
+  precedence:
+    - "~/.config/termflix/themes/<name>.tss"
+    - "~/.config/termflix/themes/<name>.css"
+    - "themes/<name>.tss"
+    - "themes/<name>.css (bundled back-compat)"
+    - "themes/default.tss (fallback)"
+  exports:
+    colors:
+      - "THEME_HEX_BG / THEME_BG"
+      - "THEME_HEX_BG_SELECTION / THEME_BG_SELECTION"
+      - "THEME_HEX_GLOW / THEME_GLOW"
+      - "THEME_HEX_PURPLE / THEME_PURPLE"
+      - "THEME_HEX_SUCCESS / THEME_SUCCESS"
+    strings:
+      - "THEME_STR_ICON_* (pointer/dropdown/movie/play/ready, etc.)"
+
+branding:
+  rule: "The Termflix brand icon is NOT theme-driven."
+  mechanism:
+    - "modules/core/seasonal.sh exports TERMFLIX_LOGO_ICON"
+    - "modules/core/seasonal.sh exports TERMFLIX_STATUS_MID_ICON (optional mid-label icon for FZF border help text)"
+    - "Dec/Jan: 🎅🍿"
+    - "Jan 1: 🎉🍿 (overrides Christmas season)"
+    - "Buddha Purnima: ☸️🪬🍿 (override via TERMFLIX_SPECIAL_DAY=buddha_purnima or TERMFLIX_BUDDHA_PURNIMA_DATE=YYYY-MM-DD)"
+
+cli:
+  list:
+    command: "bin/termflix themes --list"
+    output:
+      - "Shows: <palette> <marker> <theme name> (current?)"
+      - "Palette keys: bg, bg-selection, glow, purple, success"
+      - "Palette order is reordered by brightness so dark swatches are not on the edges."
+    markers:
+      selected: "*"
+      unselected: "-"
+
+integration:
+  used_by:
+    - "modules/ui/tml/parser/tml_parser.sh (FZF colors + header rendering)"
+    - "modules/ui/catalog/fzf_catalog.sh (Stage 1 header + pills)"
+    - "modules/streaming/buffer_ui.sh (theme colors + optional symbols)"

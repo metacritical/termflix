@@ -1,0 +1,36 @@
+/* Tokyo Night inspired theme for Termflix */
+:root {
+  --fg: #c0caf5;
+  --fg-muted: #a9b1d6;
+  --fg-subtle: #565f89;
+  --bg: #1a1b26;
+  --bg-surface: #16161e;
+  --bg-selection: #283457;
+
+  --glow: #bb9af7;      /* purple */
+  --purple: #7aa2f7;    /* blue */
+  --lavender: #c0caf5;
+
+  --success: #9ece6a;
+  --error: #f7768e;
+  --warning: #e0af68;
+  --info: #7dcfff;
+
+  --border: #414868;
+  --pointer: #bb9af7;
+  --prompt: #9ece6a;
+  --spinner: #e0af68;
+  --header: #7aa2f7;
+
+  --yts: #9ece6a;
+  --tpb: #e0af68;
+  --x1337: #bb9af7;
+  --eztv: #7dcfff;
+
+  --pill-active-bg: #283457;
+  --pill-inactive-bg: #16161e;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #c0caf5;
+  --pill-shortcut-fg: #bb9af7;
+}
+

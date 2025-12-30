@@ -88,6 +88,24 @@ tml_eval() {
         result="${result//\$\{$var_name\}/$var_value}"
     done
 
+    # ${VAR-default} (default only when VAR is unset; empty string is respected)
+    while [[ "$result" =~ \$\{([a-zA-Z_][a-zA-Z0-9_]*)-([^:}][^}]*)\} ]]; do
+        local var_name="${BASH_REMATCH[1]}"
+        local default_val="${BASH_REMATCH[2]}"
+        local tml_var="TML_VAR_${var_name}"
+        local var_value=""
+
+        if [[ -n "${!tml_var+x}" ]]; then
+            var_value="${!tml_var}"
+        elif [[ -n "${!var_name+x}" ]]; then
+            var_value="${!var_name}"
+        else
+            var_value="$default_val"
+        fi
+
+        result="${result//\$\{$var_name-$default_val\}/$var_value}"
+    done
+
     # ${VAR:-default}
     while [[ "$result" =~ \$\{([a-zA-Z_][a-zA-Z0-9_]*):-([^}]*)\} ]]; do
         local var_name="${BASH_REMATCH[1]}"
@@ -212,7 +230,11 @@ _parse_fzf_layout() {
     label_pos=$(tml_attr "$xml_file" "${root_xpath}/border/@label-pos")
 
     args+="--border $border_style "
-    [[ -n "$border_label" ]] && args+="--border-label '$border_label' "
+    if [[ -n "$border_label" ]]; then
+        border_label=$(tml_eval "$border_label")
+        border_label=$(tml_shell_escape "$border_label")
+        args+="--border-label \"$border_label\" "
+    fi
     [[ -n "$label_pos" ]] && args+="--border-label-pos $label_pos "
 
     # Prompt
@@ -220,8 +242,16 @@ _parse_fzf_layout() {
     prompt_text=$(tml_text "$xml_file" "${root_xpath}/prompt")
     pointer=$(tml_attr "$xml_file" "${root_xpath}/prompt/@pointer")
 
-    [[ -n "$prompt_text" ]] && args+="--prompt '$prompt_text' "
-    [[ -n "$pointer" ]] && args+="--pointer '$pointer' "
+    if [[ -n "$prompt_text" ]]; then
+        prompt_text=$(tml_eval "$prompt_text")
+        prompt_text=$(tml_shell_escape "$prompt_text")
+        args+="--prompt \"$prompt_text\" "
+    fi
+    if [[ -n "$pointer" ]]; then
+        pointer=$(tml_eval "$pointer")
+        pointer=$(tml_shell_escape "$pointer")
+        args+="--pointer \"$pointer\" "
+    fi
 
     # Header (raw or TML menu-bar)
     local header_content header_first
@@ -349,21 +379,40 @@ _render_tab() {
     [[ -n "$active" ]] && tml_eval_bool "$active" && is_active="true"
 
     local H_RESET=$'\e[0m'
-    local H_BG_ACTIVE="${THEME_HEX_BG_SELECTION:+$'\e[48;2;88;101;242m'}"
-    [[ -z "$H_BG_ACTIVE" ]] && H_BG_ACTIVE=$'\e[48;2;88;101;242m'
-    local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
-    local H_WHITE=$'\e[97m'
-    local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
-    local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    local H_BG_ACTIVE
+    local H_BG_INACTIVE
+    if declare -F hex_to_ansi_bg &>/dev/null; then
+        H_BG_ACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_ACTIVE_BG:-${THEME_HEX_BG_SELECTION:-#5865f2}}")"
+        H_BG_INACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_INACTIVE_BG:-${THEME_HEX_BG_SURFACE:-#414150}}")"
+    else
+        H_BG_ACTIVE=$'\e[48;2;88;101;242m'   # fallback: discord blue
+        H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # fallback: subtle gray
+    fi
+    local H_ACTIVE_FG
+    if declare -F hex_to_ansi &>/dev/null; then
+        H_ACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_ACTIVE_FG:-#ffffff}")"
+    else
+        H_ACTIVE_FG=$'\e[97m'
+    fi
+    local H_INACTIVE_FG
+    local H_SHORTCUT_FG
+    if declare -F hex_to_ansi &>/dev/null; then
+        H_INACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_INACTIVE_FG:-${THEME_HEX_LAVENDER:-#C4B5FD}}")"
+        H_SHORTCUT_FG="$(hex_to_ansi "${THEME_HEX_PILL_SHORTCUT_FG:-${THEME_HEX_GLOW:-#E879F9}}")"
+    else
+        H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+        H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    fi
     local H_BOLD=$'\e[1m'
     local H_UL=$'\e[4m'
     local H_NO_UL=$'\e[24m'
 
     local formatted_label=""
     [[ -n "$shortcut_prefix" ]] && formatted_label="${shortcut_prefix}"
+    local active_dot="${THEME_STR_ICON_ACTIVE_DOT-●}"
 
     if [[ "$is_active" == "true" ]]; then
-        echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${formatted_label}${shortcut}${label#*$shortcut} ${H_RESET}"
+        echo -ne "${H_BG_ACTIVE}${H_ACTIVE_FG} ${active_dot} ${formatted_label}${shortcut}${label#*$shortcut} ${H_RESET}"
     else
         echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${formatted_label}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${label#*$shortcut} ${H_RESET}"
     fi
@@ -380,9 +429,21 @@ _render_dropdown() {
     label=$(tml_eval "$label")
 
     local H_RESET=$'\e[0m'
-    local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
-    local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
-    local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    local H_BG_INACTIVE
+    if declare -F hex_to_ansi_bg &>/dev/null; then
+        H_BG_INACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_INACTIVE_BG:-${THEME_HEX_BG_SURFACE:-#414150}}")"
+    else
+        H_BG_INACTIVE=$'\e[48;2;65;65;80m'
+    fi
+    local H_INACTIVE_FG
+    local H_SHORTCUT_FG
+    if declare -F hex_to_ansi &>/dev/null; then
+        H_INACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_INACTIVE_FG:-${THEME_HEX_LAVENDER:-#C4B5FD}}")"
+        H_SHORTCUT_FG="$(hex_to_ansi "${THEME_HEX_PILL_SHORTCUT_FG:-${THEME_HEX_GLOW:-#E879F9}}")"
+    else
+        H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+        H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    fi
     local H_BOLD=$'\e[1m'
     local H_UL=$'\e[4m'
     local H_NO_UL=$'\e[24m'

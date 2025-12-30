@@ -35,11 +35,11 @@
    --fg-subtle: #9CA3AF;
    /* Subtle/disabled text */
 
-   --bg: #282A36;
-   /* Background */
+   --bg: #161422;
+   /* Background (inkier than default) */
    --bg-selection: #5865f2;
    /* Purple selection highlight */
-   --bg-surface: #2D1F3D;
+   --bg-surface: #1F1C2F;
    /* Elevated surface */
 
    /* ═══════════════════════════════════════════════════════════
@@ -78,4 +78,9 @@
    /* More-visible inactive pill label */
    --pill-shortcut-fg: #F5B8FF;
    /* Lighter pink for underlined shortcut */
+
+   /* Pill backgrounds */
+   --pill-active-bg: #5865f2;
+   --pill-inactive-bg: #2D1F3D;
+   --pill-active-fg: #ffffff;
 }

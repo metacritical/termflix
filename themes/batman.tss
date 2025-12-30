@@ -1,0 +1,57 @@
+/* Batman theme for Termflix (Gotham noir + bat-signal yellow) */
+:root {
+  /* Core UI */
+  --bg: #0B0E14;          /* near-black */
+  --bg-surface: #111827;  /* deep slate */
+  --bg-selection: #F9E547;/* bat-signal yellow */
+  --fg: #E5E7EB;          /* light gray */
+  --fg-muted: #9CA3AF;
+  --fg-subtle: #6B7280;
+
+  /* Selection foreground: black text on yellow selection */
+  --fg-selection: #000000;
+
+  /* Accents */
+  --glow: #F9E547;        /* yellow */
+  --purple: #111827;      /* keep accents restrained */
+  --lavender: #FDE68A;    /* pale yellow */
+
+  /* Semantic */
+  --success: #22C55E;
+  --error: #EF4444;
+  --warning: #F59E0B;
+  --info: #38BDF8;
+
+  /* FZF accents */
+  --border: #F9E547;
+  --pointer: #F9E547;
+  --prompt: #F9E547;
+  --spinner: #F9E547;
+  --header: #FDE68A;
+  --gutter: #111827;
+  --hl: #FDE68A;
+  --hl-selection: #000000;
+
+  /* Sources */
+  --yts: #22C55E;
+  --tpb: #F9E547;
+  --x1337: #F59E0B;
+  --eztv: #38BDF8;
+
+  /* Header pills */
+  --pill-active-bg: #F9E547;
+  --pill-inactive-bg: #111827;
+  --pill-active-fg: #000000;
+  --pill-inactive-fg: #FDE68A;
+  --pill-shortcut-fg: #F9E547;
+
+  /* Themeable icons (brand icon is seasonal and NOT theme-driven) */
+  --icon-active-dot: "🦇";
+  --icon-dropdown: "▾";
+  --icon-arrow-right: "➜";
+  --icon-pointer: "❯";
+  --icon-movie: "🦇";
+  --icon-play: "▶";
+  --icon-ready: "✓";
+}
+

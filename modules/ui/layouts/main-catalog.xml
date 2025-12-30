@@ -8,7 +8,7 @@
   <!-- Layout from FZF_DEFAULT_OPTS -->
   <layout direction="reverse"/>
   <border style="rounded"
-          label=" Enter:Select   Ctrl+L/K:Nav   &lt;/&gt;:Page   Ctrl+F:Search   Ctrl+E:Season   ?:Help "
+          label=" Enter:Select   Ctrl+L/K:Nav   &lt;/&gt;:Page   ${TERMFLIX_STATUS_MID_ICON:-}   Ctrl+F:Search   Ctrl+E:Season   ?:Help "
           label-pos="bottom"/>
   <prompt/>
   <header first="true"/>

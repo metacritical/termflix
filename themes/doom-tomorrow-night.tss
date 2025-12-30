@@ -1,0 +1,36 @@
+/* Doom Tomorrow Night (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #c5c8c6;
+  --fg-muted: #969896;
+  --fg-subtle: #7c7c7c;
+  --bg: #1d1f21;
+  --bg-surface: #232629;
+  --bg-selection: #373b41;
+
+  --glow: #b294bb;      /* purple */
+  --purple: #81a2be;    /* blue */
+  --lavender: #c5c8c6;
+
+  --success: #b5bd68;
+  --error: #cc6666;
+  --warning: #f0c674;
+  --info: #81a2be;
+
+  --border: #5f5f5f;
+  --pointer: #b294bb;
+  --prompt: #b5bd68;
+  --spinner: #f0c674;
+  --header: #b294bb;
+
+  --yts: #b5bd68;
+  --tpb: #f0c674;
+  --x1337: #b294bb;
+  --eztv: #81a2be;
+
+  --pill-active-bg: #373b41;
+  --pill-inactive-bg: #232629;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #c5c8c6;
+  --pill-shortcut-fg: #b294bb;
+}
+

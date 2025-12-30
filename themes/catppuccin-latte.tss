@@ -1,0 +1,36 @@
+/* Catppuccin Latte inspired theme for Termflix */
+:root {
+  --fg: #4c4f69;
+  --fg-muted: #6c6f85;
+  --fg-subtle: #9ca0b0;
+  --bg: #eff1f5;
+  --bg-surface: #e6e9ef;
+  --bg-selection: #ccd0da;
+
+  --glow: #ea76cb;      /* pink */
+  --purple: #8839ef;    /* mauve */
+  --lavender: #7287fd;
+
+  --success: #40a02b;
+  --error: #d20f39;
+  --warning: #fe640b;
+  --info: #1e66f5;
+
+  --border: #9ca0b0;
+  --pointer: #ea76cb;
+  --prompt: #40a02b;
+  --spinner: #fe640b;
+  --header: #8839ef;
+
+  --yts: #40a02b;
+  --tpb: #fe640b;
+  --x1337: #ea76cb;
+  --eztv: #1e66f5;
+
+  --pill-active-bg: #ccd0da;
+  --pill-inactive-bg: #e6e9ef;
+  --pill-active-fg: #1e1e2e;
+  --pill-inactive-fg: #4c4f69;
+  --pill-shortcut-fg: #ea76cb;
+}
+

@@ -1,0 +1,36 @@
+/* Everforest Dark inspired theme for Termflix */
+:root {
+  --fg: #d3c6aa;
+  --fg-muted: #9da9a0;
+  --fg-subtle: #7a8478;
+  --bg: #2b3339;
+  --bg-surface: #242b30;
+  --bg-selection: #3a454a;
+
+  --glow: #d699b6;      /* purple/pink */
+  --purple: #e67e80;
+  --lavender: #a7c080;
+
+  --success: #a7c080;
+  --error: #e67e80;
+  --warning: #dbbc7f;
+  --info: #7fbbb3;
+
+  --border: #4f585e;
+  --pointer: #d699b6;
+  --prompt: #a7c080;
+  --spinner: #dbbc7f;
+  --header: #7fbbb3;
+
+  --yts: #a7c080;
+  --tpb: #dbbc7f;
+  --x1337: #d699b6;
+  --eztv: #7fbbb3;
+
+  --pill-active-bg: #3a454a;
+  --pill-inactive-bg: #242b30;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #d3c6aa;
+  --pill-shortcut-fg: #d699b6;
+}
+

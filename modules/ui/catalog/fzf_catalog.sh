@@ -139,8 +139,9 @@ show_fzf_catalog() {
     local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
     local H_ITALIC=$'\e[3m'                   # Italic
     
-    # Logo: text with gradient colors
-    local logo="🍿 ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
+    # Logo: brand icon is seasonal (not theme-driven)
+    local logo_icon="${TERMFLIX_LOGO_ICON-🍿}"
+    local logo="${logo_icon} ${H_PINK}TERM${H_PURPLE}FLIX${H_RESET}™"
     
     # Helper for pill button formatting with colored background
     # When active: colored bg + white text
@@ -150,15 +151,36 @@ show_fzf_catalog() {
         local prefix="$2"
         local shortcut="$3"
         local suffix="$4"
-        local H_BG_ACTIVE=$'\e[48;2;88;101;242m'  # Discord blue bg
-        local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
-        local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
-        local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
-        local H_WHITE=$'\e[97m'                    # Bright white fg
+        local H_BG_ACTIVE
+        local H_BG_INACTIVE
+        if declare -F hex_to_ansi_bg &>/dev/null; then
+            H_BG_ACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_ACTIVE_BG:-${THEME_HEX_BG_SELECTION:-#5865f2}}")"
+            H_BG_INACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_INACTIVE_BG:-${THEME_HEX_BG_SURFACE:-#414150}}")"
+        else
+            H_BG_ACTIVE=$'\e[48;2;88;101;242m'   # fallback: discord blue
+            H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # fallback: subtle gray
+        fi
+        local H_ACTIVE_FG
+        if declare -F hex_to_ansi &>/dev/null; then
+            H_ACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_ACTIVE_FG:-#ffffff}")"
+        else
+            H_ACTIVE_FG=$'\e[97m'
+        fi
+        local H_INACTIVE_FG
+        local H_SHORTCUT_FG
+        if declare -F hex_to_ansi &>/dev/null; then
+            H_INACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_INACTIVE_FG:-${THEME_HEX_LAVENDER:-#C4B5FD}}")"
+            H_SHORTCUT_FG="$(hex_to_ansi "${THEME_HEX_PILL_SHORTCUT_FG:-${THEME_HEX_GLOW:-#E879F9}}")"
+        else
+            H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+            H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+        fi
+        local H_WHITE=$'\e[97m'  # legacy fallback
         local H_BOLD=$'\e[1m'
+        local active_dot="${THEME_STR_ICON_ACTIVE_DOT-●}"
         if [[ "$state" == "o" ]]; then
             # Active: pill with colored background
-            echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${prefix}${shortcut}${suffix} ${H_RESET}"
+            echo -ne "${H_BG_ACTIVE}${H_ACTIVE_FG} ${active_dot} ${prefix}${shortcut}${suffix} ${H_RESET}"
         else
             # Inactive: subtle pill with bolder, more-visible label and emphasized shortcut
             local H_NO_UL=$'\e[24m'
@@ -172,17 +194,38 @@ show_fzf_catalog() {
         local prefix="$2"
         local shortcut="$3"
         local suffix="$4"
-        local H_BG_ACTIVE=$'\e[48;2;139;92;246m'  # Purple bg for dropdowns
-        local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
-        local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
-        local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
-        local H_WHITE=$'\e[97m'
+        local H_BG_ACTIVE
+        local H_BG_INACTIVE
+        if declare -F hex_to_ansi_bg &>/dev/null; then
+            H_BG_ACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_DROPDOWN_ACTIVE_BG:-${THEME_HEX_PILL_ACTIVE_BG:-${THEME_HEX_BORDER:-${THEME_HEX_BG_SELECTION:-#8B5CF6}}}}")"
+            H_BG_INACTIVE="$(hex_to_ansi_bg "${THEME_HEX_PILL_DROPDOWN_INACTIVE_BG:-${THEME_HEX_PILL_INACTIVE_BG:-${THEME_HEX_BG_SURFACE:-#414150}}}")"
+        else
+            H_BG_ACTIVE=$'\e[48;2;139;92;246m'   # fallback: purple
+            H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # fallback: subtle gray
+        fi
+        local H_ACTIVE_FG
+        if declare -F hex_to_ansi &>/dev/null; then
+            H_ACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_ACTIVE_FG:-#ffffff}")"
+        else
+            H_ACTIVE_FG=$'\e[97m'
+        fi
+        local H_INACTIVE_FG
+        local H_SHORTCUT_FG
+        if declare -F hex_to_ansi &>/dev/null; then
+            H_INACTIVE_FG="$(hex_to_ansi "${THEME_HEX_PILL_INACTIVE_FG:-${THEME_HEX_LAVENDER:-#C4B5FD}}")"
+            H_SHORTCUT_FG="$(hex_to_ansi "${THEME_HEX_PILL_SHORTCUT_FG:-${THEME_HEX_GLOW:-#E879F9}}")"
+        else
+            H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+            H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+        fi
+        local H_WHITE=$'\e[97m'  # legacy fallback
         local H_BOLD=$'\e[1m'
+        local dropdown_symbol="${THEME_STR_ICON_DROPDOWN-▾}"
         if [[ "$state" == "o" ]]; then
-            echo -ne "${H_BG_ACTIVE}${H_WHITE} ${prefix}${shortcut}${suffix} ▾ ${H_RESET}"
+            echo -ne "${H_BG_ACTIVE}${H_ACTIVE_FG} ${prefix}${shortcut}${suffix} ${dropdown_symbol} ${H_RESET}"
         else
             local H_NO_UL=$'\e[24m'
-            echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${prefix}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${suffix} ▾ ${H_RESET}"
+            echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${prefix}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${suffix} ${dropdown_symbol} ${H_RESET}"
         fi
     }
     

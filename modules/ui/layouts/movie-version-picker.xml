@@ -6,9 +6,9 @@
 -->
 <fzf-layout id="movie-version-picker" name="Movie Version Picker">
   <layout direction="reverse" height="100%" margin="1" padding="1" no-select-1="true"/>
-  <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ↑↓:Navigate " label-pos="bottom"/>
-  <prompt pointer="➤">➤ Pick Version: </prompt>
-  <header first="true">🎬 Available Versions: (Ctrl+H to back)</header>
+  <border style="rounded" label=" ⌨ Enter:Stream  Ctrl+H:Back  ${TERMFLIX_STATUS_MID_ICON:-}  ↑↓:Navigate " label-pos="bottom"/>
+  <prompt pointer="${THEME_STR_ICON_POINTER-➤}">${THEME_STR_ICON_POINTER-➤} Pick Version: </prompt>
+  <header first="true">${THEME_STR_ICON_MOVIE-🎬} Available Versions: (Ctrl+H to back)</header>
   <preview position="left" size="55%" wrap="true" script="${preview_script}"/>
   <colors theme="dynamic"/>
   <bindings delimiter="|" with-nth="2">

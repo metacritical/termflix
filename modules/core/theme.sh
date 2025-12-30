@@ -36,6 +36,10 @@ TERMFLIX_USER_THEME_DIR="${HOME}/.config/termflix/themes"
 TERMFLIX_THEME_CACHE=""
 TERMFLIX_THEME_MTIME=""
 
+# Seasonal UI rules (logo prefix + festive icon overrides)
+SEASONAL_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/seasonal.sh"
+[[ -f "$SEASONAL_SCRIPT" ]] && source "$SEASONAL_SCRIPT" 2>/dev/null || true
+
 # ═══════════════════════════════════════════════════════════════
 # TERMINAL CAPABILITY DETECTION
 # ═══════════════════════════════════════════════════════════════
@@ -79,6 +83,16 @@ hex_to_truecolor_bg() {
     local g=$((16#${hex:2:2}))
     local b=$((16#${hex:4:2}))
     printf '\033[48;2;%d;%d;%dm' "$r" "$g" "$b"
+}
+
+# Convert hex to ANSI background escape (truecolor or 256-color)
+hex_to_ansi_bg() {
+    local hex="$1"
+    if supports_truecolor; then
+        hex_to_truecolor_bg "$hex"
+    else
+        printf '\033[48;5;%sm' "$(hex_to_256 "$hex")"
+    fi
 }
 
 # Convert hex to closest 256-color ANSI code
@@ -134,22 +148,28 @@ find_theme_file() {
     local theme_name="$1"
     
     # Try user themes first
-    if [[ -f "${TERMFLIX_USER_THEME_DIR}/${theme_name}.css" ]]; then
-        echo "${TERMFLIX_USER_THEME_DIR}/${theme_name}.css"
-        return 0
-    fi
+    for ext in tss css; do
+        if [[ -f "${TERMFLIX_USER_THEME_DIR}/${theme_name}.${ext}" ]]; then
+            echo "${TERMFLIX_USER_THEME_DIR}/${theme_name}.${ext}"
+            return 0
+        fi
+    done
     
     # Try bundled themes
-    if [[ -f "${TERMFLIX_THEME_DIR}/${theme_name}.css" ]]; then
-        echo "${TERMFLIX_THEME_DIR}/${theme_name}.css"
-        return 0
-    fi
+    for ext in tss css; do
+        if [[ -f "${TERMFLIX_THEME_DIR}/${theme_name}.${ext}" ]]; then
+            echo "${TERMFLIX_THEME_DIR}/${theme_name}.${ext}"
+            return 0
+        fi
+    done
     
     # Fallback to default
-    if [[ -f "${TERMFLIX_THEME_DIR}/default.css" ]]; then
-        echo "${TERMFLIX_THEME_DIR}/default.css"
-        return 0
-    fi
+    for ext in tss css; do
+        if [[ -f "${TERMFLIX_THEME_DIR}/default.${ext}" ]]; then
+            echo "${TERMFLIX_THEME_DIR}/default.${ext}"
+            return 0
+        fi
+    done
     
     return 1
 }
@@ -165,28 +185,49 @@ parse_theme_css() {
     content=$(cat "$css_file")
     
     # Extract variables from :root { } block
-    # Format: --name: #hex;
+    # Format:
+    #   --name: #hex;
+    #   --icon-dropdown: '▾';
+    # Note: brand logo icon is NOT theme-driven (seasonal only).
     while IFS= read -r line; do
-        # Skip comments and empty lines
-        [[ "$line" =~ ^[[:space:]]*/\* ]] && continue
-        [[ -z "${line// }" ]] && continue
-        
-        # Match --variable: #hexvalue;
-        if [[ "$line" =~ --([a-zA-Z0-9_-]+):[[:space:]]*(\#[0-9A-Fa-f]{6})[[:space:]]*\; ]]; then
-            local var_name="${BASH_REMATCH[1]}"
-            local hex_value="${BASH_REMATCH[2]}"
-            
+        # Remove block comments (best-effort) and trim whitespace
+        line="${line%%/*}"
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+
+        [[ -z "$line" ]] && continue
+
+        # Match: --variable: value;  OR  variable: value;
+        if [[ "$line" =~ ^(--)?([a-zA-Z0-9_-]+):[[:space:]]*([^;]+)[[:space:]]*\; ]]; then
+            local var_name="${BASH_REMATCH[2]}"
+            local raw_value="${BASH_REMATCH[3]}"
+            raw_value="${raw_value#"${raw_value%%[![:space:]]*}"}"
+            raw_value="${raw_value%"${raw_value##*[![:space:]]}"}"
+
             # Convert CSS variable name to bash variable name
             # --glow -> THEME_GLOW, --bg-selection -> THEME_BG_SELECTION
-            local bash_name=$(echo "$var_name" | tr '[:lower:]-' '[:upper:]_')
-            
-            # Store hex value for later use (e.g., by FZF) - EXPORT for subprocesses
-            eval "export THEME_HEX_${bash_name}=\"${hex_value}\""
-            
-            # Convert to ANSI and store
-            local ansi_code
-            ansi_code=$(hex_to_ansi "$hex_value")
-            eval "export THEME_${bash_name}=\"\${ansi_code}\""
+            local bash_name
+            bash_name=$(echo "$var_name" | tr '[:lower:]-' '[:upper:]_')
+
+            # Hex colors
+            if [[ "$raw_value" =~ ^\#[0-9A-Fa-f]{6}$ ]]; then
+                local hex_value="$raw_value"
+                eval "export THEME_HEX_${bash_name}=\"${hex_value}\""
+                local ansi_code
+                ansi_code=$(hex_to_ansi "$hex_value")
+                eval "export THEME_${bash_name}=\"\${ansi_code}\""
+                continue
+            fi
+
+            # Strings/symbols (strip wrapping quotes if present)
+            local str_value="$raw_value"
+            if [[ "$str_value" =~ ^\"(.*)\"$ ]]; then
+                str_value="${BASH_REMATCH[1]}"
+            elif [[ "$str_value" =~ ^\'(.*)\'$ ]]; then
+                str_value="${BASH_REMATCH[1]}"
+            fi
+
+            eval "export THEME_STR_${bash_name}=\"${str_value}\""
         fi
     done <<< "$content"
 }
@@ -213,9 +254,14 @@ load_theme() {
     
     # Parse the CSS
     parse_theme_css "$theme_file"
-    
+
     # Export legacy color variables for backward compatibility
     export_legacy_colors
+
+    # Apply date-based seasonal overrides (logo is NOT theme-driven)
+    if declare -F termflix_apply_seasonal_icon_overrides &>/dev/null; then
+        termflix_apply_seasonal_icon_overrides 2>/dev/null || true
+    fi
 }
 
 # Check if theme file changed and reload
@@ -283,17 +329,23 @@ export_legacy_colors() {
 get_fzf_colors() {
     local fg="${THEME_HEX_FG:-#F8F8F2}"
     local bg="${THEME_HEX_BG:-}"
-    local hl="${THEME_HEX_GLOW:-#E879F9}"
-    local sel_bg="${THEME_HEX_BG_SELECTION:-#44475A}"
-    local info="${THEME_HEX_PURPLE:-#8B5CF6}"
-    local prompt="${THEME_HEX_SUCCESS:-#5EEAD4}"
-    local pointer="${THEME_HEX_GLOW:-#E879F9}"
-    local marker="${THEME_HEX_GLOW:-#E879F9}"
-    local spinner="${THEME_HEX_GLOW:-#E879F9}"
-    local header="${THEME_HEX_PURPLE:-#8B5CF6}"
+    local hl="${THEME_HEX_HL:-${THEME_HEX_GLOW:-#E879F9}}"
+    local fg_sel="${THEME_HEX_FG_SELECTION:-#ffffff}"
+    local bg_sel="${THEME_HEX_BG_SELECTION:-#44475A}"
+    local hl_sel="${THEME_HEX_HL_SELECTION:-${THEME_HEX_LAVENDER:-$hl}}"
+    local info="${THEME_HEX_INFO:-${THEME_HEX_PURPLE:-#8B5CF6}}"
+    local prompt="${THEME_HEX_PROMPT:-${THEME_HEX_SUCCESS:-#5EEAD4}}"
+    local pointer="${THEME_HEX_POINTER:-${THEME_HEX_GLOW:-$hl}}"
+    local marker="${THEME_HEX_MARKER:-${THEME_HEX_GLOW:-$hl}}"
+    local spinner="${THEME_HEX_SPINNER:-${THEME_HEX_GLOW:-$hl}}"
+    local header="${THEME_HEX_HEADER:-${THEME_HEX_PURPLE:-#8B5CF6}}"
+    local border="${THEME_HEX_BORDER:-${THEME_HEX_PURPLE:-#8B5CF6}}"
+    local gutter="${THEME_HEX_GUTTER:-${THEME_HEX_BG_SURFACE:-${THEME_HEX_BG:-}}}"
     
     # Build color string (use -1 for transparent bg)
-    echo "fg:${fg},bg:-1,hl:${hl},fg+:#ffffff,bg+:${sel_bg},hl+:${hl},info:${info},prompt:${prompt},pointer:${pointer},marker:${marker},spinner:${spinner},header:${header}"
+    local bg_spec="${bg:- -1}"
+    bg_spec="${bg_spec// /}"
+    echo "fg:${fg},bg:${bg_spec},hl:${hl},fg+:${fg_sel},bg+:${bg_sel},hl+:${hl_sel},info:${info},prompt:${prompt},pointer:${pointer},marker:${marker},spinner:${spinner},header:${header},border:${border}${gutter:+,gutter:${gutter}}"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -304,5 +356,5 @@ get_fzf_colors() {
 load_theme "$TERMFLIX_THEME"
 
 # Export functions
-export -f hex_to_ansi hex_to_truecolor hex_to_256 supports_truecolor
+export -f hex_to_ansi hex_to_truecolor hex_to_truecolor_bg hex_to_ansi_bg hex_to_256 supports_truecolor
 export -f load_theme check_theme_reload get_fzf_colors

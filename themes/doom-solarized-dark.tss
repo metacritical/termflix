@@ -1,0 +1,36 @@
+/* Doom Solarized Dark (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #93a1a1;
+  --fg-muted: #657b83;
+  --fg-subtle: #586e75;
+  --bg: #002b36;
+  --bg-surface: #073642;
+  --bg-selection: #0b3b49;
+
+  --glow: #d33682;      /* magenta */
+  --purple: #6c71c4;
+  --lavender: #b48ead;
+
+  --success: #859900;
+  --error: #dc322f;
+  --warning: #b58900;
+  --info: #268bd2;
+
+  --border: #586e75;
+  --pointer: #d33682;
+  --prompt: #859900;
+  --spinner: #b58900;
+  --header: #6c71c4;
+
+  --yts: #859900;
+  --tpb: #b58900;
+  --x1337: #d33682;
+  --eztv: #268bd2;
+
+  --pill-active-bg: #0b3b49;
+  --pill-inactive-bg: #073642;
+  --pill-active-fg: #fdf6e3;
+  --pill-inactive-fg: #93a1a1;
+  --pill-shortcut-fg: #d33682;
+}
+

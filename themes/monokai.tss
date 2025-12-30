@@ -54,4 +54,9 @@
 
   --pill-inactive-fg: #C4B5FD;  /* More-visible inactive pill label */
   --pill-shortcut-fg: #FF9FB5;  /* Lighter pink for underlined shortcut */
+
+  /* Pill backgrounds */
+  --pill-active-bg: #403E41;
+  --pill-inactive-bg: #363537;
+  --pill-active-fg: #ffffff;
 }

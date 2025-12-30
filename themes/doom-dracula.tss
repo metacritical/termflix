@@ -1,0 +1,36 @@
+/* Doom Dracula (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #f8f8f2;
+  --fg-muted: #6272a4;
+  --fg-subtle: #44475a;
+  --bg: #282a36;
+  --bg-surface: #303341;
+  --bg-selection: #44475a;
+
+  --glow: #ff79c6;
+  --purple: #bd93f9;
+  --lavender: #d9b3ff;
+
+  --success: #50fa7b;
+  --error: #ff5555;
+  --warning: #f1fa8c;
+  --info: #8be9fd;
+
+  --border: #bd93f9;
+  --pointer: #ff79c6;
+  --prompt: #50fa7b;
+  --spinner: #ffb86c;
+  --header: #bd93f9;
+
+  --yts: #50fa7b;
+  --tpb: #f1fa8c;
+  --x1337: #ff79c6;
+  --eztv: #8be9fd;
+
+  --pill-active-bg: #44475a;
+  --pill-inactive-bg: #303341;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #d9b3ff;
+  --pill-shortcut-fg: #ffc2e8;
+}
+

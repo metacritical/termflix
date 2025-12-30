@@ -20,15 +20,15 @@
   <layout id="main-catalog" renderer="fzf">
 
     <menu-bar id="main-nav">
-      <logo>🍿 TERMFLIX™</logo>
+      <logo>${TERMFLIX_LOGO_ICON-🍿} TERMFLIX™</logo>
       <tab-group id="category-tabs">
         <tab id="movies" shortcut="o" shortcut-prefix="M" active="${category=='movies'}">ovies</tab>
         <tab id="shows" shortcut="S" active="${category=='shows'}">hows</tab>
         <tab id="watchlist" shortcut="W" active="${category=='watchlist'}">atchlist</tab>
       </tab-group>
-      <dropdown id="type" shortcut="T">Type ▾</dropdown>
-      <dropdown id="sort" shortcut="V">Sort [V] ▾</dropdown>
-      <dropdown id="genre" shortcut="G">Genre ▾</dropdown>
+      <dropdown id="type" shortcut="T">Type ${THEME_STR_ICON_DROPDOWN-▾}</dropdown>
+      <dropdown id="sort" shortcut="V">Sort [V] ${THEME_STR_ICON_DROPDOWN-▾}</dropdown>
+      <dropdown id="genre" shortcut="G">Genre ${THEME_STR_ICON_DROPDOWN-▾}</dropdown>
     </menu-bar>
 
     <list id="catalog-items" source="handler:get_catalog" empty-text="No results found">

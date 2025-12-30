@@ -85,6 +85,9 @@ data_flow:
     STAGE2_SOURCES: "Source badges [TPB][YTS]"
     TERMFLIX_TRAILER_SCRIPT: "Path to fetch_trailers.py"
     TERMFLIX_POSTER_CACHE: "Poster cache directory"
+    THEME_STR_ICON_PLAY: "Optional theme symbol for PLAYING label (may be seasonally overridden)"
+    THEME_STR_ICON_READY: "Optional theme symbol for READY label (may be seasonally overridden)"
+    TERMFLIX_LOGO_ICON: "Seasonal brand icon (prefix+🍿); not theme-driven"
 
 resilience:
   - issue: "Backdrop fetch timeout on cold cache"

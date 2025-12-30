@@ -1,0 +1,51 @@
+/* Doom Shades of Purple (Emacs/Vim/VSCode inspired) theme for Termflix */
+:root {
+  /* Core UI */
+  --bg: #2D2B55;
+  --bg-surface: #232248;
+  --bg-selection: #5F4BB6;
+  --fg: #EDEBFF;
+  --fg-muted: #A599E9;
+  --fg-subtle: #6E6A9E;
+
+  /* Doom-ish purples */
+  --glow: #FF628C;      /* hot pink */
+  --purple: #A599E9;    /* lavender */
+  --lavender: #C2B7FF;  /* brighter lavender */
+
+  /* Semantic */
+  --success: #3AD900;
+  --error: #FF4D6D;
+  --warning: #FFEE80;
+  --info: #80FCFF;
+
+  /* FZF accents */
+  --border: #A599E9;
+  --pointer: #FF628C;
+  --prompt: #80FCFF;
+  --spinner: #FFEE80;
+  --header: #C2B7FF;
+
+  /* Sources */
+  --yts: #3AD900;
+  --tpb: #FFEE80;
+  --x1337: #FF628C;
+  --eztv: #80FCFF;
+
+  /* Header pills */
+  --pill-active-bg: #5F4BB6;
+  --pill-inactive-bg: #232248;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #C2B7FF;
+  --pill-shortcut-fg: #FF628C;
+
+  /* Themeable icons (brand icon is seasonal and NOT theme-driven) */
+  --icon-active-dot: "◆";
+  --icon-dropdown: "▾";
+  --icon-arrow-right: "➜";
+  --icon-pointer: "❯";
+  --icon-movie: "🎬";
+  --icon-play: "⏵";
+  --icon-ready: "✔";
+}
+

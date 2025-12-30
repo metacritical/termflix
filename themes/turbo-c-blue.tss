@@ -1,0 +1,51 @@
+/* Turbo C / DOS IDE Blue theme for Termflix */
+:root {
+  /* Core UI: classic DOS blue + bright text */
+  --bg: #0000AA;
+  --bg-surface: #000080;
+  --bg-selection: #00AAAA;
+  --fg: #FFFFFF;
+  --fg-muted: #C0C0C0;
+  --fg-subtle: #A8A8A8;
+
+  /* Accents: DOS-style bright colors */
+  --glow: #FFFF55;      /* bright yellow */
+  --purple: #FF55FF;    /* magenta */
+  --lavender: #AAAAFF;  /* pale blue/lavender */
+
+  /* Semantic */
+  --success: #55FF55;
+  --error: #FF5555;
+  --warning: #FFFF55;
+  --info: #55FFFF;
+
+  /* FZF accents */
+  --border: #FFFFFF;
+  --pointer: #FFFF55;
+  --prompt: #55FFFF;
+  --spinner: #FFFF55;
+  --header: #FFFFFF;
+
+  /* Sources */
+  --yts: #55FF55;
+  --tpb: #FFFF55;
+  --x1337: #FF55FF;
+  --eztv: #55FFFF;
+
+  /* Header pills */
+  --pill-active-bg: #00AAAA;
+  --pill-inactive-bg: #000080;
+  --pill-active-fg: #000000;
+  --pill-inactive-fg: #FFFFFF;
+  --pill-shortcut-fg: #FFFF55;
+
+  /* Themeable icons (brand icon is seasonal and NOT theme-driven) */
+  --icon-active-dot: "■";
+  --icon-dropdown: "▼";
+  --icon-arrow-right: ">";
+  --icon-pointer: ">";
+  --icon-movie: "[M]";
+  --icon-play: ">";
+  --icon-ready: "OK";
+}
+

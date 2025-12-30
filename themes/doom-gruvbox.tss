@@ -1,0 +1,36 @@
+/* Doom Gruvbox (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #ebdbb2;
+  --fg-muted: #a89984;
+  --fg-subtle: #7c6f64;
+  --bg: #282828;
+  --bg-surface: #1f1f1f;
+  --bg-selection: #3c3836;
+
+  --glow: #d3869b;      /* purple */
+  --purple: #b16286;
+  --lavender: #ebdbb2;
+
+  --success: #b8bb26;
+  --error: #fb4934;
+  --warning: #fe8019;
+  --info: #83a598;
+
+  --border: #665c54;
+  --pointer: #d3869b;
+  --prompt: #b8bb26;
+  --spinner: #fe8019;
+  --header: #83a598;
+
+  --yts: #b8bb26;
+  --tpb: #fe8019;
+  --x1337: #d3869b;
+  --eztv: #83a598;
+
+  --pill-active-bg: #3c3836;
+  --pill-inactive-bg: #1f1f1f;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #ebdbb2;
+  --pill-shortcut-fg: #d3869b;
+}
+

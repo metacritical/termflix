@@ -269,6 +269,7 @@ fi
 
 # Activity indicator in top-right (like Stage 1)
 activity=""
+ICON_READY="${THEME_STR_ICON_READY-✓}"
 if [[ "$state" == "STARTING" ]]; then
     activity="${spinner} Connecting to peers..."
 elif [[ "$state" == "ANALYZING" ]]; then
@@ -276,7 +277,7 @@ elif [[ "$state" == "ANALYZING" ]]; then
 elif [[ "$state" == "BUFFERING" ]]; then
     activity="${spinner} Downloading"
 elif [[ "$state" == "READY" ]]; then
-    activity="✓ Ready"
+    activity="${ICON_READY} Ready"
 fi
 
 # Get latest activity from stream log (last 3 lines, filtered)
@@ -289,14 +290,14 @@ if [[ -f "$TERMFLIX_STREAM_LOG" ]]; then
         cut -c1-50)
 fi
 
-# Colors
-PINK="\033[38;5;212m"
-GREEN="\033[38;5;46m"
-YELLOW="\033[38;5;226m"
-GRAY="\033[38;5;240m"
-CYAN="\033[38;5;51m"
-RED="\033[38;5;196m"
-BRIGHT_CYAN="\033[38;2;94;234;212m"
+# Colors (theme-aware)
+PINK="${THEME_GLOW:-\033[38;5;212m}"
+GREEN="${THEME_SUCCESS:-\033[38;5;46m}"
+YELLOW="${THEME_WARNING:-\033[38;5;226m}"
+GRAY="${THEME_FG_MUTED:-\033[38;5;240m}"
+CYAN="${THEME_INFO:-\033[38;5;51m}"
+RED="${THEME_ERROR:-\033[38;5;196m}"
+BRIGHT_CYAN="${THEME_INFO:-\033[38;2;94;234;212m}"
 RESET="\033[0m"
 
 # ═══════════════════════════════════════════════════════════════════
@@ -333,10 +334,12 @@ if [[ -f "$status_file" ]]; then
     for ((i=filled; i<bar_len; i++)); do bar+="━"; done
     bar+="${RESET}"
     
+    ICON_PLAY="${THEME_STR_ICON_PLAY-▶}"
+    ICON_READY="${THEME_STR_ICON_READY-✓}"
     if [[ "$state" == "PLAYING" ]]; then
-        echo -e "${GREEN}▶ PLAYING${RESET}  ${bar} ${progress}%"
+        echo -e "${GREEN}${ICON_PLAY} PLAYING${RESET}  ${bar} ${progress}%"
     elif [[ "$state" == "READY" ]]; then
-        echo -e "${GREEN}✓ READY${RESET}    ${bar} ${progress}%"
+        echo -e "${GREEN}${ICON_READY} READY${RESET}    ${bar} ${progress}%"
         # Auto-accept
         [[ -n "$FZF_API_PORT" ]] && curl -s -X POST -d 'accept' "http://localhost:${FZF_API_PORT}" >/dev/null 2>&1
     elif [[ "$state" == "BUFFERING" ]]; then

@@ -1,0 +1,36 @@
+/* Ayu Light inspired theme for Termflix */
+:root {
+  --fg: #5c6166;
+  --fg-muted: #8a9199;
+  --fg-subtle: #a6acb3;
+  --bg: #fafafa;
+  --bg-surface: #f2f2f2;
+  --bg-selection: #e6e6e6;
+
+  --glow: #ff8f40;      /* orange */
+  --purple: #a37acc;
+  --lavender: #399ee6;
+
+  --success: #86b300;
+  --error: #e65050;
+  --warning: #ff8f40;
+  --info: #399ee6;
+
+  --border: #c0c0c0;
+  --pointer: #ff8f40;
+  --prompt: #86b300;
+  --spinner: #ff8f40;
+  --header: #a37acc;
+
+  --yts: #86b300;
+  --tpb: #ff8f40;
+  --x1337: #a37acc;
+  --eztv: #399ee6;
+
+  --pill-active-bg: #e6e6e6;
+  --pill-inactive-bg: #f2f2f2;
+  --pill-active-fg: #0f1419;
+  --pill-inactive-fg: #5c6166;
+  --pill-shortcut-fg: #ff8f40;
+}
+

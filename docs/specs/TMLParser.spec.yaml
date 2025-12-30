@@ -32,7 +32,7 @@ pipeline:
 
 helper_functions:
   - name: "tml_eval"
-    description: "Evaluate ${var} and ${var:-default} expressions"
+    description: "Evaluate ${var}, ${var-default} (unset-only), and ${var:-default} (unset-or-empty) expressions"
   - name: "tml_eval_bool"
     description: "Evaluate boolean expressions for conditionals"
   - name: "tml_shell_escape"
@@ -91,6 +91,8 @@ environment:
     - "FZF_DEFAULT_OPTS (callers may temporarily clear this to prevent main-catalog preview/binds leaking into popup pickers)"
     - "LC_ALL/LANG (callers may force UTF-8 for unicode-heavy menus)"
     - "RUNEWIDTH_EASTASIAN (fzf respects this; callers may set to 1 for more stable unicode width handling in tmux)"
+    - "THEME_STR_* (theme string/symbol tokens exported by theme loader, e.g. THEME_STR_ICON_DROPDOWN)"
+    - "TERMFLIX_LOGO_ICON (seasonal brand icon prefix + popcorn; not theme-driven)"
   dependencies:
     - "xmllint"
     - "fzf"

@@ -37,4 +37,18 @@
     /* Header pills (Stage 1 menu) */
     --pill-inactive-fg: #D9B3FF;
     --pill-shortcut-fg: #FFC2E8;
+
+    /* Pill backgrounds */
+    --pill-active-bg: #44475A;
+    --pill-inactive-bg: #383A59;
+    --pill-active-fg: #ffffff;
+
+    /* Icons / Symbols (themeable; brand icon is NOT theme-driven) */
+    --icon-active-dot: "●";
+    --icon-dropdown: "▾";
+    --icon-arrow-right: "→";
+    --icon-pointer: "➤";
+    --icon-movie: "🎬";
+    --icon-play: "▶";
+    --icon-ready: "✓";
 }

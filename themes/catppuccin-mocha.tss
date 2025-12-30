@@ -1,0 +1,36 @@
+/* Catppuccin Mocha inspired theme for Termflix */
+:root {
+  --fg: #cdd6f4;
+  --fg-muted: #a6adc8;
+  --fg-subtle: #7f849c;
+  --bg: #1e1e2e;
+  --bg-surface: #181825;
+  --bg-selection: #313244;
+
+  --glow: #f5c2e7;      /* pink */
+  --purple: #cba6f7;    /* mauve */
+  --lavender: #b4befe;
+
+  --success: #a6e3a1;
+  --error: #f38ba8;
+  --warning: #fab387;
+  --info: #89b4fa;
+
+  --border: #585b70;
+  --pointer: #f5c2e7;
+  --prompt: #a6e3a1;
+  --spinner: #fab387;
+  --header: #cba6f7;
+
+  --yts: #a6e3a1;
+  --tpb: #fab387;
+  --x1337: #f5c2e7;
+  --eztv: #89b4fa;
+
+  --pill-active-bg: #313244;
+  --pill-inactive-bg: #181825;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #b4befe;
+  --pill-shortcut-fg: #f5c2e7;
+}
+

@@ -1,0 +1,44 @@
+/* Doom One (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #bbc2cf;
+  --fg-muted: #5B6268;
+  --fg-subtle: #3f444a;
+  --bg: #282c34;
+  --bg-surface: #21242b;
+  --bg-selection: #3f444a;
+
+  --glow: #c678dd;      /* Doom purple */
+  --purple: #a9a1e1;    /* Lavender */
+  --lavender: #d7d4ff;
+
+  --success: #98be65;
+  --error: #ff6c6b;
+  --warning: #ecbe7b;
+  --info: #51afef;
+
+  --border: #5B6268;
+  --pointer: #c678dd;
+  --prompt: #51afef;
+  --spinner: #c678dd;
+  --header: #a9a1e1;
+
+  --yts: #98be65;
+  --tpb: #ecbe7b;
+  --x1337: #c678dd;
+  --eztv: #51afef;
+
+  --pill-active-bg: #3f444a;
+  --pill-inactive-bg: #21242b;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #d7d4ff;
+  --pill-shortcut-fg: #c678dd;
+
+  /* Icons / Symbols (brand icon is NOT theme-driven) */
+  --icon-active-dot: "◆";
+  --icon-dropdown: "▼";
+  --icon-arrow-right: "➜";
+  --icon-pointer: "❯";
+  --icon-movie: "🎞";
+  --icon-play: "⏵";
+  --icon-ready: "✔";
+}

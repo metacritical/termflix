@@ -1,0 +1,36 @@
+/* Doom Nord (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #D8DEE9;
+  --fg-muted: #A3B0C2;
+  --fg-subtle: #7b889b;
+  --bg: #2E3440;
+  --bg-surface: #262c36;
+  --bg-selection: #3B4252;
+
+  --glow: #88C0D0;      /* Frost */
+  --purple: #B48EAD;    /* Aurora purple */
+  --lavender: #D8DEE9;
+
+  --success: #A3BE8C;
+  --error: #BF616A;
+  --warning: #EBCB8B;
+  --info: #81A1C1;
+
+  --border: #4C566A;
+  --pointer: #88C0D0;
+  --prompt: #A3BE8C;
+  --spinner: #88C0D0;
+  --header: #B48EAD;
+
+  --yts: #A3BE8C;
+  --tpb: #EBCB8B;
+  --x1337: #B48EAD;
+  --eztv: #81A1C1;
+
+  --pill-active-bg: #3B4252;
+  --pill-inactive-bg: #262c36;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #D8DEE9;
+  --pill-shortcut-fg: #88C0D0;
+}
+

@@ -150,7 +150,7 @@ OMDB_API_KEY=your_omdb_key
 - You can choose a theme via config:
 
 ```bash
-THEME=default      # or another theme file name (without .css)
+THEME=default      # or another theme file name (without extension; prefers .tss, supports .css)
 ```
 
 ---

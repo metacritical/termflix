@@ -7,24 +7,24 @@
 <fzf-layout id="movie-version-picker-kitty" name="Movie Version Picker (Kitty)">
   <layout direction="reverse" height="100%" margin="1" padding="1" no-select-1="true"/>
   <border style="rounded"/>
-  <prompt pointer="➤">❯ </prompt>
-  <header first="true">Pick Version - [${STAGE2_TITLE}] →</header>
+  <prompt pointer="${THEME_STR_ICON_POINTER-➤}">${THEME_STR_ICON_POINTER-❯} </prompt>
+  <header first="true">Pick Version - [${STAGE2_TITLE}] ${THEME_STR_ICON_ARROW_RIGHT-→}</header>
   <preview position="left" size="55%" wrap="true" border="border-right" script="${preview_script}"/>
   <colors>
-    <color name="fg" value="#6b7280"/>
-    <color name="bg" value="#1e1e2e"/>
-    <color name="hl" value="#818cf8"/>
+    <color name="fg" value="${THEME_HEX_FG_MUTED:-${THEME_HEX_FG:-#6b7280}}"/>
+    <color name="bg" value="${THEME_HEX_BG:-#1e1e2e}"/>
+    <color name="hl" value="${THEME_HEX_HL:-${THEME_HEX_GLOW:-#818cf8}}"/>
     <color name="fg+" value="#ffffff"/>
-    <color name="bg+" value="#5865f2"/>
-    <color name="hl+" value="#c4b5fd"/>
-    <color name="info" value="#6b7280"/>
-    <color name="prompt" value="#5eead4"/>
-    <color name="pointer" value="#818cf8"/>
-    <color name="marker" value="#818cf8"/>
-    <color name="spinner" value="#818cf8"/>
-    <color name="header" value="#a78bfa"/>
-    <color name="border" value="#5865f2"/>
-    <color name="gutter" value="#1e1e2e"/>
+    <color name="bg+" value="${THEME_HEX_BG_SELECTION:-#5865f2}"/>
+    <color name="hl+" value="${THEME_HEX_HL_SELECTION:-${THEME_HEX_LAVENDER:-${THEME_HEX_GLOW:-#c4b5fd}}}"/>
+    <color name="info" value="${THEME_HEX_INFO:-${THEME_HEX_FG_MUTED:-#6b7280}}"/>
+    <color name="prompt" value="${THEME_HEX_PROMPT:-${THEME_HEX_SUCCESS:-#5eead4}}"/>
+    <color name="pointer" value="${THEME_HEX_POINTER:-${THEME_HEX_GLOW:-#818cf8}}"/>
+    <color name="marker" value="${THEME_HEX_MARKER:-${THEME_HEX_GLOW:-#818cf8}}"/>
+    <color name="spinner" value="${THEME_HEX_SPINNER:-${THEME_HEX_GLOW:-#818cf8}}"/>
+    <color name="header" value="${THEME_HEX_HEADER:-${THEME_HEX_PURPLE:-#a78bfa}}"/>
+    <color name="border" value="${THEME_HEX_BORDER:-${THEME_HEX_BG_SELECTION:-#5865f2}}"/>
+    <color name="gutter" value="${THEME_HEX_GUTTER:-${THEME_HEX_BG_SURFACE:-${THEME_HEX_BG:-#1e1e2e}}}"/>
   </colors>
   <bindings delimiter="|" with-nth="2">
     <bind key="ctrl-h" action="abort"/>

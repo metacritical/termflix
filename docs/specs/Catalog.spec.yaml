@@ -24,6 +24,8 @@ ui_components:
     implementation_notes:
       - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args."
       - "Renders the Stage 1 header pills from `modules/ui/layouts/main-catalog.tml` (`menu-bar`) to keep the header declarative."
+      - "Stage 1 brand icon is seasonal (not theme-driven): header uses `TERMFLIX_LOGO_ICON` exported by `modules/core/seasonal.sh`."
+      - "Stage 1 bottom help label may include a seasonal mid-icon via `TERMFLIX_STATUS_MID_ICON` (e.g. 🪷 on Buddha Purnima)."
     keybindings:
       "Ctrl+F": "Search Mode"
       "Ctrl+O": "Category: Movies"

@@ -1,0 +1,36 @@
+/* Rosé Pine inspired theme for Termflix */
+:root {
+  --fg: #e0def4;
+  --fg-muted: #908caa;
+  --fg-subtle: #6e6a86;
+  --bg: #191724;
+  --bg-surface: #1f1d2e;
+  --bg-selection: #26233a;
+
+  --glow: #eb6f92;      /* rose */
+  --purple: #c4a7e7;    /* iris */
+  --lavender: #9ccfd8;  /* foam */
+
+  --success: #31748f;
+  --error: #eb6f92;
+  --warning: #f6c177;
+  --info: #9ccfd8;
+
+  --border: #524f67;
+  --pointer: #eb6f92;
+  --prompt: #9ccfd8;
+  --spinner: #f6c177;
+  --header: #c4a7e7;
+
+  --yts: #31748f;
+  --tpb: #f6c177;
+  --x1337: #eb6f92;
+  --eztv: #9ccfd8;
+
+  --pill-active-bg: #26233a;
+  --pill-inactive-bg: #1f1d2e;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #e0def4;
+  --pill-shortcut-fg: #eb6f92;
+}
+

@@ -248,39 +248,159 @@ main() {
                     exit 1
                 fi
                 ;;
-	            theme)
-	                # Change theme preference
-	                # Change theme preference
-	                if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
-	                    # Get list of themes from bundled and user dirs
-	                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
-	                    local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
-	                    local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
-	                    local current_theme
-	                    current_theme=$(get_theme_preference 2>/dev/null)
+		            theme|themes)
+		                # Change theme preference
+		                # Change theme preference
+		                if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
+		                    # Render 5 small color swatches from a theme file (best-effort)
+		                    termflix_theme_palette() {
+		                        local theme_file="$1"
+		                        [[ ! -f "$theme_file" ]] && return 0
+
+		                        local c_bg c_sel c_glow c_purple c_success
+		                        c_bg=$(grep -E '^[[:space:]]*(--)?bg:[[:space:]]*#[0-9A-Fa-f]{6}' "$theme_file" 2>/dev/null | head -n 1 | sed -E 's/.*(#[0-9A-Fa-f]{6}).*/\1/')
+		                        c_sel=$(grep -E '^[[:space:]]*(--)?bg-selection:[[:space:]]*#[0-9A-Fa-f]{6}' "$theme_file" 2>/dev/null | head -n 1 | sed -E 's/.*(#[0-9A-Fa-f]{6}).*/\1/')
+		                        c_glow=$(grep -E '^[[:space:]]*(--)?glow:[[:space:]]*#[0-9A-Fa-f]{6}' "$theme_file" 2>/dev/null | head -n 1 | sed -E 's/.*(#[0-9A-Fa-f]{6}).*/\1/')
+		                        c_purple=$(grep -E '^[[:space:]]*(--)?purple:[[:space:]]*#[0-9A-Fa-f]{6}' "$theme_file" 2>/dev/null | head -n 1 | sed -E 's/.*(#[0-9A-Fa-f]{6}).*/\1/')
+		                        c_success=$(grep -E '^[[:space:]]*(--)?success:[[:space:]]*#[0-9A-Fa-f]{6}' "$theme_file" 2>/dev/null | head -n 1 | sed -E 's/.*(#[0-9A-Fa-f]{6}).*/\1/')
+
+		                        # Fallbacks keep output stable even with incomplete themes
+		                        [[ -z "$c_bg" ]] && c_bg="#000000"
+		                        [[ -z "$c_sel" ]] && c_sel="#44475a"
+		                        [[ -z "$c_glow" ]] && c_glow="#ff79c6"
+		                        [[ -z "$c_purple" ]] && c_purple="#bd93f9"
+		                        [[ -z "$c_success" ]] && c_success="#50fa7b"
+
+		                        # Reorder swatches by brightness so dark colors are not at the edges.
+		                        # We compute luminance and place: brightest, mid, darkest, second-darkest, second-brightest.
+		                        tss_luma() {
+		                            local h="${1#\#}"
+		                            local r=$((16#${h:0:2}))
+		                            local g=$((16#${h:2:2}))
+		                            local b=$((16#${h:4:2}))
+		                            echo $((2126*r + 7152*g + 722*b))
+		                        }
+
+		                        local lines=""
+		                        local hex
+		                        for hex in "$c_bg" "$c_sel" "$c_glow" "$c_purple" "$c_success"; do
+		                            lines+=$(printf "%d|%s\n" "$(tss_luma "$hex")" "$hex")
+		                        done
+
+		                        local idx=0
+		                        while IFS='|' read -r _l _hex; do
+		                            [[ -z "$_hex" ]] && continue
+		                            eval "tss_hex_${idx}=\"\$_hex\""
+		                            idx=$((idx+1))
+		                        done <<< "$(printf "%s" "$lines" | sort -n)"
+
+		                        # Sorted ascending: 0=darkest ... 4=brightest
+		                        local p1="${tss_hex_4:-$c_glow}"
+		                        local p2="${tss_hex_2:-$c_purple}"
+		                        local p3="${tss_hex_0:-$c_bg}"
+		                        local p4="${tss_hex_1:-$c_sel}"
+		                        local p5="${tss_hex_3:-$c_success}"
+
+		                        # Prefer background blocks when available (looks closer to a palette).
+		                        # Palette order: bg, bg-selection, glow, purple, success
+		                        if declare -F hex_to_ansi_bg &>/dev/null; then
+		                            local blk="   "
+		                            printf "▏%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s▕" \
+		                                "$(hex_to_ansi_bg "$p1")" "$blk" "${RESET}" \
+		                                "$(hex_to_ansi_bg "$p2")" "$blk" "${RESET}" \
+		                                "$(hex_to_ansi_bg "$p3")" "$blk" "${RESET}" \
+		                                "$(hex_to_ansi_bg "$p4")" "$blk" "${RESET}" \
+		                                "$(hex_to_ansi_bg "$p5")" "$blk" "${RESET}"
+		                        elif declare -F hex_to_ansi &>/dev/null; then
+		                            local sw="███"
+		                            printf "▏%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s▕" \
+		                                "$(hex_to_ansi "$p1")" "$sw" "${RESET}" \
+		                                "$(hex_to_ansi "$p2")" "$sw" "${RESET}" \
+		                                "$(hex_to_ansi "$p3")" "$sw" "${RESET}" \
+		                                "$(hex_to_ansi "$p4")" "$sw" "${RESET}" \
+		                                "$(hex_to_ansi "$p5")" "$sw" "${RESET}"
+		                        else
+		                            printf "▏███████████████▕"
+		                        fi
+		                    }
+
+		                    # Get list of themes from bundled and user dirs (.tss preferred; .css supported for back-compat)
+		                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep -E "\.(tss|css)$" | sed -E 's/\.(tss|css)$//g')
+		                    local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep -E "\.(tss|css)$" | sed -E 's/\.(tss|css)$//g')
+		                    local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
+		                    local current_theme
+		                    current_theme=$(get_theme_preference 2>/dev/null)
 	                    
-	                    if [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
-	                        echo -e "${CYAN}Available themes:${RESET}"
-	                        for theme in $all_themes; do
-	                            if [[ -n "$current_theme" && "$theme" == "$current_theme" ]]; then
-	                                echo -e "  ${RED}* ${theme} (current)${RESET}"
-	                            else
-	                                echo "  - $theme"
-	                            fi
-	                        done
-	                        exit 0
-	                    fi
+		                    if [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
+		                        # Helper that suppresses noisy EPIPE errors when output is piped (e.g. to `head`).
+		                        local quiet_pipe=""
+		                        [[ ! -t 1 ]] && quiet_pipe="1"
+		                        tss_println() {
+		                            if [[ -n "$quiet_pipe" ]]; then
+		                                printf '%b\n' "$1" 2>/dev/null || exit 0
+		                            else
+		                                printf '%b\n' "$1" || exit 0
+		                            fi
+		                        }
+
+		                        if [[ -n "$quiet_pipe" ]]; then
+		                            {
+		                                tss_println "${CYAN}Available themes:${RESET}"
+		                                for theme in $all_themes; do
+		                                    local theme_file=""
+		                                    if [[ -f "$HOME/.config/termflix/themes/${theme}.tss" ]]; then
+		                                        theme_file="$HOME/.config/termflix/themes/${theme}.tss"
+		                                    elif [[ -f "$HOME/.config/termflix/themes/${theme}.css" ]]; then
+		                                        theme_file="$HOME/.config/termflix/themes/${theme}.css"
+		                                    elif [[ -f "$SCRIPT_DIR/../themes/${theme}.tss" ]]; then
+		                                        theme_file="$SCRIPT_DIR/../themes/${theme}.tss"
+		                                    elif [[ -f "$SCRIPT_DIR/../themes/${theme}.css" ]]; then
+		                                        theme_file="$SCRIPT_DIR/../themes/${theme}.css"
+		                                    fi
+		                                    local palette=""
+		                                    [[ -n "$theme_file" ]] && palette="$(termflix_theme_palette "$theme_file")"
+		                                    if [[ -n "$current_theme" && "$theme" == "$current_theme" ]]; then
+		                                        tss_println "  ${palette}  ${RED}* ${theme} (current)${RESET}"
+		                                    else
+		                                        tss_println "  ${palette}  - ${theme}"
+		                                    fi
+		                                done
+		                            } 2>/dev/null
+		                        else
+		                            tss_println "${CYAN}Available themes:${RESET}"
+		                            for theme in $all_themes; do
+		                                local theme_file=""
+		                                if [[ -f "$HOME/.config/termflix/themes/${theme}.tss" ]]; then
+		                                    theme_file="$HOME/.config/termflix/themes/${theme}.tss"
+		                                elif [[ -f "$HOME/.config/termflix/themes/${theme}.css" ]]; then
+		                                    theme_file="$HOME/.config/termflix/themes/${theme}.css"
+		                                elif [[ -f "$SCRIPT_DIR/../themes/${theme}.tss" ]]; then
+		                                    theme_file="$SCRIPT_DIR/../themes/${theme}.tss"
+		                                elif [[ -f "$SCRIPT_DIR/../themes/${theme}.css" ]]; then
+		                                    theme_file="$SCRIPT_DIR/../themes/${theme}.css"
+		                                fi
+		                                local palette=""
+		                                [[ -n "$theme_file" ]] && palette="$(termflix_theme_palette "$theme_file")"
+		                                if [[ -n "$current_theme" && "$theme" == "$current_theme" ]]; then
+		                                    tss_println "  ${palette}  ${RED}* ${theme} (current)${RESET}"
+		                                else
+		                                    tss_println "  ${palette}  - ${theme}"
+		                                fi
+		                            done
+		                        fi
+		                        exit 0
+		                    fi
 
                     echo -e "${RED}Error:${RESET} Please specify a theme name"
                     echo -e "${CYAN}Available themes:${RESET} $all_themes"
-                    echo "Usage: termflix theme <name> or termflix theme --list"
-                    exit 1
-                fi
+	                    echo "Usage: termflix theme <name> or termflix theme --list"
+	                    exit 1
+	                fi
                 local new_theme="$2"
                 
                 # Check if theme exists (using find_theme_file logic mostly)
                 local theme_found=false
-                if [[ -f "$SCRIPT_DIR/../themes/${new_theme}.css" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.css" ]]; then
+                if [[ -f "$SCRIPT_DIR/../themes/${new_theme}.tss" ]] || [[ -f "$SCRIPT_DIR/../themes/${new_theme}.css" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.tss" ]] || [[ -f "$HOME/.config/termflix/themes/${new_theme}.css" ]]; then
                     theme_found=true
                 fi
                 
@@ -293,7 +413,7 @@ main() {
                     exit 0
                 else
                     echo -e "${RED}Error:${RESET} Theme '$new_theme' not found"
-                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep -E "\.(tss|css)$" | sed -E 's/\.(tss|css)$//g')
                     echo -e "${CYAN}Available themes:${RESET} $(echo "$bundled_themes" | xargs)"
                     exit 1
                 fi

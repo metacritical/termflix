@@ -7,19 +7,19 @@
 <fzf-layout id="buffer-ui" name="Buffer UI">
   <layout direction="reverse" height="100%" margin="1" padding="1"/>
   <border style="rounded" label=" Esc:Back " label-pos="bottom"/>
-  <prompt pointer="➤">⬇ Buffering </prompt>
+  <prompt pointer="${THEME_STR_ICON_POINTER-➤}">${THEME_STR_ICON_BUFFERING-⬇} Buffering </prompt>
   <header first="true">Streaming: ${title:-Movie}</header>
   <preview position="left" size="55%" wrap="true" border="border-right" script="${preview_script}"/>
   <colors>
-    <color name="fg" value="#f8f8f2"/>
-    <color name="bg" value="-1"/>
-    <color name="hl" value="#ff79c6"/>
+    <color name="fg" value="${THEME_HEX_FG:-#f8f8f2}"/>
+    <color name="bg" value="${THEME_HEX_BG:--1}"/>
+    <color name="hl" value="${THEME_HEX_HL:-${THEME_HEX_GLOW:-#ff79c6}}"/>
     <color name="fg+" value="#ffffff"/>
-    <color name="bg+" value="#44475a"/>
-    <color name="hl+" value="#ff79c6"/>
-    <color name="info" value="#bd93f9"/>
-    <color name="prompt" value="#50fa7b"/>
-    <color name="pointer" value="#ff79c6"/>
+    <color name="bg+" value="${THEME_HEX_BG_SELECTION:-#44475a}"/>
+    <color name="hl+" value="${THEME_HEX_HL_SELECTION:-${THEME_HEX_LAVENDER:-${THEME_HEX_GLOW:-#ff79c6}}}"/>
+    <color name="info" value="${THEME_HEX_INFO:-${THEME_HEX_PURPLE:-#bd93f9}}"/>
+    <color name="prompt" value="${THEME_HEX_PROMPT:-${THEME_HEX_SUCCESS:-#50fa7b}}"/>
+    <color name="pointer" value="${THEME_HEX_POINTER:-${THEME_HEX_GLOW:-#ff79c6}}"/>
   </colors>
   <bindings delimiter="|" with-nth="2">
     <bind key="enter" action="accept"/>

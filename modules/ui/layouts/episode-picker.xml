@@ -6,8 +6,8 @@
 -->
 <fzf-layout id="episode-picker" name="Episode Picker">
   <layout direction="reverse" height="100%" margin="1" padding="1" info="default"/>
-  <border style="rounded" label=" ⌨ Enter:Select  Ctrl+E:Season  Ctrl+H:Back " label-pos="bottom"/>
-  <prompt pointer="➤"></prompt>
+  <border style="rounded" label=" ⌨ Enter:Select  Ctrl+E:Season  ${TERMFLIX_STATUS_MID_ICON:-}  Ctrl+H:Back " label-pos="bottom"/>
+  <prompt pointer="${THEME_STR_ICON_POINTER-➤}"></prompt>
   <header first="true">Pick Episode - [${CLEAN_TITLE:-Series}] Season ${SEASON_NUM:-1}</header>
   <preview position="left" size="55%" wrap="true" border="border-right" script="ep_no=$(echo {} | cut -d&quot;|&quot; -f1); ${SCRIPT_DIR}/preview_episode.sh &quot;$ep_no&quot;"/>
   <colors theme="dynamic"/>

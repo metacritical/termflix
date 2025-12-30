@@ -5,6 +5,8 @@ Notes:
 - TML layouts exist for some, but are not fully used to run `fzf`.
 - Preview scripts are not "direct" calls, but are still part of the UI surface (invoked by fzf via `--preview`).
 - Popup pickers launched from `bin/termflix` clear `FZF_DEFAULT_OPTS` before running so main-catalog preview/binds do not leak into centered modals.
+- Theme files are `themes/*.tss` (Terminal Style Sheets). `modules/core/theme.sh` prefers `.tss` but still supports `.css` for back-compat.
+- UI icon/symbol tokens can come from themes via `THEME_STR_*` exports, but the **brand icon** is never theme-driven (seasonal only via `TERMFLIX_LOGO_ICON`).
 
 ### Stage 1: Catalog (Movies/Shows list)
 - `modules/ui/catalog/fzf_catalog.sh`
@@ -48,3 +50,8 @@ Notes:
 
 ## Migration Status
 - Done: Main catalog (Stage 1), season picker, episode picker, movie version picker, episode version picker, buffer UI.
+
+## Theme / TSS Notes (Non-Stage)
+- Theme loader: `modules/core/theme.sh` parses both hex colors (exports `THEME_*` + `THEME_HEX_*`) and string/symbol tokens (exports `THEME_STR_*`).
+- Seasonal branding: `modules/core/seasonal.sh` exports `TERMFLIX_LOGO_ICON` (e.g. `🎅🍿` during Dec/Jan; `🎉🍿` on Jan 1; `☸️🪬🍿` on Buddha Purnima override/date table).
+- Theme listing: `bin/termflix themes --list` prints a 5-color palette swatch + name; swatches are extracted from `bg`, `bg-selection`, `glow`, `purple`, `success` and reordered for visibility (dark colors not on the edges).

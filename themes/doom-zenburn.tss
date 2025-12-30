@@ -1,0 +1,36 @@
+/* Doom Zenburn (Emacs) inspired theme for Termflix */
+:root {
+  --fg: #DCDCCC;
+  --fg-muted: #9FAFAF;
+  --fg-subtle: #7F9F7F;
+  --bg: #3F3F3F;
+  --bg-surface: #2F2F2F;
+  --bg-selection: #4F4F4F;
+
+  --glow: #DC8CC3;      /* zenburn magenta */
+  --purple: #9B859D;
+  --lavender: #DCDCCC;
+
+  --success: #7F9F7F;
+  --error: #CC9393;
+  --warning: #F0DFAF;
+  --info: #8CD0D3;
+
+  --border: #5F5F5F;
+  --pointer: #DC8CC3;
+  --prompt: #7F9F7F;
+  --spinner: #F0DFAF;
+  --header: #9B859D;
+
+  --yts: #7F9F7F;
+  --tpb: #F0DFAF;
+  --x1337: #DC8CC3;
+  --eztv: #8CD0D3;
+
+  --pill-active-bg: #4F4F4F;
+  --pill-inactive-bg: #2F2F2F;
+  --pill-active-fg: #ffffff;
+  --pill-inactive-fg: #DCDCCC;
+  --pill-shortcut-fg: #DC8CC3;
+}
+
