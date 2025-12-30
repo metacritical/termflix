@@ -9,6 +9,14 @@ feature:
   version: 1.0.0
   purpose: "Load terminal style sheets (TSS) to control colors and UI symbols across Termflix."
 
+pipeline:
+  stages:
+    - load: "Resolve theme file path with precedence (.tss preferred, .css supported for back-compat)."
+    - parse: "Parse key/value tokens (hex colors + quoted strings)."
+    - export: "Export THEME_* (ANSI), THEME_HEX_* (hex), and THEME_STR_* (string/symbol) variables."
+    - seasonal: "Apply seasonal branding exports (brand icon is seasonal-only)."
+    - list: "Render a CLI list with 5-swatch palette + current marker."
+
 local_resources:
   - path: "themes/*.tss"
     format: "TSS (CSS-like)"
@@ -71,7 +79,15 @@ cli:
       unselected: "-"
 
 integration:
-  used_by:
-    - "modules/ui/tml/parser/tml_parser.sh (FZF colors + header rendering)"
-    - "modules/ui/catalog/fzf_catalog.sh (Stage 1 header + pills)"
-    - "modules/streaming/buffer_ui.sh (theme colors + optional symbols)"
+  ui_component: "Global UI styling (colors + symbols)"
+  file: "modules/core/theme.sh"
+  trigger: "Termflix startup and any UI flow that renders headers/pills/buffer states"
+
+implementation:
+  modules:
+    - path: "modules/core/theme.sh"
+      role: "Theme loader + parser"
+    - path: "modules/core/seasonal.sh"
+      role: "Seasonal branding exports (brand icon + mid-icon)"
+  entry_points:
+    - "bin/termflix (theme/themes --list + runtime theme preference)"

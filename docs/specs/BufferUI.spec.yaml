@@ -1,121 +1,120 @@
 ---
 # AgentSpec: Buffer UI Module
-# Version: 1.1
-# Last Updated: 2025-12-25
+# Last Updated: 2025-12-30
 
 feature:
   name: "Buffer UI (Stage 3 Streaming)"
-  description: "Manages the streaming buffer UI displayed during torrent playback, including backdrop fetching, splash screen, trailer links, and progress monitoring."
-  version: "1.2"
-
-files:
-  - modules/streaming/buffer_ui.sh
-  - modules/streaming/player.sh
-  - modules/streaming/splash_progress.sh
-  - scripts/python/fetch_backdrop.py
-  - scripts/python/fetch_trailers.py
+  version: "1.2.0"
+  purpose: "Run the Stage 3 buffering UI: fetch artwork/trailers, start torrent streaming, and show live progress in an fzf UI."
 
 pipeline:
-  - stage: backdrop_fetch
-    description: "Fetch widescreen backdrop image from Google Images"
-    inputs:
-      - title: "Movie/show title"
-      - content_type: "movie or show"
-    outputs:
-      - backdrop_image: "Path to downloaded backdrop file"
-    timeout: "10 seconds (2 retries)"
-    fallback_chain:
-      - "Google Images backdrop (widescreen)"
-      - "Poster file from catalog"
-      - "Bundled default image (lib/torrent/img/movie_night.jpg)"
-      - "Skip splash (empty string)"
+  stages:
+    - backdrop_fetch: "Best-effort fetch widescreen backdrop image (fallback chain)."
+    - poster_caching: "Download/cache poster for preview when a URL is provided."
+    - trailer_fetch: "Fetch YouTube trailer links (best-effort)."
+    - splash_screen: "Optionally launch an MPV splash window with the backdrop."
+    - stream_torrent: "Start the torrent streaming process and write a status file."
+    - fzf_buffer_ui: "Run the fzf buffer UI (preview shows progress at the top)."
 
-  - stage: poster_caching
-    description: "Download and cache poster image for preview"
-    trigger: "STAGE2_POSTER is a URL"
-    outputs:
-      - local_poster: "Cached poster in ~/.cache/termflix/posters/"
-    logic: "MD5 hash of URL used as filename"
+environment:
+  variables:
+    - "STAGE2_POSTER (URL or cached path)"
+    - "STAGE2_TITLE"
+    - "STAGE2_PLOT"
+    - "STAGE2_SOURCES (e.g. [TPB][YTS])"
+    - "TERMFLIX_TRAILER_SCRIPT (scripts/python/fetch_trailers.py)"
+    - "TERMFLIX_POSTER_CACHE (~/.cache/termflix/posters)"
+    - "THEME_STR_ICON_PLAY (optional theme symbol; may be seasonally overridden)"
+    - "THEME_STR_ICON_READY (optional theme symbol; may be seasonally overridden)"
+    - "TERMFLIX_LOGO_ICON (seasonal brand icon; not theme-driven)"
+  dependencies:
+    - "fzf"
+    - "mpv"
+    - "python3"
+    - "curl"
+    - "viu|chafa|kitty (optional for images)"
 
-  - stage: trailer_fetch
-    description: "Fetch YouTube trailer links for the movie"
-    script: "scripts/python/fetch_trailers.py"
-    inputs:
-      - title: "Movie/show title"
-      - limit: "Number of trailers (default: 2)"
-    outputs:
-      - trailers: "List of title|url pairs"
-    timeout: "5 seconds"
+data_sources:
+  - source: "Google Images"
+    priority: 1
+    endpoint: "Backdrop search"
+    field: "Backdrop image URL"
+    format: "HTTP image"
+    notes: "Best-effort; may fail due to throttling/format changes."
+  - source: "YouTube (via scripts)"
+    priority: 2
+    endpoint: "Trailer search"
+    field: "title|url"
+    format: "Text"
+    notes: "Best-effort; scripts/python/fetch_trailers.py"
 
-  - stage: splash_screen
-    description: "Launch MPV splash screen with backdrop"
-    condition: "launch_splash_screen available AND backdrop_image is valid file"
-    outputs:
-      - splash_pid: "Process ID of splash screen"
-      - splash_socket: "IPC socket path"
+local_resources:
+  - path: "~/.cache/termflix/posters/"
+    format: "Image files"
+    purpose: "Poster cache (MD5 filenames)"
+    persistence: "Cache"
+  - path: "lib/torrent/img/movie_night.jpg"
+    format: "JPG"
+    purpose: "Bundled fallback backdrop"
+    persistence: "Permanent"
+  - path: "modules/ui/layouts/buffer-ui.xml"
+    format: "XML"
+    purpose: "TML/fzf layout for Stage 3 UI"
+    persistence: "Permanent"
 
-  - stage: stream_torrent
-    description: "Background process streaming the torrent"
-    outputs:
-      - stream_pid: "Process ID of streaming process"
-      - status_file: "Path to buffer status file"
-
-  - stage: fzf_buffer_ui
-    description: "FZF interface showing buffering progress"
-    features:
-      - "Live preview with buffering percentage at TOP (always visible)"
-      - "Poster display (viu/chafa/kitty)"
-      - "Trailer links section with YouTube URLs"
-      - "FZF listen port for API-driven refresh"
-      - "Auto-refresh every 0.3s via background sidecar"
-      - "Sidecar auto-abort: closes FZF when MPV exits"
-
-data_flow:
-  status_file_format: "progress|speed_bytes|peers|total_peers|buffered_mb|state|stream_url|peerflix_pid"
-  states:
-    - STARTING
-    - ANALYZING
-    - BUFFERING
-    - READY
-    - PLAYING
-  env_vars:
-    STAGE2_POSTER: "Path to cached poster image"
-    STAGE2_TITLE: "Movie/show title"
-    STAGE2_PLOT: "Synopsis text"
-    STAGE2_SOURCES: "Source badges [TPB][YTS]"
-    TERMFLIX_TRAILER_SCRIPT: "Path to fetch_trailers.py"
-    TERMFLIX_POSTER_CACHE: "Poster cache directory"
-    THEME_STR_ICON_PLAY: "Optional theme symbol for PLAYING label (may be seasonally overridden)"
-    THEME_STR_ICON_READY: "Optional theme symbol for READY label (may be seasonally overridden)"
-    TERMFLIX_LOGO_ICON: "Seasonal brand icon (prefix+🍿); not theme-driven"
+outputs:
+  format: "status file + stream URL"
+  schema:
+    status_file_format: "progress|speed_bytes|peers|total_peers|buffered_mb|state|stream_url|peerflix_pid"
+    states: "STARTING|ANALYZING|BUFFERING|READY|PLAYING"
 
 resilience:
-  - issue: "Backdrop fetch timeout on cold cache"
-    solution: "Increased timeout from 3s to 10s"
-  - issue: "Single quotes in movie titles break eval"
-    solution: "tml_shell_escape function escapes special chars"
-  - issue: "Unbound variable in cleanup trap"
-    solution: "Safe expansion ${var:-} and trap restoration"
-  - issue: "Poster is N/A or URL"
-    solution: "Fallback chain + URL download with MD5 caching"
-  - issue: "macOS throttles background window updates"
-    solution: "Changed MPV splash to windowed mode (1280x720)"
-  - issue: "FZF progress bar not visible (buried below poster)"
-    solution: "Reorganized preview output: progress bar at TOP"
-  - issue: "FZF doesn't close when MPV exits"
-    solution: "Sidecar sends 'abort' to FZF when stream_pid dies"
+  fallback_chain:
+    - "Google backdrop"
+    - "Catalog poster"
+    - "Bundled default image"
+    - "No splash"
+  retries: "Backdrop: 2 retries within ~10s; trailers: best-effort within ~5s"
+  default_behavior: "If artwork/trailers fail, continue streaming with a simplified UI."
+  notes:
+    - issue: "Backdrop fetch timeout on cold cache"
+      solution: "Timeout increased to ~10s with retries."
+    - issue: "Single quotes in titles break eval"
+      solution: "TML parser uses tml_shell_escape and argv execution (no eval)."
+    - issue: "Unbound variable in cleanup trap"
+      solution: "Safe expansion ${var:-} + trap restoration."
+    - issue: "Poster is N/A or URL"
+      solution: "Fallback chain + URL download with MD5 caching."
+    - issue: "macOS throttles background window updates"
+      solution: "MPV splash uses windowed mode (1280x720)."
+    - issue: "Progress bar not visible"
+      solution: "Preview output keeps progress at TOP."
+    - issue: "FZF doesn't close when MPV exits"
+      solution: "Sidecar sends 'abort' to fzf when stream_pid dies."
 
 integration:
-  sources_from:
-    - modules/ui/catalog/fzf_catalog.sh (Stage 2 selection)
   cross_references:
     - docs/specs/Catalog.spec.yaml (logic_flow.Stage2_to_Stage3)
-  exports_to:
-    - modules/torrent.sh (stream_torrent function)
-  uses:
-    - modules/ui/tml/parser/tml_parser.sh (layout parsing)
-    - modules/ui/layouts/buffer-ui.xml (FZF layout)
-    - scripts/python/fetch_trailers.py (trailer links)
+  ui_component: "Stage 3 Buffer UI"
+  file: "modules/streaming/buffer_ui.sh"
+  trigger: "User accepts a version in Stage 2 (movie/episode version picker)"
+
+implementation:
+  modules:
+    - path: "modules/streaming/buffer_ui.sh"
+      role: "Stage 3 controller + fzf UI"
+    - path: "modules/streaming/player.sh"
+      role: "MPV player integration"
+    - path: "modules/streaming/splash_progress.sh"
+      role: "Splash window helpers"
+    - path: "modules/torrent.sh"
+      role: "Torrent streaming orchestration"
+    - path: "scripts/python/fetch_backdrop.py"
+      role: "Backdrop fetching"
+    - path: "scripts/python/fetch_trailers.py"
+      role: "Trailer fetching"
+  entry_points:
+    - "modules/ui/catalog/fzf_catalog.sh (Stage 2 accept path)"
 
 logic_flow:
   Stage2_to_Stage3:

@@ -24,7 +24,7 @@ How the bash TML parser integrates with FZF-based UIs.
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                    fzf_catalog.sh                            │
-│    fzf --header "$header" --expect "$expect" ...             │
+│    printf "%s" "$data" | tml_run_fzf ...                     │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -58,7 +58,8 @@ menu_header=$(render_header)
 |-----------|--------|-------------|
 | Header | Hardcoded bash | `tml_render_header` |
 | Bindings | String literal | `tml_get_expect_keys` |
-| Colors | Environment vars | `tml_get_colors` (future) |
+| Colors | Hardcoded fzf --color | Theme loader (`modules/core/theme.sh`) + `get_fzf_colors` |
+| Symbols | Hardcoded unicode | Theme strings (`THEME_STR_*`) + seasonal exports (`TERMFLIX_LOGO_ICON`) |
 
 ---
 

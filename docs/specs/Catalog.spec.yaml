@@ -16,77 +16,33 @@ pipeline:
     - display: "Render UI using FZF (via `fzf_catalog.sh`)"
     - interact: "Handle user keybindings (Nav, Search, Sort)"
 
-ui_components:
-  - component: "Main Catalog"
-    file: "modules/ui/catalog/fzf_catalog.sh"
-    function: "show_fzf_catalog"
-    description: "Primary FZF interface showing list of titles."
-    implementation_notes:
-      - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args."
-      - "Renders the Stage 1 header pills from `modules/ui/layouts/main-catalog.tml` (`menu-bar`) to keep the header declarative."
-      - "Stage 1 brand icon is seasonal (not theme-driven): header uses `TERMFLIX_LOGO_ICON` exported by `modules/core/seasonal.sh`."
-      - "Stage 1 bottom help label may include a seasonal mid-icon via `TERMFLIX_STATUS_MID_ICON` (e.g. 🪷 on Buddha Purnima)."
-    keybindings:
-      "Ctrl+F": "Search Mode"
-      "Ctrl+O": "Category: Movies"
-      "Ctrl+S": "Category: Shows"
-      "Ctrl+L": "Force version picker for single-source items"
-      "Ctrl+Right or >": "Next Page"
-      "Ctrl+Left or <": "Previous Page"
-      "Enter": "Select Item"
+environment:
+  variables:
+    - "CURRENT_CATEGORY (movies|shows|all)"
+    - "CURRENT_PAGE (integer)"
+    - "TERMFLIX_PREFETCH_PID (PID of background fetcher)"
+    - "TERMFLIX_STAGE1_CONTEXT (catalog|search)"
+    - "CURRENT_LANGUAGE (ISO 639-1 code; empty means no filter)"
+    - "CURRENT_MIN_RATING (0 means no filter)"
+    - "TERMFLIX_LOGO_ICON (seasonal brand icon; not theme-driven)"
+    - "TERMFLIX_STATUS_MID_ICON (optional mid-label icon for bottom help label)"
+  dependencies:
+    - "fzf"
+    - "xmllint"
 
-  - component: "Filter Pickers (Popups)"
-    file: "bin/termflix"
-    function: "main (sort/type/genre flows)"
-    description: "Centered popup pickers for Year/Rating/Language and search input; launched from the Stage 1 header dropdowns."
-    implementation_notes:
-      - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with XML layouts in `modules/ui/layouts/*-selector*.xml`."
-      - "Temporarily clears `FZF_DEFAULT_OPTS` before launching to prevent main-catalog preview/binds leaking into the popup."
-      - "Language picker forces UTF-8 locale and sets `RUNEWIDTH_EASTASIAN=1` and runs fzf with `--no-hscroll --no-scrollbar` to reduce unicode redraw issues in tmux."
+data_sources:
+  - source: "Torrent providers"
+    priority: 1
+    endpoint: "TPB/YTS adapters (see modules/torrent.sh + modules/catalog.sh)"
+    field: "title/year/quality/size/seeds/magnet"
+    format: "Pipe-delimited rows"
+    notes: "Exact sources depend on routing (movies/shows) and provider availability."
 
-  - component: "Show Preview (Episode Table)"
-    file: "modules/ui/catalog/preview_fzf.sh"
-    function: "N/A (fzf preview script)"
-    description: "Stage 1 preview pane renderer for TV shows; includes a Season Episodes table."
-    notes:
-      - "Uses `FZF_PREVIEW_COLUMNS` for preview pane width when available (fzf-provided)."
-      - "Episode table reserves a fixed-width lock column so locked episodes don't shift/clobber the date column."
-      - "Titles are not truncated by Termflix; some titles may contain `...` upstream (TMDB season data)."
-
-  - component: "Episode Picker"
-    file: "modules/ui/pickers/episode_picker.sh"
-    function: "episode_picker"
-    description: "Episode list UI for shows before version selection."
-    keybindings:
-      "Enter": "Select episode"
-      "Ctrl+L": "Select episode (same as Enter), then open version picker"
-      "Ctrl+E or Ctrl+S": "Switch season"
-      "Ctrl+H or Esc": "Back to catalog"
-
-  - component: "Version Picker (Stage 2)"
-    file: "modules/ui/catalog/fzf_catalog.sh"
-    function: "handle_fzf_selection"
-    description: "Secondary FZF interface for selecting specific qualities/sources for a title (movies and episode results)."
-    trigger: "Selecting a COMBINED entry from Main Catalog or pressing Ctrl+L on a single-source entry to wrap it as COMBINED."
-    behavior:
-      - "Abort (Ctrl+H/Esc) returns to Stage 1."
-      - "Accept (Enter/Ctrl+L in episode picker) selects a version and proceeds to Stage 3 streaming."
-
-data_flow:
-  fetching_strategy:
-    description: "Hybrid synchronous/asynchronous fetching."
-    sync: "Pages 1-5 loaded immediately for responsiveness."
-    async: "Pages 6-15+ fetched in background (`TERMFLIX_PREFETCH_PID`)."
-    caching: "Results deduped and cached by title."
-
-  state_management:
-    env_vars:
-      CURRENT_CATEGORY: "movies | shows | all"
-      CURRENT_PAGE: "Integer"
-      TERMFLIX_PREFETCH_PID: "PID of background fetcher"
-      TERMFLIX_STAGE1_CONTEXT: "catalog | search"
-      CURRENT_LANGUAGE: "ISO 639-1 code used by language filter (empty means no filter)"
-      CURRENT_MIN_RATING: "Minimum rating threshold (0 means no filter)"
+local_resources:
+  - path: "~/.config/termflix/cache"
+    format: "Text/JSON (implementation-dependent)"
+    purpose: "Cached catalog pages and derived data"
+    persistence: "Cache"
 
 logic_flow:
   Stage1_to_Stage2:
@@ -105,16 +61,43 @@ logic_flow:
       - "Accept (Enter/Ctrl+L for episode picker) yields a selected index."
       - "Resolve magnet/source/quality and launch Stage 3 buffer UI."
 
-error_handling:
-  - situation: "Empty Selection"
-    behavior: "Loop breaks only if explicitly cancelled. Empty strings without cancel code are ignored/logged."
-  - situation: "Fetch Failure"
-    behavior: "Fallback to cache if available, else show error message."
-
 resilience:
-  - issue: "Stage 1 to Stage 2 transition crash (--exit-0 flag)"
-    solution: "Removed --exit-0 from FZF command to prevent silent exits on empty selection"
-  - issue: "Single quotes in movie titles breaking eval"
-    solution: "TML parser uses tml_shell_escape for double-quote safe embedding"
-  - issue: "Locked episodes misalign/clobber date column"
-    solution: "Reserve a fixed-width lock column (2 cols) even when unlocked, and size the table using the preview/list pane width."
+  fallback_chain:
+    - "Use cache when fetch fails"
+    - "Show error message when no cache exists"
+  default_behavior: "Never stream unless user explicitly accepts a selection."
+  retries: "Provider-dependent (catalog adapters may retry internally)"
+  notes:
+    - issue: "Stage 1 to Stage 2 transition crash (--exit-0 flag)"
+      solution: "Removed --exit-0 from FZF command to prevent silent exits on empty selection."
+    - issue: "Single quotes in titles breaking eval"
+      solution: "TML parser uses tml_shell_escape; caller passes args via argv arrays."
+    - issue: "Locked episodes clobber date column"
+      solution: "Reserve a fixed-width lock column even when unlocked; size table using pane width."
+
+implementation:
+  modules:
+    - path: "modules/catalog.sh"
+      role: "Catalog fetching + caching orchestration"
+    - path: "modules/ui/catalog/fzf_catalog.sh"
+      role: "Stage 1 catalog + Stage 2 version picker"
+      functions:
+        - name: "show_fzf_catalog"
+          input: "catalog data (pages)"
+          output: "selected row / key"
+        - name: "handle_fzf_selection"
+          input: "selected row"
+          output: "stage transition (stream or stage2 picker)"
+    - path: "modules/ui/catalog/preview_fzf.sh"
+      role: "Stage 1 preview script (shows episode table)"
+    - path: "modules/ui/pickers/episode_picker.sh"
+      role: "Episode picker UI (shows)"
+    - path: "bin/termflix"
+      role: "Popup filter pickers (type/sort/genre/year/rating/language/search)"
+  entry_points:
+    - "bin/termflix (catalog flows)"
+
+integration:
+  ui_component: "Stage 1 Catalog + Stage 2 Version Picker"
+  file: "modules/ui/catalog/fzf_catalog.sh"
+  trigger: "User navigates catalog, selects an item, or invokes filters/search"

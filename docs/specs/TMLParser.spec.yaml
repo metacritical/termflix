@@ -1,98 +1,113 @@
 ---
 # AgentSpec: TML Parser Module
-# Version: 2.0
-# Last Updated: 2025-12-25
+# Last Updated: 2025-12-30
 
 feature:
   name: "TML Parser (Terminal Markup Language)"
-  description: "Parses XML/TML layout files and generates FZF command arguments. Provides rich menu-bar rendering with tabs, dropdowns, and theme integration."
-  version: "2.0"
-
-files:
-  - modules/ui/tml/parser/tml_parser.sh
-  - modules/ui/tml/schema/tml-1.0.xsd
-  - modules/ui/layouts/*.xml
-  - modules/ui/layouts/*.tml
+  version: "2.0.0"
+  purpose: "Parse XML/TML layouts into fzf arguments and render menu-bar headers with theme + seasonal integration."
 
 pipeline:
-  - stage: parse
-    function: "tml_parse"
-    description: "Parse TML/XML layout file and extract FZF configuration"
-    inputs:
-      - tml_file: "Path to .tml or .xml layout file"
-    outputs:
-      - TML_FZF_ARGS: "Generated FZF command arguments"
-      - TML_EXPECT_KEYS: "Expected keys for FZF --expect"
-
-  - stage: render_header
-    function: "tml_render_header"
-    description: "Render menu-bar with tabs, dropdowns, and logo"
-    outputs:
-      - header_string: "ANSI-colored header for FZF"
-
-helper_functions:
-  - name: "tml_eval"
-    description: "Evaluate ${var}, ${var-default} (unset-only), and ${var:-default} (unset-or-empty) expressions"
-  - name: "tml_eval_bool"
-    description: "Evaluate boolean expressions for conditionals"
-  - name: "tml_shell_escape"
-    description: "Escape special characters for safe shell embedding in double-quoted strings"
-    escapes: ["\\", "`", "$", "\"", "!"]
-  - name: "tml_get_options"
-    description: "Extract newline-separated <options><option> values from a <fzf-layout> XML file"
-  - name: "tml_run_fzf"
-    description: "Invoke fzf with the currently-parsed TML args (parses `TML_FZF_ARGS` into an argv array, then executes `fzf` without eval)"
-  - name: "tml_attr"
-    description: "Extract XML attribute via xmllint"
-  - name: "tml_text"
-    description: "Extract XML text content via xmllint"
-  - name: "tml_count"
-    description: "Count matching XML elements"
-  - name: "tml_exists"
-    description: "Check if XPath exists"
-
-xml_elements:
-  layout:
-    attributes: ["direction", "height", "margin", "padding", "info"]
-  border:
-    attributes: ["style", "label", "label-pos"]
-  prompt:
-    attributes: ["pointer"]
-  header:
-    attributes: ["first"]
-  preview:
-    attributes: ["position", "size", "wrap", "border", "script"]
-  colors:
-    children: ["color[@name, @value]"]
-  bindings:
-    attributes: ["delimiter", "with-nth", "expect"]
-    children: ["bind[@key, @action, @return-code, @script]"]
-
-resilience:
-  - issue: "Single quotes in header content break eval"
-    solution: "tml_shell_escape escapes special chars, header uses double quotes"
-  - issue: "Bash 3.2 compatibility"
-    solution: "No associative arrays, uses eval for variable assignment"
-
-integration:
-  used_by:
-    - modules/ui/catalog/fzf_catalog.sh
-    - modules/streaming/buffer_ui.sh
-    - modules/ui/pickers/*.sh
-  sources:
-    - modules/core/theme.sh (optional color scheme)
+  stages:
+    - parse: "Parse a .xml/.tml layout and build `TML_FZF_ARGS` + `TML_EXPECT_KEYS`."
+    - render_header: "Render the TML `menu-bar` into an ANSI header string."
+    - run_fzf: "Execute `fzf` using argv arrays (no eval)."
 
 environment:
-  description: "Runtime environment conventions for fzf/TML usage."
   variables:
     - "FZF_PREVIEW_COLUMNS (fzf-provided: preview pane width in columns for --preview commands)"
     - "FZF_PREVIEW_LINES (fzf-provided: preview pane height in lines for --preview commands)"
     - "TML_VAR_* (exported variables used by tml_eval/tml_eval_bool)"
-    - "FZF_DEFAULT_OPTS (callers may temporarily clear this to prevent main-catalog preview/binds leaking into popup pickers)"
+    - "FZF_DEFAULT_OPTS (callers may temporarily clear this to prevent layout leakage into popup pickers)"
     - "LC_ALL/LANG (callers may force UTF-8 for unicode-heavy menus)"
     - "RUNEWIDTH_EASTASIAN (fzf respects this; callers may set to 1 for more stable unicode width handling in tmux)"
-    - "THEME_STR_* (theme string/symbol tokens exported by theme loader, e.g. THEME_STR_ICON_DROPDOWN)"
-    - "TERMFLIX_LOGO_ICON (seasonal brand icon prefix + popcorn; not theme-driven)"
+    - "THEME_STR_* (theme string/symbol tokens exported by theme loader)"
+    - "TERMFLIX_LOGO_ICON (seasonal brand icon prefix + 🍿; not theme-driven)"
+    - "TERMFLIX_STATUS_MID_ICON (optional mid-label icon for the bottom shortcut-help label)"
   dependencies:
     - "xmllint"
     - "fzf"
+
+local_resources:
+  - path: "modules/ui/tml/schema/tml-1.0.xsd"
+    format: "XSD"
+    purpose: "TML/XML schema reference (documentation + validation aid)"
+    persistence: "Permanent"
+  - path: "modules/ui/layouts/*.xml"
+    format: "XML"
+    purpose: "fzf-layout definitions used by tml_parse"
+    persistence: "Permanent"
+  - path: "modules/ui/layouts/*.tml"
+    format: "TML"
+    purpose: "Declarative menu-bar/header templates"
+    persistence: "Permanent"
+
+implementation:
+  modules:
+    - path: "modules/ui/tml/parser/tml_parser.sh"
+      role: "Parser + renderer"
+      functions:
+        - name: "tml_parse"
+          input: "layout_file"
+          output: "TML_FZF_ARGS, TML_EXPECT_KEYS"
+        - name: "tml_render_header"
+          input: "layout_file"
+          output: "ANSI header string"
+        - name: "tml_run_fzf"
+          input: "stdin options + parsed TML_FZF_ARGS"
+          output: "fzf selection + return code"
+        - name: "tml_eval"
+          input: "string with ${var} expansions"
+          output: "expanded string"
+        - name: "tml_eval_bool"
+          input: "boolean expression"
+          output: "true/false"
+        - name: "tml_shell_escape"
+          input: "untrusted string"
+          output: "safe double-quoted string"
+        - name: "tml_attr"
+          input: "xpath + file"
+          output: "attribute value"
+        - name: "tml_text"
+          input: "xpath + file"
+          output: "text content"
+        - name: "tml_exists"
+          input: "xpath + file"
+          output: "true/false"
+        - name: "tml_count"
+          input: "xpath + file"
+          output: "count"
+        - name: "tml_get_options"
+          input: "layout_file"
+          output: "newline-separated options"
+  entry_points:
+    - "modules/ui/catalog/fzf_catalog.sh"
+    - "modules/ui/pickers/*.sh"
+    - "modules/streaming/buffer_ui.sh"
+
+outputs:
+  format: "Bash exports + argv arrays"
+  schema:
+    TML_FZF_ARGS: "Space-delimited fzf args string; parsed into an argv array by `tml_run_fzf`."
+    TML_EXPECT_KEYS: "Comma-separated list of keys for `fzf --expect`."
+
+resilience:
+  fallback_chain:
+    - "Escape/expand header via tml_shell_escape + tml_eval"
+    - "Execute fzf via argv arrays (no eval)"
+  default_behavior: "On parse failures, return empty args; callers handle as an error path."
+
+logic_flow:
+  env_expansion:
+    goal: "Allow layouts to reference env vars without eval injection."
+    function: "tml_eval"
+    strategy:
+      - "Support `${var}`."
+      - "Support `${var-default}` (default only when unset)."
+      - "Support `${var:-default}` (default when unset OR empty)."
+      - "Apply escaping for attribute contexts before passing to fzf."
+
+integration:
+  ui_component: "All fzf-based pickers/layouts"
+  file: "modules/ui/tml/parser/tml_parser.sh"
+  trigger: "Any UI flow that parses and runs a layout via tml_run_fzf"

@@ -50,8 +50,14 @@ Notes:
 
 ## Migration Status
 - Done: Main catalog (Stage 1), season picker, episode picker, movie version picker, episode version picker, buffer UI.
+- Note: Legacy/reference `fzf` usages remain only in `modules/ui/lib/ui_parser.sh`, `modules/ui/scratch/*`, and `modules/ui/tests/*` (non-production).
 
 ## Theme / TSS Notes (Non-Stage)
 - Theme loader: `modules/core/theme.sh` parses both hex colors (exports `THEME_*` + `THEME_HEX_*`) and string/symbol tokens (exports `THEME_STR_*`).
 - Seasonal branding: `modules/core/seasonal.sh` exports `TERMFLIX_LOGO_ICON` (e.g. `🎅🍿` during Dec/Jan; `🎉🍿` on Jan 1; `☸️🪬🍿` on Buddha Purnima override/date table).
 - Theme listing: `bin/termflix themes --list` prints a 5-color palette swatch + name; swatches are extracted from `bg`, `bg-selection`, `glow`, `purple`, `success` and reordered for visibility (dark colors not on the edges).
+
+## Remaining / TODO (TML Migration)
+- Deprecate or remove `modules/ui/lib/ui_parser.sh` once all documentation/examples reference `modules/ui/tml/parser/tml_parser.sh`.
+- Audit docs/examples that still show `printf ... | fzf ...` (keep examples small, but prefer `tml_run_fzf` in production docs).
+- Add a lightweight CI/test grep that fails on new production `fzf` direct calls outside `tests/`, `modules/ui/tests/`, and `modules/ui/scratch/` (optional).
