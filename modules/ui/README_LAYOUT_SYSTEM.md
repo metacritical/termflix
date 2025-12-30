@@ -1,6 +1,10 @@
-# XML-Based UI Layout System for FZF
+# TML/XML-Based UI Layout System for FZF
 
-A declarative XML DSL for defining fzf-based terminal UI layouts. This system separates UI definitions from business logic, making layouts easier to maintain, modify, and version control.
+A declarative layout DSL for defining fzf-based terminal UI layouts. This system separates UI definitions from business logic, making layouts easier to maintain, modify, and version control.
+
+Termflix currently supports two layout parsers:
+- Primary (runtime): `modules/ui/tml/parser/tml_parser.sh` (supports `<fzf-layout>` and `<tml>`)
+- Legacy: `modules/ui/lib/ui_parser.sh` (kept for older docs/tests)
 
 ## Overview
 
@@ -51,12 +55,14 @@ modules/ui/
 ├── schema/
 │   └── layout_schema.xml          # XSD schema for validation
 ├── layouts/
-│   ├── main_catalog.xml           # Main content browser
-│   ├── episode_picker.xml         # Episode selection
-│   ├── season_picker.xml          # Season selection popup
-│   ├── version_picker.xml         # Quality/source picker
-│   ├── buffer_ui.xml              # Buffer status UI
-│   └── simple_menu.xml            # Simple dropdown menus
+│   ├── main-catalog.xml           # Stage 1 base layout args
+│   ├── main-catalog.tml           # Conceptual rich header reference
+│   ├── episode-picker.xml         # Episode selection
+│   ├── season-picker.xml          # Season selection popup
+│   ├── version-picker.xml         # Quality/source picker
+│   ├── movie-version-picker.xml   # Movie version selector
+│   ├── buffer-ui.xml              # Buffer status UI
+│   └── simple-menu.xml            # Simple dropdown menus
 ├── lib/
 │   ├── ui_parser.sh               # XML parser and fzf command builder
 │   ├── image_display.sh           # Image display helpers
@@ -71,6 +77,10 @@ modules/ui/
 │   └── preview_stage2.sh          # Stage 2 preview pane
 └── tests/
     └── test_*.sh                  # Local test scripts
+
+modules/ui/tml/
+└── parser/
+    └── tml_parser.sh              # Primary parser used by Termflix
 ```
 
 ## Usage
@@ -78,21 +88,25 @@ modules/ui/
 ### Basic Usage
 
 ```bash
-# Source the parser
-source modules/ui/lib/ui_parser.sh
+# Source the parser (primary)
+source modules/ui/tml/parser/tml_parser.sh
 
-# Run fzf with a layout
-selection=$(printf "%s" "$data" | run_fzf_layout "episode-picker")
+# Parse a layout
+tml_parse modules/ui/layouts/episode-picker.xml
+
+# Run fzf with parsed args
+selection=$(printf "%s" "$data" | tml_run_fzf)
 
 # Or just build the arguments
-args=$(build_fzf_cmd "main-catalog")
+args=$(tml_get_fzf_args)
 selection=$(printf "%s" "$data" | fzf $args)
 ```
 
 ### With Extra Arguments
 
 ```bash
-selection=$(printf "%s" "$data" | run_fzf_layout "simple-menu" \
+tml_parse modules/ui/layouts/simple-menu.xml
+selection=$(printf "%s" "$data" | tml_run_fzf \
     --prompt="Choose > " \
     --header="Custom Header")
 ```
@@ -100,18 +114,8 @@ selection=$(printf "%s" "$data" | run_fzf_layout "simple-menu" \
 ### CLI Tools
 
 ```bash
-# List available layouts
-./lib/ui_parser.sh --list
-
-# Validate a layout
-./lib/ui_parser.sh --validate main-catalog
-
-# Show help
-./lib/ui_parser.sh --help
-
-# Run examples
-./examples/example_usage.sh simple
-./examples/example_usage.sh all
+# Generate fzf args for a layout
+modules/ui/tml/parser/tml_parser.sh fzf-args modules/ui/layouts/main-catalog.xml
 ```
 
 ## XML Schema Reference

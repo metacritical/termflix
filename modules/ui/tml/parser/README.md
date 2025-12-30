@@ -16,7 +16,7 @@ How the bash TML parser integrates with FZF-based UIs.
 ┌─────────────────────────────────────────────────────────────┐
 │                    tml_parser.sh                             │
 │    source tml_parser.sh                                      │
-│    tml_parse "main-catalog.tml"                              │
+│    tml_parse "main-catalog.xml"                              │
 │    header=$(tml_render_header)                               │
 │    expect=$(tml_get_expect_keys)                             │
 └─────────────────────────────────────────────────────────────┘
@@ -35,7 +35,7 @@ How the bash TML parser integrates with FZF-based UIs.
 ### Dynamic (Current) ✅
 ```bash
 source "$UI_DIR/tml/parser/tml_parser.sh"
-tml_parse "$LAYOUTS_DIR/main-catalog.tml"
+tml_parse "$LAYOUTS_DIR/main-catalog.xml"
 menu_header=$(tml_render_header)
 ```
 - Edit XML → immediate changes
@@ -66,9 +66,13 @@ menu_header=$(render_header)
 
 ```bash
 source "modules/ui/tml/parser/tml_parser.sh"
-tml_parse "modules/ui/layouts/main-catalog.tml"
+tml_parse "modules/ui/layouts/main-catalog.xml"
 
-fzf --header "$(tml_render_header)" \
-    --expect "$(tml_get_expect_keys)" \
-    --preview "preview.sh {}"
+printf "%s" "$data" | tml_run_fzf \
+  --header "$(tml_render_header)" \
+  --expect "$(tml_get_expect_keys)" \
+  --preview "preview.sh {}"
 ```
+
+Note:
+- Stage 1 runtime currently uses `modules/ui/layouts/main-catalog.xml` for base layout args, while `modules/ui/layouts/main-catalog.tml` is kept as a conceptual reference for rich header experiments.

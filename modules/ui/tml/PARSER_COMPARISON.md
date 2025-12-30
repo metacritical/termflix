@@ -2,8 +2,8 @@
 
 ## Summary
 
-**V1 (`ui_parser.sh`)** = Production-ready FZF configuration
-**V2 (`tml_parser.sh`)** = Experimental rich components
+**V2 (`tml_parser.sh`)** = Current Termflix runtime parser (supports `<fzf-layout>` and `<tml>`)
+**V1 (`ui_parser.sh`)** = Legacy parser (kept for older docs/tests)
 
 ---
 
@@ -92,12 +92,11 @@ run_fzf_layout "season-picker" # Runs FZF directly
 
 | Use Case | Parser |
 |----------|--------|
-| Season picker, episode picker | **V1** |
-| Simple menus | **V1** |
-| Version picker | **V1** |
-| Main catalog (just FZF args) | **V1** |
-| Rich header with tabs | **V2** (header only) |
-| Full interactive TUI | Go TML (future) |
+| Main catalog (Stage 1) | **V2** |
+| Season picker, episode picker | **V2** |
+| Version picker / buffer UI | **V2** |
+| Rich header with tabs | **V2** |
+| Legacy scripts/tests | **V1** |
 
 ---
 
