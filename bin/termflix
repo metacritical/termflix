@@ -248,22 +248,28 @@ main() {
                     exit 1
                 fi
                 ;;
-            theme)
-                # Change theme preference
-                # Change theme preference
-                if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
-                    # Get list of themes from bundled and user dirs
-                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
-                    local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
-                    local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
-                    
-                    if [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
-                        echo -e "${CYAN}Available themes:${RESET}"
-                        for theme in $all_themes; do
-                            echo "  - $theme"
-                        done
-                        exit 0
-                    fi
+	            theme)
+	                # Change theme preference
+	                # Change theme preference
+	                if [ -z "$2" ] || [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
+	                    # Get list of themes from bundled and user dirs
+	                    local bundled_themes=$(ls "$SCRIPT_DIR/../themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+	                    local user_themes=$(ls "$HOME/.config/termflix/themes" 2>/dev/null | grep "\.css$" | sed 's/\.css//g')
+	                    local all_themes=$(echo -e "${bundled_themes}\n${user_themes}" | sort | uniq | xargs)
+	                    local current_theme
+	                    current_theme=$(get_theme_preference 2>/dev/null)
+	                    
+	                    if [[ "$2" == "--list" ]] || [[ "$2" == "-l" ]]; then
+	                        echo -e "${CYAN}Available themes:${RESET}"
+	                        for theme in $all_themes; do
+	                            if [[ -n "$current_theme" && "$theme" == "$current_theme" ]]; then
+	                                echo -e "  ${RED}* ${theme} (current)${RESET}"
+	                            else
+	                                echo "  - $theme"
+	                            fi
+	                        done
+	                        exit 0
+	                    fi
 
                     echo -e "${RED}Error:${RESET} Please specify a theme name"
                     echo -e "${CYAN}Available themes:${RESET} $all_themes"

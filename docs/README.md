@@ -344,7 +344,7 @@ Docs:
   - Do not change Stage 2 `Ctrl+L` semantics (always open version picker).
   - Keep `--no-select-1` on FZF pickers that control streaming.
   - Preserve catalog grouping via `bin/catalog` → `group_results.py`.
-- Use `test_watch_history.sh` when modifying watch history code to verify behavior.
+- Use `tests/ui/test_watch_history.sh` when modifying watch history code to verify behavior.
 
 Suggested development commands:
 
@@ -353,7 +353,7 @@ Suggested development commands:
 ./bin/termflix
 
 # Quick watch_history sanity test
-bash test_watch_history.sh
+bash tests/ui/test_watch_history.sh
 ```
 
 ---
@@ -375,4 +375,3 @@ If you extend the UI or the watch history behavior, please also update:
 - Any relevant `VIBE_CHECK` invariants
 
 to keep future “vibe coding” from accidentally regressing the work you’ve done.
-

@@ -88,7 +88,7 @@ rm bin/test_context.sh
 rm STAGE2_CONTEXT_DEBUG.md
 rm CTRLF_TEST.md
 rm QUICK_TEST_GUIDE.md
-# Keep STAGE2_CONTEXT_COMPLETE.md as reference
+# Keep docs/STAGE2_CONTEXT_COMPLETE.md as reference
 ```
 
 ## Feature Complete! 🎬
