@@ -47,4 +47,11 @@
   --prompt: #78DCE8;        /* Prompt color */
   --spinner: #FF6188;       /* Loading spinner */
   --header: #AB9DF2;        /* Header text */
+
+  /* ═══════════════════════════════════════════════════════════
+     HEADER PILLS (Stage 1 Menu)
+     ═══════════════════════════════════════════════════════════ */
+
+  --pill-inactive-fg: #C4B5FD;  /* More-visible inactive pill label */
+  --pill-shortcut-fg: #FF9FB5;  /* Lighter pink for underlined shortcut */
 }

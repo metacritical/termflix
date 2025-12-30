@@ -69,4 +69,13 @@
    /* Loading spinner */
    --header: #8B5CF6;
    /* Header text */
+
+   /* ═══════════════════════════════════════════════════════════
+     HEADER PILLS (Stage 1 Menu)
+     ═══════════════════════════════════════════════════════════ */
+
+   --pill-inactive-fg: #C4B5FD;
+   /* More-visible inactive pill label */
+   --pill-shortcut-fg: #F5B8FF;
+   /* Lighter pink for underlined shortcut */
 }

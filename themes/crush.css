@@ -32,6 +32,10 @@
     /* White-ish text */
     --fg-muted: #6272A4;
     /* Muted text */
+    --fg-subtle: #9CA3AF;
+    /* Subtle/disabled text */
+    --lavender: #C4B5FD;
+    /* Soft lavender - subtle highlights */
 
     --bg: #191724;
     /* Dark distinct background */
@@ -66,4 +70,13 @@
     /* Pink spinner */
     --header: #6855DE;
     /* Blurple header text */
+
+    /* ═══════════════════════════════════════════════════════════
+     HEADER PILLS (Stage 1 Menu)
+     ═══════════════════════════════════════════════════════════ */
+
+    --pill-inactive-fg: #C4B5FD;
+    /* More-visible inactive pill label */
+    --pill-shortcut-fg: #F5B8FF;
+    /* Lighter pink for underlined shortcut */
 }

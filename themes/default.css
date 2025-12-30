@@ -33,4 +33,8 @@
     --prompt: #50FA7B;
     --spinner: #FFB86C;
     --header: #6272A4;
+
+    /* Header pills (Stage 1 menu) */
+    --pill-inactive-fg: #D9B3FF;
+    --pill-shortcut-fg: #FFC2E8;
 }

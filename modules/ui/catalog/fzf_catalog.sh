@@ -152,13 +152,17 @@ show_fzf_catalog() {
         local suffix="$4"
         local H_BG_ACTIVE=$'\e[48;2;88;101;242m'  # Discord blue bg
         local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
+        local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+        local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
         local H_WHITE=$'\e[97m'                    # Bright white fg
+        local H_BOLD=$'\e[1m'
         if [[ "$state" == "o" ]]; then
             # Active: pill with colored background
             echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${prefix}${shortcut}${suffix} ${H_RESET}"
         else
-            # Inactive: subtle pill with underlined shortcut
-            echo -ne "${H_BG_INACTIVE} ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${suffix} ${H_RESET}"
+            # Inactive: subtle pill with bolder, more-visible label and emphasized shortcut
+            local H_NO_UL=$'\e[24m'
+            echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${prefix}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${suffix} ${H_RESET}"
         fi
     }
 
@@ -170,18 +174,22 @@ show_fzf_catalog() {
         local suffix="$4"
         local H_BG_ACTIVE=$'\e[48;2;139;92;246m'  # Purple bg for dropdowns
         local H_BG_INACTIVE=$'\e[48;2;65;65;80m'  # Subtle inactive pill
+        local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+        local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
         local H_WHITE=$'\e[97m'
+        local H_BOLD=$'\e[1m'
         if [[ "$state" == "o" ]]; then
             echo -ne "${H_BG_ACTIVE}${H_WHITE} ${prefix}${shortcut}${suffix} ▾ ${H_RESET}"
         else
-            echo -ne "${H_BG_INACTIVE} ${prefix}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${suffix} ▾ ${H_RESET}"
+            local H_NO_UL=$'\e[24m'
+            echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${prefix}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${suffix} ▾ ${H_RESET}"
         fi
     }
     
     local menu_header
     # Build header with LOGO + underlined shortcuts: o=Movies, S=Shows, W=Watchlist, T=Type, V=Sort, G=Genre
     # Add padding before and after for better spacing
-    menu_header=$'\\n'"${logo}  $(fmt_btn \"$hl_movies\" \"M\" \"o\" \"vies\") $(fmt_btn \"$hl_shows\" \"\" \"S\" \"hows\") $(fmt_btn \"$hl_watchlist\" \"\" \"W\" \"atchlist\") $(fmt_drop \"$hl_type\" \"\" \"T\" \"ype\") $(fmt_drop \"$hl_sort\" \"Sort [\" \"V\" \"]\") $(fmt_drop \"$hl_genre\" \"\" \"G\" \"enre\")"$'\\n'
+    menu_header=$'\n'"${logo}  $(fmt_btn "$hl_movies" "M" "o" "vies") $(fmt_btn "$hl_shows" "" "S" "hows") $(fmt_btn "$hl_watchlist" "" "W" "atchlist") $(fmt_drop "$hl_type" "" "T" "ype") $(fmt_drop "$hl_sort" "Sort [" "V" "]") $(fmt_drop "$hl_genre" "" "G" "enre")"$'\n'
     
     # Get FZF colors from theme (if theme loader available)
     # Charm-style: blue selection bar, muted gray text, dark background
