@@ -69,7 +69,8 @@ get_preview_cols() {
     fi
     local term_cols
     term_cols=$(get_term_cols)
-    local layout_file="${UI_DIR}/layouts/main-catalog.tml"
+    # Stage 1 runtime uses main-catalog.xml for layout args; use it for preview sizing.
+    local layout_file="${UI_DIR}/layouts/main-catalog.xml"
     local preview_pct
     preview_pct=$(xmllint --xpath "string(//preview/@size)" "$layout_file" 2>/dev/null | tr -d '%')
     [[ -z "$preview_pct" || ! "$preview_pct" =~ ^[0-9]+$ ]] && preview_pct=50

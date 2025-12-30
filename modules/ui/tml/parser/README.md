@@ -75,4 +75,4 @@ printf "%s" "$data" | tml_run_fzf \
 ```
 
 Note:
-- Stage 1 runtime currently uses `modules/ui/layouts/main-catalog.xml` for base layout args, while `modules/ui/layouts/main-catalog.tml` is kept as a conceptual reference for rich header experiments.
+- Stage 1 runtime uses `modules/ui/layouts/main-catalog.xml` for base layout args, and renders the Stage 1 header pills from `modules/ui/layouts/main-catalog.tml` (`menu-bar`).

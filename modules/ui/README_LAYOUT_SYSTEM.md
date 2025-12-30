@@ -56,7 +56,7 @@ modules/ui/
 │   └── layout_schema.xml          # XSD schema for validation
 ├── layouts/
 │   ├── main-catalog.xml           # Stage 1 base layout args
-│   ├── main-catalog.tml           # Conceptual rich header reference
+│   ├── main-catalog.tml           # Stage 1 header (menu-bar)
 │   ├── episode-picker.xml         # Episode selection
 │   ├── season-picker.xml          # Season selection popup
 │   ├── version-picker.xml         # Quality/source picker
