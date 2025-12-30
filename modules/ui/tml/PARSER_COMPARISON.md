@@ -7,7 +7,7 @@
 
 ---
 
-## V1: FZF Layout Parser ✅ PRODUCTION
+## V1: FZF Layout Parser (Legacy)
 
 **File:** `modules/ui/lib/ui_parser.sh` (381 lines)
 
@@ -51,7 +51,7 @@ run_fzf_layout "season-picker" # Runs FZF directly
 
 ---
 
-## V2: TML Parser ⚠️ EXPERIMENTAL
+## V2: TML Parser ✅ PRODUCTION
 
 **File:** `modules/ui/tml/parser/tml_parser.sh` (400+ lines)
 
@@ -105,10 +105,10 @@ run_fzf_layout "season-picker" # Runs FZF directly
 ```
 modules/ui/
 ├── lib/
-│   └── ui_parser.sh        # V1 - Production FZF parser
+│   └── ui_parser.sh        # V1 - Legacy parser (docs/tests)
 ├── tml/
 │   └── parser/
-│       └── tml_parser.sh   # V2 - Experimental rich components
+│       └── tml_parser.sh   # V2 - Runtime parser used by Termflix
 ├── layouts/
 │   ├── *.xml               # V1 layouts
 │   └── *.tml               # V2 layouts (experiment)
@@ -118,9 +118,5 @@ modules/ui/
 
 ## Archive Note
 
-V2 TML parser remains in codebase for:
-1. Header generation experiments
-2. Future FZF++ development
-3. Reference for Go TML implementation
-
-V1 is the **recommended parser** for all current Termflix UI work.
+V1 remains in the repo for compatibility with older docs/tests and as a reference implementation.
+New work should target V2 layouts and `tml_parser.sh`.

@@ -4,7 +4,7 @@ A declarative layout DSL for defining fzf-based terminal UI layouts. This system
 
 Termflix currently supports two layout parsers:
 - Primary (runtime): `modules/ui/tml/parser/tml_parser.sh` (supports `<fzf-layout>` and `<tml>`)
-- Legacy: `modules/ui/lib/ui_parser.sh` (kept for older docs/tests)
+- Legacy: `modules/ui/lib/ui_parser.sh` (kept for older docs/tests; not used by the main app flow)
 
 ## Overview
 
@@ -64,7 +64,7 @@ modules/ui/
 │   ├── buffer-ui.xml              # Buffer status UI
 │   └── simple-menu.xml            # Simple dropdown menus
 ├── lib/
-│   ├── ui_parser.sh               # XML parser and fzf command builder
+│   ├── ui_parser.sh               # Legacy XML parser (docs/tests only)
 │   ├── image_display.sh           # Image display helpers
 │   ├── logo.sh                    # Header logo helpers
 │   ├── status.sh                  # Status and progress UI
@@ -101,6 +101,11 @@ selection=$(printf "%s" "$data" | tml_run_fzf)
 args=$(tml_get_fzf_args)
 selection=$(printf "%s" "$data" | fzf $args)
 ```
+
+## Themes (TSS)
+
+Termflix uses Terminal Style Sheets (`themes/*.tss`) for colors and selected UI symbols.
+The theme loader prefers `.tss` but supports `.css` for backward compatibility.
 
 ### With Extra Arguments
 
