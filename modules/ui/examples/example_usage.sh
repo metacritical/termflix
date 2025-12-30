@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 #
-# Example: Using the XML-based UI Layout Parser
-# This demonstrates how to replace hardcoded fzf calls with layout definitions
+# Example: Using the TML (v2) Layout Parser
+# Demonstrates replacing hardcoded fzf calls with `tml_parse` + `tml_run_fzf`.
 
 set -euo pipefail
 
-# Source the parser
+# Source the parser (v2)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/ui_parser.sh"
+source "${SCRIPT_DIR}/../tml/parser/tml_parser.sh"
+
+LAYOUTS_DIR="$(cd "${SCRIPT_DIR}/../layouts" && pwd)"
 
 # Example 1: Simple menu selection
 example_simple_menu() {
@@ -15,8 +17,8 @@ example_simple_menu() {
     local selection
 
     export menu_header="Example Menu"
-    selection=$(printf "%s" "$menu_items" | run_fzf_layout "simple-menu" \
-        --prompt="Choose > ")
+    tml_parse "${LAYOUTS_DIR}/simple-menu.xml"
+    selection=$(printf "%s" "$menu_items" | tml_run_fzf --prompt="Choose > " || true)
 
     echo "Selected: $selection"
 }
@@ -32,10 +34,12 @@ example_episode_picker() {
     # Set environment variables that layout expects
     export CLEAN_TITLE="Example Series"
     export SEASON_NUM="1"
-    export UI_DIR="${UI_DIR:-/path/to/modules/ui}"
+    export UI_DIR="${UI_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+    export SCRIPT_DIR="${UI_DIR}/pickers"
 
     local results
-    results=$(printf "%s" "$episode_list" | run_fzf_layout "episode-picker")
+    tml_parse "${LAYOUTS_DIR}/episode-picker.xml"
+    results=$(printf "%s" "$episode_list" | tml_run_fzf || true)
 
     local key
     local selected
@@ -70,7 +74,8 @@ example_season_picker() {
     export THEME_HEX_BG_SELECTION="#374151"
 
     local selected
-    selected=$(printf "%s" "$season_list" | run_fzf_layout "season-picker")
+    tml_parse "${LAYOUTS_DIR}/season-picker.xml"
+    selected=$(printf "%s" "$season_list" | tml_run_fzf || true)
 
     if [[ -n "$selected" ]]; then
         local season_num
@@ -82,7 +87,8 @@ example_season_picker() {
 # Example 4: Build fzf args only (without running)
 example_build_args() {
     local args
-    args=$(build_fzf_cmd "main-catalog")
+    tml_parse "${LAYOUTS_DIR}/main-catalog.xml"
+    args="$(tml_get_fzf_args)"
     echo "Generated fzf arguments for main-catalog:"
     echo "$args" | tr ' ' '\n' | sed 's/^/  /'
 }
@@ -95,8 +101,8 @@ Movie C - 2025"
 
     export menu_header="🎬 Browse Movies (2025)"
     local selection
-    selection=$(printf "%s" "$data" | run_fzf_layout "simple-menu" \
-        --prompt="Movie > ")
+    tml_parse "${LAYOUTS_DIR}/simple-menu.xml"
+    selection=$(printf "%s" "$data" | tml_run_fzf --prompt="Movie > " || true)
 
     echo "Selected: $selection"
 }
