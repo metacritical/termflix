@@ -66,6 +66,7 @@ branding:
     - "Dec/Jan: 🎅🍿"
     - "Jan 1: 🎉🍿 (overrides Christmas season)"
     - "Buddha Purnima: ☸️🪬🍿 (override via TERMFLIX_SPECIAL_DAY=buddha_purnima or TERMFLIX_BUDDHA_PURNIMA_DATE=YYYY-MM-DD)"
+    - "Help label mid-icon: Dec/Jan → 🎄🎉, Jan 1 → 🎉, Buddha Purnima → 🪷"
 
 cli:
   list:

@@ -8,6 +8,7 @@
 #   - Dec 1 → Jan 31: Santa (🎅) prefix
 #   - Jan 1: New Year (🎉) prefix (overrides Santa)
 #   - Buddha Purnima: Lotus (🪷) prefix (date varies)
+# - The bottom help/status label can include seasonal center icons via `TERMFLIX_STATUS_MID_ICON`.
 #
 
 [[ -n "${_TERMFLIX_SEASONAL_LOADED:-}" ]] && return 0
@@ -100,6 +101,7 @@ termflix_apply_seasonal_icon_overrides() {
   # with a different feel on Jan 1.
   if termflix_is_new_year_day; then
     export TERMFLIX_SEASONAL_MODE="newyear"
+    export TERMFLIX_STATUS_MID_ICON="🎉"
     export THEME_STR_ICON_MOVIE="${THEME_STR_ICON_MOVIE-🎬}🎉"
     export THEME_STR_ICON_DROPDOWN="✨"
     export THEME_STR_ICON_ACTIVE_DOT="🎊"
@@ -111,6 +113,7 @@ termflix_apply_seasonal_icon_overrides() {
 
   if termflix_is_christmas_season; then
     export TERMFLIX_SEASONAL_MODE="christmas"
+    export TERMFLIX_STATUS_MID_ICON="🎄🎉"
     export THEME_STR_ICON_MOVIE="🎄"
     export THEME_STR_ICON_DROPDOWN="❄"
     export THEME_STR_ICON_ACTIVE_DOT="⭐"
