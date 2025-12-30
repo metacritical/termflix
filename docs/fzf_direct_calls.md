@@ -12,6 +12,7 @@ Notes:
 - `modules/ui/catalog/fzf_catalog.sh`
   - Main catalog list uses `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args, and passes preview/expect/binds as explicit fzf args.
   - Stage 1 header pills are rendered from `modules/ui/layouts/main-catalog.tml` (`menu-bar`), while Stage 1 base layout args come from `modules/ui/layouts/main-catalog.xml`.
+  - Catalog results are deduped in `modules/catalog.sh` using IMDB id when present, otherwise a punctuation-insensitive normalized title key (prevents duplicates like `Title` vs `Title:`).
 
 #### Stage 1 Preview: Shows Episode Table (not a direct call)
 - `modules/ui/catalog/preview_fzf.sh`

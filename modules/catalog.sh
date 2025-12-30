@@ -303,6 +303,68 @@ display_catalog() {
     
     echo  # Blank line before results
     
+    normalize_dedupe_key() {
+        # Produce a stable, safe key for deduping (bash 3.2 compatible, no assoc arrays).
+        # - Lowercase
+        # - Remove all non-alphanumerics
+        # - Collapse (effectively) punctuation variants like ":" vs " "
+        #
+        # Example: "Avatar: Fire and Ash (2025)" -> "avatarfireandash2025"
+        local raw="${1:-}"
+        # shellcheck disable=SC2001
+        raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]')"
+        # Keep only a-z0-9
+        raw="$(printf '%s' "$raw" | tr -cd 'a-z0-9')"
+        printf '%s' "$raw"
+    }
+
+    catalog_result_dedupe_key() {
+        # Prefer IMDB id when present (stable identity). Fallback to normalized title.
+        local line="${1:-}"
+        local source=""
+        IFS='|' read -r source _rest <<< "$line"
+
+        if [[ "$source" == "COMBINED" ]]; then
+            # COMBINED format: COMBINED|title|sources|qualities|seeds|sizes|magnets|poster|imdb|genre|count
+            local _c _title _sources _qualities _seeds _sizes _magnets _poster _imdb _genre _count
+            IFS='|' read -r _c _title _sources _qualities _seeds _sizes _magnets _poster _imdb _genre _count <<< "$line"
+            if [[ "$_imdb" == tt[0-9]* ]]; then
+                printf '%s' "$_imdb"
+                return 0
+            fi
+            normalize_dedupe_key "$_title"
+            return 0
+        fi
+
+        # Non-combined format: SOURCE|title|magnet|quality|seeds|size|poster|imdb|plot
+        local _s _title _magnet _quality _seeds _size _poster _imdb _plot
+        IFS='|' read -r _s _title _magnet _quality _seeds _size _poster _imdb _plot <<< "$line"
+        if [[ "$_imdb" == tt[0-9]* ]]; then
+            printf '%s' "$_imdb"
+            return 0
+        fi
+        normalize_dedupe_key "$_title"
+    }
+
+    catalog_dedupe_results_inplace() {
+        # Deduplicate `all_results` in-place using catalog_result_dedupe_key().
+        local dedup_results=()
+        local seen_keys="|"
+        local result=""
+        local key=""
+
+        for result in "${all_results[@]}"; do
+            key="$(catalog_result_dedupe_key "$result")"
+            # Skip empty keys (shouldn't happen, but don't accidentally drop everything).
+            [[ -z "$key" ]] && key="_empty_$(normalize_dedupe_key "$result")"
+            if [[ "$seen_keys" != *"|$key|"* ]]; then
+                seen_keys="${seen_keys}${key}|"
+                dedup_results+=("$result")
+            fi
+        done
+        all_results=("${dedup_results[@]}")
+    }
+
     # Group results BEFORE caching (only if not already grouped)
     local needs_grouping=true
     for result in "${all_results[@]}"; do
@@ -313,18 +375,9 @@ display_catalog() {
         fi
     done
     
-    # Deduplicate COMBINED results by title (field 2)
+    # Deduplicate COMBINED results (prefer IMDB id; fallback to normalized title)
     if [ "$needs_grouping" = false ] && [ ${#all_results[@]} -gt 0 ]; then
-        local dedup_results=()
-        local seen_titles=""
-        for result in "${all_results[@]}"; do
-            IFS='|' read -r _ title _ <<< "$result"
-            if [[ ! "$seen_titles" == *"|$title|"* ]]; then
-                seen_titles="${seen_titles}|$title|"
-                dedup_results+=("$result")
-            fi
-        done
-        all_results=("${dedup_results[@]}")
+        catalog_dedupe_results_inplace
     fi
     
     if [ "$needs_grouping" = true ] && [ ${#all_results[@]} -gt 0 ]; then
@@ -346,6 +399,11 @@ display_catalog() {
         fi
         rm -f "$group_input"
         printf "\r${GREEN}✓ Grouped ${#all_results[@]} results${RESET}                    \n"
+    fi
+
+    # Grouping can still produce duplicates (e.g. punctuation variants); dedupe again.
+    if [ ${#all_results[@]} -gt 0 ]; then
+        catalog_dedupe_results_inplace
     fi
     
         
@@ -369,10 +427,9 @@ display_catalog() {
         fi
         
         # Save GROUPED results to cache (after grouping and enrichment)
-        # Deduplicate by title (field 2) before saving
+        # Results are already deduped above; save as-is.
         if [ ${#all_results[@]} -gt 0 ]; then
-            # Use awk to remove duplicates based on title (second field)
-            printf "%s\n" "${all_results[@]}" | awk -F'|' '!seen[$2]++' > "$cache_file" 2>/dev/null
+            printf "%s\n" "${all_results[@]}" > "$cache_file" 2>/dev/null
         fi
 
 

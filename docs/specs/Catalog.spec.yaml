@@ -11,6 +11,7 @@ feature:
 pipeline:
   stages:
     - fetch: "Retrieve data via `catalog.sh` (wraps fetching modules)"
+    - dedupe: "Remove duplicates using IMDB id when present, else a punctuation-insensitive normalized title key"
     - cache: "Store results in `~/.config/termflix/cache`"
     - paginate: "Slice results for current view (default 50 items/page)"
     - display: "Render UI using FZF (via `fzf_catalog.sh`)"
@@ -45,6 +46,13 @@ local_resources:
     persistence: "Cache"
 
 logic_flow:
+  Deduplication:
+    goal: "Prevent duplicate rows that refer to the same title."
+    function: "catalog_dedupe_results_inplace"
+    strategy:
+      - "Prefer dedupe key = IMDB id when present (tt...)."
+      - "Fallback dedupe key = normalized title (lowercased, strip non-alphanumerics) so punctuation variants match (e.g. `Title` vs `Title:`)."
+      - "Run dedupe before caching and after grouping, since grouping can still emit punctuation variants."
   Stage1_to_Stage2:
     goal: "Enter version selection when a title has multiple sources or user requests it."
     function: "handle_fzf_selection (COMBINED gate)"
