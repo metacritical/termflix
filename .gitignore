@@ -4,6 +4,8 @@ __pycache__/
 
 # System
 .DS_Store
+.tmp/
+commits/
 
 # Helper scripts temp
 tmp/
@@ -21,4 +23,3 @@ ARCHITECTURE.md
 PYTHON_MIGRATION.md
 SCRIPT_REVIEW.md
 TERMFLIX_REVIEW.md
-
