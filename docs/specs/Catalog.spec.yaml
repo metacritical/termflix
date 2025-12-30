@@ -23,6 +23,7 @@ ui_components:
     description: "Primary FZF interface showing list of titles."
     implementation_notes:
       - "Uses `modules/ui/tml/parser/tml_parser.sh` + `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args."
+      - "Renders the Stage 1 header pills from `modules/ui/layouts/main-catalog.tml` (`menu-bar`) to keep the header declarative."
     keybindings:
       "Ctrl+F": "Search Mode"
       "Ctrl+O": "Category: Movies"

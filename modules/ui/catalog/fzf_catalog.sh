@@ -218,12 +218,20 @@ show_fzf_catalog() {
     # ════════════════════════════════════════════════════════════════
     export menu_header current_page total_pages page_suffix
     source "${UI_DIR}/tml/parser/tml_parser.sh"
-    tml_parse "${UI_DIR}/layouts/main-catalog.xml"
     # Paginator prompt - left-aligned below header
     local dynamic_prompt="< Page ${current_page}/${total_pages}${page_suffix} > "
-    local dynamic_header
-    dynamic_header=$(tml_render_header)
+    local dynamic_header=""
+    local header_layout="${UI_DIR}/layouts/main-catalog.tml"
+    if [[ -f "$header_layout" ]]; then
+        tml_parse "$header_layout" 2>/dev/null || true
+        export TML_VAR_category="${CURRENT_CATEGORY:-movies}"
+        export TML_VAR_page="${current_page}"
+        export TML_VAR_total_pages="${total_pages}"
+        dynamic_header=$(tml_render_header 2>/dev/null)
+    fi
     [[ -z "$dynamic_header" ]] && dynamic_header="$menu_header"
+    # Parse the base fzf args for Stage 1
+    tml_parse "${UI_DIR}/layouts/main-catalog.xml"
 
     # Debug: show what we're sending to FZF
     if [[ "$TORRENT_DEBUG" == "true" ]]; then

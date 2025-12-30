@@ -353,8 +353,11 @@ _render_tab() {
     [[ -z "$H_BG_ACTIVE" ]] && H_BG_ACTIVE=$'\e[48;2;88;101;242m'
     local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
     local H_WHITE=$'\e[97m'
-    local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
+    local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+    local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    local H_BOLD=$'\e[1m'
     local H_UL=$'\e[4m'
+    local H_NO_UL=$'\e[24m'
 
     local formatted_label=""
     [[ -n "$shortcut_prefix" ]] && formatted_label="${shortcut_prefix}"
@@ -362,7 +365,7 @@ _render_tab() {
     if [[ "$is_active" == "true" ]]; then
         echo -ne "${H_BG_ACTIVE}${H_WHITE} ● ${formatted_label}${shortcut}${label#*$shortcut} ${H_RESET}"
     else
-        echo -ne "${H_BG_INACTIVE} ${formatted_label}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${label#*$shortcut} ${H_RESET}"
+        echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${formatted_label}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${label#*$shortcut} ${H_RESET}"
     fi
 }
 
@@ -378,8 +381,11 @@ _render_dropdown() {
 
     local H_RESET=$'\e[0m'
     local H_BG_INACTIVE=$'\e[48;2;65;65;80m'
-    local H_KEY="${THEME_SUCCESS:-$'\e[1;38;2;94;234;212m'}"
+    local H_INACTIVE_FG="${THEME_PILL_INACTIVE_FG:-${THEME_LAVENDER:-$'\e[38;2;196;181;253m'}}"
+    local H_SHORTCUT_FG="${THEME_PILL_SHORTCUT_FG:-${THEME_GLOW:-$'\e[38;2;245;184;255m'}}"
+    local H_BOLD=$'\e[1m'
     local H_UL=$'\e[4m'
+    local H_NO_UL=$'\e[24m'
 
     local before_shortcut="" after_shortcut=""
     if [[ "$label" =~ ^(.*)${shortcut}(.*)$ ]]; then
@@ -389,7 +395,7 @@ _render_dropdown() {
         before_shortcut="$label"
     fi
 
-    echo -ne "${H_BG_INACTIVE} ${before_shortcut}${H_KEY}${H_UL}${shortcut}${H_RESET}${H_BG_INACTIVE}${after_shortcut} ${H_RESET}"
+    echo -ne "${H_BG_INACTIVE}${H_INACTIVE_FG}${H_BOLD} ${before_shortcut}${H_SHORTCUT_FG}${H_UL}${shortcut}${H_NO_UL}${H_INACTIVE_FG}${after_shortcut} ${H_RESET}"
 }
 
 tml_render_header() {

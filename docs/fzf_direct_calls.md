@@ -9,7 +9,7 @@ Notes:
 ### Stage 1: Catalog (Movies/Shows list)
 - `modules/ui/catalog/fzf_catalog.sh`
   - Main catalog list uses `tml_run_fzf` with `modules/ui/layouts/main-catalog.xml` for base layout args, and passes preview/expect/binds as explicit fzf args.
-  - `modules/ui/layouts/main-catalog.tml` is currently kept as a conceptual layout reference, but Stage 1 runtime uses the `.xml`.
+  - Stage 1 header pills are rendered from `modules/ui/layouts/main-catalog.tml` (`menu-bar`), while Stage 1 base layout args come from `modules/ui/layouts/main-catalog.xml`.
 
 #### Stage 1 Preview: Shows Episode Table (not a direct call)
 - `modules/ui/catalog/preview_fzf.sh`
